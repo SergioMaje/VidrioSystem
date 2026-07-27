@@ -103,12 +103,14 @@ export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF'
         )
       })()}
 
-      {tipo === 'division' && (
-        <g>
-          <rect x={x} y={y} width={w} height={h} fill={frameColor} rx={2} />
-          {[0, 1, 2].map((i) => {
-            const panelW = (w - MARCO_W * 4) / 3
-            return (
+      {tipo === 'division' && (() => {
+        const panelW = (w - MARCO_W * 4) / 3
+        const panelCx = (i: number) => x + MARCO_W + i * (panelW + MARCO_W) + panelW / 2
+        const cy = y + h / 2
+        return (
+          <g>
+            <rect x={x} y={y} width={w} height={h} fill={frameColor} rx={2} />
+            {[0, 1, 2].map((i) => (
               <rect
                 key={i}
                 x={x + MARCO_W + i * (panelW + MARCO_W)}
@@ -117,10 +119,23 @@ export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF'
                 height={h - MARCO_W * 2}
                 fill="url(#glass)"
               />
-            )
-          })}
-        </g>
-      )}
+            ))}
+            {esCorrediza && (
+              <>
+                <circle cx={panelCx(0)} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#374151" strokeWidth={1.5} />
+                <text x={panelCx(0)} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#374151">F</text>
+                <circle cx={panelCx(2)} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#1d4ed8" strokeWidth={1.5} />
+                <text x={panelCx(2)} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#1d4ed8">C</text>
+                <line
+                  x1={panelCx(2) - panelW * 0.35} y1={cy + 22} x2={panelCx(2) + panelW * 0.35} y2={cy + 22}
+                  stroke="#1d4ed8" strokeWidth={2}
+                  markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)"
+                />
+              </>
+            )}
+          </g>
+        )
+      })()}
 
       {tipo === 'espejo' && (
         <g>

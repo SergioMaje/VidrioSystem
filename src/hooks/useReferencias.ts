@@ -32,7 +32,6 @@ export type ReferenciaCorteInput = {
   cantidad_fija_cm?: number
   cantidad_piezas: number
   orden: number
-  es_corredizo: boolean
 }
 
 export type ReferenciaInput = {
@@ -74,7 +73,6 @@ export function useCrearReferencia() {
               cantidad_fija_cm: c.formula === 'fijo' ? (c.cantidad_fija_cm ?? 0) : null,
               cantidad_piezas: c.cantidad_piezas,
               orden: c.orden,
-              es_corredizo: input.es_corrediza ? c.es_corredizo : false,
             }))
           )
         if (cortesError) throw cortesError
@@ -114,7 +112,6 @@ export function useEditarReferencia() {
               cantidad_fija_cm: c.formula === 'fijo' ? (c.cantidad_fija_cm ?? 0) : null,
               cantidad_piezas: c.cantidad_piezas,
               orden: c.orden,
-              es_corredizo: input.es_corrediza ? c.es_corredizo : false,
             }))
           )
         if (cortesError) throw cortesError

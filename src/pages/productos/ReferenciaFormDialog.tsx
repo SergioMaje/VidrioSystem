@@ -31,7 +31,6 @@ const corteSchema = z.object({
   cantidad_fija_cm: z.coerce.number().min(0).optional(),
   cantidad_piezas:  z.coerce.number().int().min(1).default(1),
   orden:            z.coerce.number().int().min(0),
-  es_corredizo:     z.boolean().default(false),
 })
 
 const schema = z.object({
@@ -66,14 +65,13 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
       tipo_producto_id: '',
       plantilla_id: '',
       es_corrediza: false,
-      cortes: [{ nombre_pieza: '', formula: 'ancho', margen_cm: 0, cantidad_fija_cm: undefined, cantidad_piezas: 1, orden: 0, es_corredizo: false }],
+      cortes: [{ nombre_pieza: '', formula: 'ancho', margen_cm: 0, cantidad_fija_cm: undefined, cantidad_piezas: 1, orden: 0 }],
     },
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'cortes' })
   const watchedCortes = watch('cortes')
   const tipoSeleccionado = watch('tipo_producto_id')
-  const esCorrediza = watch('es_corrediza')
 
   const plantillasFiltradas = todasPlantillas?.filter(
     (p) => p.tipo_producto_id === tipoSeleccionado
@@ -95,7 +93,6 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
           cantidad_fija_cm: c.cantidad_fija_cm ?? undefined,
           cantidad_piezas: c.cantidad_piezas,
           orden: i,
-          es_corredizo: c.es_corredizo,
         })) ?? [],
       })
     } else {
@@ -105,7 +102,7 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
         tipo_producto_id: '',
         plantilla_id: '',
         es_corrediza: false,
-        cortes: [{ nombre_pieza: '', formula: 'ancho', margen_cm: 0, cantidad_fija_cm: undefined, cantidad_piezas: 1, orden: 0, es_corredizo: false }],
+        cortes: [{ nombre_pieza: '', formula: 'ancho', margen_cm: 0, cantidad_fija_cm: undefined, cantidad_piezas: 1, orden: 0 }],
       })
     }
   }, [open, referencia, reset])
@@ -204,11 +201,16 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
               <Input placeholder="Descripción breve..." {...register('descripcion')} />
             </div>
 
-            <div className="col-span-2 flex items-center gap-2">
-              <input type="checkbox" id="es_corrediza" {...register('es_corrediza')} className="h-4 w-4" />
-              <Label htmlFor="es_corrediza" className="cursor-pointer font-normal">
-                Es producto corredizo
-              </Label>
+            <div className="col-span-2 space-y-1">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="es_corrediza" {...register('es_corrediza')} className="h-4 w-4" />
+                <Label htmlFor="es_corrediza" className="cursor-pointer font-normal">
+                  Es producto corredizo
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                El producto completo desliza (ventana, puerta o división corrediza). No afecta las medidas de corte.
+              </p>
             </div>
           </div>
 
@@ -228,7 +230,6 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
                   cantidad_fija_cm: undefined,
                   cantidad_piezas: 1,
                   orden: fields.length,
-                  es_corredizo: false,
                 })}
               >
                 <Plus className="mr-1 h-3 w-3" />
@@ -324,25 +325,17 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
                       )}
                     </div>
 
-                    {(esCorrediza || fields.length > 1) && (
-                      <div className="flex items-center justify-between">
-                        {esCorrediza ? (
-                          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                            <input type="checkbox" {...register(`cortes.${index}.es_corredizo`)} className="h-3 w-3" />
-                            Pieza corrediza (móvil)
-                          </label>
-                        ) : <span />}
-                        {fields.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-destructive hover:text-destructive"
-                            onClick={() => remove(index)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        )}
+                    {fields.length > 1 && (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-destructive hover:text-destructive"
+                          onClick={() => remove(index)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       </div>
                     )}
                   </div>

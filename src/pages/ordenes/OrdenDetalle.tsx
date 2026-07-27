@@ -187,13 +187,12 @@ export function OrdenDetalle() {
       const cortesHtml = cortes.length === 0 ? '' : `
         <h3>Medidas de corte</h3>
         <table>
-          <thead><tr><th>Pieza</th><th>Cantidad</th>${item.referencia?.es_corrediza ? '<th>Tipo</th>' : ''}<th class="right">Longitud (cm)</th></tr></thead>
+          <thead><tr><th>Pieza</th><th>Cantidad</th><th class="right">Longitud (cm)</th></tr></thead>
           <tbody>
             ${cortes.map((c) => `
               <tr>
                 <td>${c.nombre_pieza}</td>
                 <td>${c.cantidad_piezas} ${c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}${item.cantidad > 1 ? ` × ${item.cantidad} und = ${c.cantidad_piezas * item.cantidad}` : ''}</td>
-                ${item.referencia?.es_corrediza ? `<td><span class="badge ${c.es_corredizo ? 'corrediza' : 'fija'}">${c.es_corredizo ? 'Corrediza' : 'Fija'}</span></td>` : ''}
                 <td class="right"><strong>${c.valor_cm.toFixed(1)} cm</strong></td>
               </tr>
             `).join('')}
@@ -229,6 +228,7 @@ export function OrdenDetalle() {
                 ${item.ancho_cm && item.alto_cm ? `${item.ancho_cm} × ${item.alto_cm} cm` : 'Sin medidas'}
                 · Cantidad: ${item.cantidad}
                 ${color ? ` · Perfil: ${color}` : ''}
+                ${item.referencia?.es_corrediza ? ' · <strong>Corrediza</strong>' : ''}
               </p>
               ${item.notas ? `<p class="notas">${item.notas.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>` : ''}
             </div>
@@ -263,9 +263,6 @@ export function OrdenDetalle() {
     th{text-align:left;padding:4px;font-size:10px;text-transform:uppercase;color:#6b7280;border-bottom:2px solid #e5e7eb}
     td{padding:4px;border-bottom:1px solid #f3f4f6}
     .right{text-align:right}
-    .badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600}
-    .badge.corrediza{background:#dbeafe;color:#1e40af}
-    .badge.fija{background:#f3f4f6;color:#374151}
     .warn{color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;font-size:12px;margin-top:8px}
     @media print{body{padding:1cm}}
   </style>
@@ -362,6 +359,7 @@ export function OrdenDetalle() {
                           </span>
                         )}
                         {item.referencia && <Badge variant="outline" className="text-xs">{item.referencia.nombre}</Badge>}
+                        {item.referencia?.es_corrediza && <Badge className="text-xs">Corrediza</Badge>}
                       </div>
                       {item.notas && (
                         <p className="rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">{item.notas}</p>
@@ -386,14 +384,7 @@ export function OrdenDetalle() {
                             {cortes.map((c) => (
                               <div key={c.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                                 <div>
-                                  <div className="flex items-center gap-1.5">
-                                    <p className="font-medium">{c.nombre_pieza}</p>
-                                    {item.referencia?.es_corrediza && (
-                                      <Badge variant={c.es_corredizo ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
-                                        {c.es_corredizo ? 'Corrediza' : 'Fija'}
-                                      </Badge>
-                                    )}
-                                  </div>
+                                  <p className="font-medium">{c.nombre_pieza}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {c.cantidad_piezas} {c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}
                                     {item.cantidad > 1 && ` × ${item.cantidad} und = ${c.cantidad_piezas * item.cantidad}`}

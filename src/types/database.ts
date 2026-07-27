@@ -219,7 +219,6 @@ export interface ReferenciaCorte {
   cantidad_fija_cm: number | null
   cantidad_piezas: number
   orden: number
-  es_corredizo: boolean
   created_at: string
 }
 

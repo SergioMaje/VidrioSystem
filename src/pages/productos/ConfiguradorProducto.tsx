@@ -287,7 +287,6 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
             <tr>
               <th>Pieza</th>
               <th>Cantidad</th>
-              ${referenciaSeleccionada?.es_corrediza ? '<th>Tipo</th>' : ''}
               <th class="right">Longitud (cm)</th>
             </tr>
           </thead>
@@ -296,7 +295,6 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
               <tr>
                 <td>${c.nombre_pieza}</td>
                 <td>${c.cantidad_piezas} ${c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}</td>
-                ${referenciaSeleccionada?.es_corrediza ? `<td><span class="badge ${c.es_corredizo ? 'corrediza' : 'fija'}">${c.es_corredizo ? 'Corrediza' : 'Fija'}</span></td>` : ''}
                 <td class="right"><strong>${c.valor_cm.toFixed(1)} cm</strong></td>
               </tr>
             `).join('')}
@@ -350,8 +348,6 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
     .badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:11px;font-weight:600}
     .badge.ok{background:#dcfce7;color:#166534}
     .badge.no{background:#fee2e2;color:#991b1b}
-    .badge.corrediza{background:#dbeafe;color:#1e40af}
-    .badge.fija{background:#f3f4f6;color:#374151}
     .badge.opcion{background:#ede9fe;color:#5b21b6}
     .cost-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;margin-top:10px}
     .cost-row{display:flex;justify-content:space-between;padding:3px 0;font-size:13px}
@@ -371,6 +367,7 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
       <div class="kv"><span>Tipo</span><strong>${tipoLabel}</strong></div>
       <div class="kv"><span>Plantilla</span><strong>${plantillaNombre}</strong></div>
       ${referenciaNombre ? `<div class="kv"><span>Referencia</span><strong>${referenciaNombre}</strong></div>` : ''}
+      ${referenciaSeleccionada ? `<div class="kv"><span>Apertura</span><strong>${referenciaSeleccionada.es_corrediza ? 'Corrediza' : 'Fija'}</strong></div>` : ''}
       <div class="kv"><span>Color perfil</span><strong>${colorLabel}</strong></div>
       <div class="kv"><span>Ancho</span><strong>${anchoCm} cm</strong></div>
       <div class="kv"><span>Alto</span><strong>${altoCm} cm</strong></div>
@@ -714,6 +711,14 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
                 <span className="text-muted-foreground">Perímetro</span>
                 <span className="font-medium">{(2 * (anchoCm / 100 + altoCm / 100)).toFixed(2)} ml</span>
               </div>
+              {referenciaSeleccionada && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Apertura</span>
+                  <span className="font-medium">
+                    {referenciaSeleccionada.es_corrediza ? 'Corrediza' : 'Fija'}
+                  </span>
+                </div>
+              )}
             </div>
             <Button className="w-full" onClick={agregarACotizacion} disabled={!referenciaSeleccionada}>
               <ShoppingCart className="mr-2 h-4 w-4" />
@@ -786,14 +791,7 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
                 {cortesCalculados.map((c) => (
                   <div key={c.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                     <div className="flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <p className="font-medium">{c.nombre_pieza}</p>
-                        {referenciaSeleccionada?.es_corrediza && (
-                          <Badge variant={c.es_corredizo ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
-                            {c.es_corredizo ? 'Corrediza' : 'Fija'}
-                          </Badge>
-                        )}
-                      </div>
+                      <p className="font-medium">{c.nombre_pieza}</p>
                       <p className="text-xs text-muted-foreground">
                         {c.cantidad_piezas} {c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}
                       </p>

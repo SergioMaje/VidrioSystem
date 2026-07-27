@@ -186,6 +186,9 @@ export function ProductosPage() {
                             <Badge variant="outline" className="text-xs">
                               {ref.plantilla?.nombre}
                             </Badge>
+                            {ref.es_corrediza && (
+                              <Badge className="text-xs">Corrediza</Badge>
+                            )}
                           </div>
                           {ref.descripcion && (
                             <p className="text-xs text-muted-foreground">{ref.descripcion}</p>
