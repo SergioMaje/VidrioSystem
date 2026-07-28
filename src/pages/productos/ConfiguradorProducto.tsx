@@ -30,7 +30,14 @@ import {
   ROL_LABELS,
   type OpcionDisponible,
 } from '@/lib/opciones'
-import type { OpcionCotizacion } from '@/types/database'
+import {
+  LADO_CORREDIZO_LABELS,
+  LADO_MEDICION_LABELS,
+  etiquetaLadoCorredizo,
+  ladoCorredizoExterior,
+  textoLadoCorredizo,
+} from '@/lib/lados'
+import type { LadoCorredizo, LadoMedicion, OpcionCotizacion } from '@/types/database'
 import type { ItemCotizacion } from './PanelCotizacion'
 
 const MARGEN_VENTA = 1.35
@@ -73,6 +80,11 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
   const [referenciaId, setReferenciaId] = useState<string>('')
   const [especificaciones, setEspecificaciones] = useState('')
 
+  // Se guardan crudos, tal como los dicta quien mide. La normalización al marco
+  // canónico (exterior) ocurre solo al dibujar, en ladoCorredizoExterior().
+  const [ladoMedicion, setLadoMedicion] = useState<LadoMedicion>('exterior')
+  const [ladoCorredizo, setLadoCorredizo] = useState<LadoCorredizo>('derecha')
+
   const [vidrioSel, setVidrioSel] = useState<SeleccionVidrio>(VIDRIO_VACIO)
   const [chapaItemId, setChapaItemId] = useState(NINGUNO)
   const [peliculaItemId, setPeliculaItemId] = useState(NINGUNO)
@@ -91,6 +103,9 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
   // Todo se deriva de la referencia: tipo, plantilla, materiales y cortes
   const tipoActivo = referenciaSeleccionada?.tipo_producto?.nombre ?? 'ventana'
   const plantillaSeleccionada = plantillas?.find((p) => p.id === referenciaSeleccionada?.plantilla_id) ?? null
+
+  const esCorrediza = referenciaSeleccionada?.es_corrediza ?? false
+  const ladoVista = ladoCorredizoExterior(ladoCorredizo, ladoMedicion)
 
   const referenciasPorTipo = useMemo(() => {
     const grupos = new Map<string, NonNullable<typeof referencias>>()
@@ -205,7 +220,13 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
     if (!referenciaSeleccionada) return
     const tipoLabel = TIPO_LABELS[tipoActivo] ?? tipoActivo
     const colorLabel = COLORES_PERFIL.find((c) => c.value === colorPerfil)?.label ?? colorPerfil
-    const detalles = [colorLabel, ...resumenOpciones(opciones)].join(', ')
+    const detalles = [
+      colorLabel,
+      ...resumenOpciones(opciones),
+      esCorrediza ? etiquetaLadoCorredizo(ladoCorredizo, ladoMedicion) : null,
+    ]
+      .filter(Boolean)
+      .join(', ')
     const descripcion = `${referenciaSeleccionada.nombre} (${tipoLabel}) ${anchoCm}×${altoCm}cm — ${detalles}`
     const precioRedondeado = Math.round(precioSugerido)
 
@@ -220,9 +241,13 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
       precio_unitario: precioRedondeado,
       precio_total: precioRedondeado,
       color_perfil: colorPerfil,
+      lado_medicion: esCorrediza ? ladoMedicion : null,
+      lado_corredizo: esCorrediza ? ladoCorredizo : null,
       opciones,
       notas: especificaciones.trim() || null,
     })
+    // Los lados no se resetean: el lado de medición es constante para una obra
+    // entera, y mantenerlo pegajoso entre ítems evita errores de reingreso.
     setEspecificaciones('')
   }
 
@@ -367,7 +392,10 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
       <div class="kv"><span>Tipo</span><strong>${tipoLabel}</strong></div>
       <div class="kv"><span>Plantilla</span><strong>${plantillaNombre}</strong></div>
       ${referenciaNombre ? `<div class="kv"><span>Referencia</span><strong>${referenciaNombre}</strong></div>` : ''}
-      ${referenciaSeleccionada ? `<div class="kv"><span>Apertura</span><strong>${referenciaSeleccionada.es_corrediza ? 'Corrediza' : 'Fija'}</strong></div>` : ''}
+      ${referenciaSeleccionada ? `<div class="kv"><span>Apertura</span><strong>${esCorrediza ? 'Corrediza' : 'Fija'}</strong></div>` : ''}
+      ${esCorrediza ? `
+      <div class="kv"><span>Medida tomada desde</span><strong>${LADO_MEDICION_LABELS[ladoMedicion]}</strong></div>
+      <div class="kv"><span>Hoja que corre</span><strong>${textoLadoCorredizo(ladoCorredizo, ladoMedicion)}</strong></div>` : ''}
       <div class="kv"><span>Color perfil</span><strong>${colorLabel}</strong></div>
       <div class="kv"><span>Ancho</span><strong>${anchoCm} cm</strong></div>
       <div class="kv"><span>Alto</span><strong>${altoCm} cm</strong></div>
@@ -491,6 +519,56 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
                 </SelectContent>
               </Select>
             </div>
+
+            {esCorrediza && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Medida tomada desde</Label>
+                    <Select
+                      value={ladoMedicion}
+                      onValueChange={(v) => setLadoMedicion(v as LadoMedicion)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(LADO_MEDICION_LABELS) as LadoMedicion[]).map((clave) => (
+                          <SelectItem key={clave} value={clave}>
+                            {LADO_MEDICION_LABELS[clave]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Hoja que corre</Label>
+                    <Select
+                      value={ladoCorredizo}
+                      onValueChange={(v) => setLadoCorredizo(v as LadoCorredizo)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(LADO_CORREDIZO_LABELS) as LadoCorredizo[]).map((clave) => (
+                          <SelectItem key={clave} value={clave}>
+                            {LADO_CORREDIZO_LABELS[clave]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Responde "hoja que corre" tal como se ve{' '}
+                  <strong>desde {ladoMedicion === 'interior' ? 'el interior' : 'el exterior'}</strong>.
+                  El dibujo siempre se muestra desde el exterior:{' '}
+                  <strong>{textoLadoCorredizo(ladoCorredizo, ladoMedicion)}</strong>.
+                </p>
+              </div>
+            )}
 
             <Separator />
 
@@ -695,7 +773,8 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
               anchoCm={anchoCm}
               altoCm={altoCm}
               colorPerfil={colorPerfil}
-              esCorrediza={referenciaSeleccionada?.es_corrediza ?? false}
+              esCorrediza={esCorrediza}
+              ladoCorredizoVista={ladoVista ?? 'derecha'}
             />
             <Separator />
             <div className="w-full space-y-1 text-sm">
@@ -714,10 +793,22 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
               {referenciaSeleccionada && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Apertura</span>
-                  <span className="font-medium">
-                    {referenciaSeleccionada.es_corrediza ? 'Corrediza' : 'Fija'}
-                  </span>
+                  <span className="font-medium">{esCorrediza ? 'Corrediza' : 'Fija'}</span>
                 </div>
+              )}
+              {/* Se muestra el dato crudo y el normalizado juntos para que el admin
+                  pueda verificar la conversión en vez de confiar en ella. */}
+              {esCorrediza && ladoVista && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Medida tomada desde</span>
+                    <span className="font-medium">{LADO_MEDICION_LABELS[ladoMedicion]}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Hoja que corre</span>
+                    <span className="font-medium">{LADO_CORREDIZO_LABELS[ladoVista]} (ext.)</span>
+                  </div>
+                </>
               )}
             </div>
             <Button className="w-full" onClick={agregarACotizacion} disabled={!referenciaSeleccionada}>

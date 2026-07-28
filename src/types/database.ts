@@ -167,6 +167,12 @@ export interface OpcionCotizacion {
   vidrio_acabado: string | null
 }
 
+/** Desde qué lado de la construcción se tomó la medida. */
+export type LadoMedicion = 'interior' | 'exterior'
+
+/** Qué hoja corre, expresada desde el lado en que se midió. */
+export type LadoCorredizo = 'izquierda' | 'derecha'
+
 export interface CotizacionItem {
   id: string
   cotizacion_id: string
@@ -180,6 +186,8 @@ export interface CotizacionItem {
   precio_unitario: number
   precio_total: number
   color_perfil: string | null
+  lado_medicion: LadoMedicion | null
+  lado_corredizo: LadoCorredizo | null
   opciones: OpcionCotizacion[]
   notas: string | null
   plantilla?: PlantillaProducto

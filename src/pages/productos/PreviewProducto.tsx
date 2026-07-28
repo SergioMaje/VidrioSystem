@@ -1,16 +1,30 @@
+import type { LadoCorredizo } from '@/types/database'
+
 interface PreviewProductoProps {
   tipo: 'ventana' | 'puerta' | 'division' | 'espejo' | 'otro'
   anchoCm: number
   altoCm: number
   colorPerfil?: string
   esCorrediza?: boolean
+  /**
+   * Lado que corre YA NORMALIZADO al marco canónico exterior.
+   * El componente nunca invierte lados: eso lo hace ladoCorredizoExterior() en lib/lados.ts.
+   */
+  ladoCorredizoVista?: LadoCorredizo
 }
 
 const CANVAS_W = 280
 const CANVAS_H = 220
 const MARCO_W = 12
 
-export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF', esCorrediza = false }: PreviewProductoProps) {
+export function PreviewProducto({
+  tipo,
+  anchoCm,
+  altoCm,
+  colorPerfil = '#9CA3AF',
+  esCorrediza = false,
+  ladoCorredizoVista = 'derecha',
+}: PreviewProductoProps) {
   const maxDim = Math.max(anchoCm, altoCm, 1)
   const pad = 20
 
@@ -54,6 +68,8 @@ export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF'
         const leftCx = x + MARCO_W + panelW / 2
         const rightCx = x + MARCO_W + panelW + MARCO_W + panelW / 2
         const cy = y + h / 2
+        const corredizoCx = ladoCorredizoVista === 'izquierda' ? leftCx : rightCx
+        const fijoCx = ladoCorredizoVista === 'izquierda' ? rightCx : leftCx
         return (
           <g>
             <rect x={x} y={y} width={w} height={h} fill={frameColor} rx={2} />
@@ -63,12 +79,12 @@ export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF'
             <rect x={x + MARCO_W} y={y + h - 8} width={w - MARCO_W * 2} height={4} fill="rgba(0,0,0,0.1)" />
             {esCorrediza && (
               <>
-                <circle cx={leftCx} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#374151" strokeWidth={1.5} />
-                <text x={leftCx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#374151">F</text>
-                <circle cx={rightCx} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#1d4ed8" strokeWidth={1.5} />
-                <text x={rightCx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#1d4ed8">C</text>
+                <circle cx={fijoCx} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#374151" strokeWidth={1.5} />
+                <text x={fijoCx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#374151">F</text>
+                <circle cx={corredizoCx} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#1d4ed8" strokeWidth={1.5} />
+                <text x={corredizoCx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#1d4ed8">C</text>
                 <line
-                  x1={rightCx - panelW * 0.28} y1={cy + 22} x2={rightCx + panelW * 0.28} y2={cy + 22}
+                  x1={corredizoCx - panelW * 0.28} y1={cy + 22} x2={corredizoCx + panelW * 0.28} y2={cy + 22}
                   stroke="#1d4ed8" strokeWidth={2}
                   markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)"
                 />
@@ -81,19 +97,24 @@ export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF'
       {tipo === 'puerta' && (() => {
         const cx = x + w / 2
         const cy = y + MARCO_W + (h - MARCO_W * 2) * 0.32
+        // La manija acompaña a la hoja que corre: es el elemento asimétrico del dibujo.
+        const aDerecha = ladoCorredizoVista !== 'izquierda'
+        const manijaX = aDerecha ? x + w - MARCO_W - 16 : x + MARCO_W + 11
+        const flechaX1 = aDerecha ? x + w * 0.25 : x + w * 0.75
+        const flechaX2 = aDerecha ? x + w * 0.6 : x + w * 0.4
         return (
           <g>
             <rect x={x} y={y} width={w} height={h} fill={frameColor} rx={2} />
             <rect x={x + MARCO_W} y={y + MARCO_W} width={w - MARCO_W * 2} height={(h - MARCO_W * 2) * 0.65} fill="url(#glass)" />
             <rect x={x + MARCO_W} y={y + MARCO_W + (h - MARCO_W * 2) * 0.65 + MARCO_W / 2} width={w - MARCO_W * 2} height={(h - MARCO_W * 2) * 0.3} fill={frameColor} opacity={0.7} />
-            <rect x={x + w - MARCO_W - 16} y={y + h / 2 - 18} width={5} height={36} rx={2} fill="rgba(100,100,100,0.7)" />
-            <circle cx={x + w - MARCO_W - 13.5} cy={y + h / 2 - 18} r={4} fill="rgba(80,80,80,0.8)" />
+            <rect x={manijaX} y={y + h / 2 - 18} width={5} height={36} rx={2} fill="rgba(100,100,100,0.7)" />
+            <circle cx={manijaX + 2.5} cy={y + h / 2 - 18} r={4} fill="rgba(80,80,80,0.8)" />
             {esCorrediza && (
               <>
                 <circle cx={cx} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#1d4ed8" strokeWidth={1.5} />
                 <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#1d4ed8">C</text>
                 <line
-                  x1={x + w * 0.25} y1={cy + 22} x2={x + w * 0.6} y2={cy + 22}
+                  x1={flechaX1} y1={cy + 22} x2={flechaX2} y2={cy + 22}
                   stroke="#1d4ed8" strokeWidth={2}
                   markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)"
                 />
@@ -107,6 +128,8 @@ export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF'
         const panelW = (w - MARCO_W * 4) / 3
         const panelCx = (i: number) => x + MARCO_W + i * (panelW + MARCO_W) + panelW / 2
         const cy = y + h / 2
+        const iCorredizo = ladoCorredizoVista === 'izquierda' ? 0 : 2
+        const iFijo = ladoCorredizoVista === 'izquierda' ? 2 : 0
         return (
           <g>
             <rect x={x} y={y} width={w} height={h} fill={frameColor} rx={2} />
@@ -122,12 +145,12 @@ export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF'
             ))}
             {esCorrediza && (
               <>
-                <circle cx={panelCx(0)} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#374151" strokeWidth={1.5} />
-                <text x={panelCx(0)} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#374151">F</text>
-                <circle cx={panelCx(2)} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#1d4ed8" strokeWidth={1.5} />
-                <text x={panelCx(2)} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#1d4ed8">C</text>
+                <circle cx={panelCx(iFijo)} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#374151" strokeWidth={1.5} />
+                <text x={panelCx(iFijo)} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#374151">F</text>
+                <circle cx={panelCx(iCorredizo)} cy={cy} r={11} fill="rgba(255,255,255,0.85)" stroke="#1d4ed8" strokeWidth={1.5} />
+                <text x={panelCx(iCorredizo)} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#1d4ed8">C</text>
                 <line
-                  x1={panelCx(2) - panelW * 0.35} y1={cy + 22} x2={panelCx(2) + panelW * 0.35} y2={cy + 22}
+                  x1={panelCx(iCorredizo) - panelW * 0.35} y1={cy + 22} x2={panelCx(iCorredizo) + panelW * 0.35} y2={cy + 22}
                   stroke="#1d4ed8" strokeWidth={2}
                   markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)"
                 />
@@ -155,6 +178,12 @@ export function PreviewProducto({ tipo, anchoCm, altoCm, colorPerfil = '#9CA3AF'
 
       <text x={CANVAS_W / 2} y={y - 6} textAnchor="middle" fontSize={10} fill="#6B7280">{anchoCm} cm</text>
       <text x={x - 6} y={CANVAS_H / 2} textAnchor="middle" fontSize={10} fill="#6B7280" transform={`rotate(-90, ${x - 6}, ${CANVAS_H / 2})`}>{altoCm} cm</text>
+
+      {/* Marco canónico del dibujo. Va dentro del <svg> porque la ficha impresa
+          serializa solo el <svg>: fuera de él desaparecería de todo lo impreso. */}
+      <text x={CANVAS_W / 2} y={CANVAS_H - 6} textAnchor="middle" fontSize={9} fontWeight={600} fill="#1d4ed8">
+        Vista desde el exterior
+      </text>
     </svg>
   )
 }

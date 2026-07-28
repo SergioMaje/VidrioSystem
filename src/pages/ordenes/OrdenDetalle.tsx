@@ -13,6 +13,7 @@ import { formatFecha } from '@/lib/utils'
 import { calcularCortes, calcularMateriales, nombreColorPerfil } from '@/lib/produccion'
 import { calcularOpciones, esComponenteDeVidrio, lineasDeOpciones, type LineaMaterial } from '@/lib/opciones'
 import { ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
+import { textoLadoCorredizo } from '@/lib/lados'
 import type { OrdenTrabajo, CotizacionItem } from '@/types/database'
 
 const SELECT_ITEMS_PRODUCCION = `
@@ -183,6 +184,9 @@ export function OrdenDetalle() {
     const itemsHtml = itemsCotizacion.map((item, idx) => {
       const { cortes, materiales } = detalleProduccion(item)
       const color = nombreColorPerfil(item.color_perfil)
+      const ladoTexto = item.referencia?.es_corrediza
+        ? textoLadoCorredizo(item.lado_corredizo, item.lado_medicion)
+        : null
 
       const cortesHtml = cortes.length === 0 ? '' : `
         <h3>Medidas de corte</h3>
@@ -228,8 +232,9 @@ export function OrdenDetalle() {
                 ${item.ancho_cm && item.alto_cm ? `${item.ancho_cm} × ${item.alto_cm} cm` : 'Sin medidas'}
                 · Cantidad: ${item.cantidad}
                 ${color ? ` · Perfil: ${color}` : ''}
-                ${item.referencia?.es_corrediza ? ' · <strong>Corrediza</strong>' : ''}
+                ${item.referencia?.es_corrediza && !ladoTexto ? ' · <strong>Corrediza (lado sin registrar)</strong>' : ''}
               </p>
+              ${ladoTexto ? `<p><span class="lado">${ladoTexto}</span></p>` : ''}
               ${item.notas ? `<p class="notas">${item.notas.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>` : ''}
             </div>
           </div>
@@ -257,6 +262,7 @@ export function OrdenDetalle() {
     .num{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#111;color:#fff;font-weight:700;font-size:13px;flex-shrink:0}
     .desc{font-weight:700;font-size:14px}
     .meta{color:#555;font-size:12px;margin-top:2px}
+    .lado{display:inline-block;margin-top:5px;padding:3px 9px;border:1.5px solid #1d4ed8;border-radius:4px;color:#1d4ed8;font-size:12px;font-weight:700}
     .notas{color:#374151;font-size:12px;margin-top:4px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:6px 8px}
     h3{font-size:10px;text-transform:uppercase;color:#888;letter-spacing:.05em;margin:10px 0 6px}
     table{width:100%;border-collapse:collapse}
@@ -338,6 +344,11 @@ export function OrdenDetalle() {
           {itemsCotizacion.map((item, idx) => {
             const { cortes, materiales } = detalleProduccion(item)
             const color = nombreColorPerfil(item.color_perfil)
+            // El marco de referencia viaja siempre con el lado: un "Derecha" suelto
+            // reintroduciría la ambigüedad que este dato existe para eliminar.
+            const ladoTexto = item.referencia?.es_corrediza
+              ? textoLadoCorredizo(item.lado_corredizo, item.lado_medicion)
+              : null
             return (
               <Card key={item.id}>
                 <CardHeader className="pb-3">
@@ -359,7 +370,15 @@ export function OrdenDetalle() {
                           </span>
                         )}
                         {item.referencia && <Badge variant="outline" className="text-xs">{item.referencia.nombre}</Badge>}
-                        {item.referencia?.es_corrediza && <Badge className="text-xs">Corrediza</Badge>}
+                        {item.referencia?.es_corrediza && (
+                          ladoTexto
+                            ? <Badge className="text-xs">{ladoTexto}</Badge>
+                            : (
+                              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-xs text-amber-800">
+                                Corrediza — lado sin registrar
+                              </Badge>
+                            )
+                        )}
                       </div>
                       {item.notas && (
                         <p className="rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">{item.notas}</p>
