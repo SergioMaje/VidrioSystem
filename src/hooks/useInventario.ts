@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { ItemInventario, MovimientoInventario, Proveedor } from '@/types/database'
+import type { ItemInventario, MovimientoInventario, Proveedor, ProveedorCuentaPago } from '@/types/database'
 
 export function useItems() {
   return useQuery({
@@ -94,6 +94,39 @@ export function useProveedores() {
   })
 }
 
+export function useProveedor(id: string) {
+  return useQuery({
+    queryKey: ['proveedor', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('proveedores')
+        .select('*')
+        .eq('id', id)
+        .single()
+      if (error) throw error
+      return data as Proveedor
+    },
+    enabled: !!id,
+  })
+}
+
+export function useItemsPorProveedor(proveedorId: string) {
+  return useQuery({
+    queryKey: ['items', 'proveedor', proveedorId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('items_inventario')
+        .select('*')
+        .eq('proveedor_id', proveedorId)
+        .eq('activo', true)
+        .order('nombre')
+      if (error) throw error
+      return data as ItemInventario[]
+    },
+    enabled: !!proveedorId,
+  })
+}
+
 type ProveedorInput = Omit<Proveedor, 'id' | 'created_at' | 'updated_at'>
 
 export function useCrearProveedor() {
@@ -129,12 +162,77 @@ export function useEliminarProveedor() {
   })
 }
 
+export function useCuentasPago(proveedorId: string) {
+  return useQuery({
+    queryKey: ['cuentas_pago', proveedorId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('proveedor_cuentas_pago')
+        .select('*')
+        .eq('proveedor_id', proveedorId)
+        .order('created_at')
+      if (error) throw error
+      return data as ProveedorCuentaPago[]
+    },
+    enabled: !!proveedorId,
+  })
+}
+
+type CuentaPagoInput = Omit<ProveedorCuentaPago, 'id' | 'created_at' | 'updated_at'>
+
+export function useCrearCuentaPago() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CuentaPagoInput) => {
+      const { error } = await supabase.from('proveedor_cuentas_pago').insert(data)
+      if (error) throw error
+    },
+    onSuccess: (_data, variables) => qc.invalidateQueries({ queryKey: ['cuentas_pago', variables.proveedor_id] }),
+  })
+}
+
+export function useEditarCuentaPago() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CuentaPagoInput> }) => {
+      const { error } = await supabase.from('proveedor_cuentas_pago').update(data).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_data, variables) => {
+      if (variables.data.proveedor_id) qc.invalidateQueries({ queryKey: ['cuentas_pago', variables.data.proveedor_id] })
+      else qc.invalidateQueries({ queryKey: ['cuentas_pago'] })
+    },
+  })
+}
+
+export function useEliminarCuentaPago() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; proveedorId: string }) => {
+      const { error } = await supabase.from('proveedor_cuentas_pago').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_data, variables) => qc.invalidateQueries({ queryKey: ['cuentas_pago', variables.proveedorId] }),
+  })
+}
+
 type ItemInput = Omit<ItemInventario, 'id' | 'created_at' | 'updated_at' | 'categoria' | 'unidad_medida' | 'proveedor'>
 
 export function useCrearItem() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: ItemInput) => {
+      const { error } = await supabase.from('items_inventario').insert(data)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['items'] }),
+  })
+}
+
+export function useCrearItemsMasivo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: ItemInput[]) => {
       const { error } = await supabase.from('items_inventario').insert(data)
       if (error) throw error
     },
