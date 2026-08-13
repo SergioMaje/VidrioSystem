@@ -40,7 +40,8 @@ export function CotizacionFormPage() {
       setDescuentoPct(cotizacionExistente.descuento_pct)
       setIvaPct(cotizacionExistente.iva_pct)
       setItems(
-        cotizacionExistente.items.map(({ id: _, cotizacion_id: __, ...rest }) => rest)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        cotizacionExistente.items.map(({ id, cotizacion_id, ...rest }) => rest)
       )
     }
   }, [modoEdicion, cotizacionExistente])
