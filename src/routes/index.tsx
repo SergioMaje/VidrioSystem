@@ -39,6 +39,7 @@ export function AppRoutes() {
           <Route path="/productos" element={<ProductosPage />} />
           <Route path="/cotizaciones" element={<CotizacionesPage />} />
           <Route path="/cotizaciones/nueva" element={<CotizacionFormPage />} />
+          <Route path="/cotizaciones/:id/editar" element={<CotizacionFormPage />} />
           <Route path="/cotizaciones/:id" element={<CotizacionDetalle />} />
           <Route path="/proveedores" element={<ProveedoresPage />} />
           <Route path="/clientes" element={<ClientesPage />} />

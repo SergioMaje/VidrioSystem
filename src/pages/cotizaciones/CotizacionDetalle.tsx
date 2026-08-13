@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Loader2, Printer, AlertCircle } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Loader2, Printer, AlertCircle, Pencil } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -259,6 +259,13 @@ export function CotizacionDetalle() {
 
       {(cotizacion.estado === 'borrador' || cotizacion.estado === 'enviada') && (
         <div className="flex gap-3">
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/cotizaciones/${id}/editar`)}
+          >
+            <Pencil className="mr-2 h-4 w-4" />
+            Editar
+          </Button>
           <Button
             className="flex-1"
             onClick={() => setVenderOpen(true)}

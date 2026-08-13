@@ -1,4 +1,4 @@
-import { Loader2, Trash2, ShoppingCart, FileText } from 'lucide-react'
+import { Loader2, Trash2, Pencil, ShoppingCart, FileText } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,7 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { useClientes } from '@/hooks/useClientes'
 import { resumenOpciones } from '@/lib/opciones'
-import { formatCOP } from '@/lib/utils'
+import { formatCOP, cn } from '@/lib/utils'
+import { nombreColorPerfil } from '@/lib/produccion'
+import { LADO_MEDICION_LABELS, textoLadoCorredizo } from '@/lib/lados'
 import type { CotizacionItem } from '@/types/database'
 
 export type ItemCotizacion = Omit<CotizacionItem, 'id' | 'cotizacion_id'>
@@ -28,6 +30,9 @@ interface PanelCotizacionProps {
   onIvaChange: (v: number) => void
   onGuardar: (estado: 'borrador' | 'enviada') => void
   isPending: boolean
+  modoEdicion?: boolean
+  editandoIdx?: number | null
+  onEditarItem?: (idx: number) => void
 }
 
 export function PanelCotizacion({
@@ -46,6 +51,9 @@ export function PanelCotizacion({
   onIvaChange,
   onGuardar,
   isPending,
+  modoEdicion = false,
+  editandoIdx = null,
+  onEditarItem,
 }: PanelCotizacionProps) {
   const { data: clientes } = useClientes()
 
@@ -111,17 +119,69 @@ export function PanelCotizacion({
           ) : (
             <div className="space-y-3">
               {items.map((item, idx) => (
-                <div key={idx} className="rounded-md border p-3 space-y-2">
+                <div
+                  key={idx}
+                  className={cn(
+                    'rounded-md border p-3 space-y-2',
+                    editandoIdx === idx && 'border-primary ring-1 ring-primary'
+                  )}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm font-medium leading-snug">{item.descripcion}</p>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => onRemoveItem(idx)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex shrink-0 gap-0.5">
+                      {item.referencia_id && onEditarItem && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-primary"
+                          onClick={() => onEditarItem(idx)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                        onClick={() => onRemoveItem(idx)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-0.5 text-xs text-muted-foreground">
+                    {(item.ancho_cm || item.alto_cm) && (
+                      <div className="flex justify-between">
+                        <span>Medidas</span>
+                        <span className="font-mono text-foreground">
+                          {item.ancho_cm ?? '—'} × {item.alto_cm ?? '—'} cm
+                          {item.area_m2 != null && ` (${item.area_m2.toFixed(2)} m²)`}
+                        </span>
+                      </div>
+                    )}
+                    {item.color_perfil && (
+                      <div className="flex items-center justify-between">
+                        <span>Color</span>
+                        <span className="flex items-center gap-1.5 text-foreground">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full border"
+                            style={{ backgroundColor: item.color_perfil }}
+                          />
+                          {nombreColorPerfil(item.color_perfil) ?? item.color_perfil}
+                        </span>
+                      </div>
+                    )}
+                    {item.lado_corredizo && (
+                      <div className="flex justify-between">
+                        <span>Medido desde</span>
+                        <span className="text-foreground">{LADO_MEDICION_LABELS[item.lado_medicion ?? 'exterior']}</span>
+                      </div>
+                    )}
+                    {item.lado_corredizo && (
+                      <p className="text-foreground">
+                        {textoLadoCorredizo(item.lado_corredizo, item.lado_medicion)}
+                      </p>
+                    )}
                   </div>
                   {item.opciones?.length > 0 && (
                     <div className="flex flex-wrap gap-1">
@@ -216,22 +276,35 @@ export function PanelCotizacion({
           </div>
 
           <div className="flex gap-2 pt-1">
-            <Button
-              variant="outline"
-              className="flex-1 text-sm"
-              disabled={!puedeGuardar || isPending}
-              onClick={() => onGuardar('borrador')}
-            >
-              {isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-              Borrador
-            </Button>
-            <Button
-              className="flex-1 text-sm"
-              disabled={!puedeGuardar || isPending}
-              onClick={() => onGuardar('enviada')}
-            >
-              Enviar
-            </Button>
+            {modoEdicion ? (
+              <Button
+                className="flex-1 text-sm"
+                disabled={!puedeGuardar || isPending}
+                onClick={() => onGuardar('enviada')}
+              >
+                {isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                Guardar cambios
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  className="flex-1 text-sm"
+                  disabled={!puedeGuardar || isPending}
+                  onClick={() => onGuardar('borrador')}
+                >
+                  {isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                  Borrador
+                </Button>
+                <Button
+                  className="flex-1 text-sm"
+                  disabled={!puedeGuardar || isPending}
+                  onClick={() => onGuardar('enviada')}
+                >
+                  Enviar
+                </Button>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

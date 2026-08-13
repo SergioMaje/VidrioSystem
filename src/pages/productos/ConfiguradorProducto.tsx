@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
-import { Calculator, ShoppingCart, Printer, Scissors, AlertCircle, ImagePlus, X } from 'lucide-react'
+import { Calculator, ShoppingCart, Printer, Scissors, AlertCircle, ImagePlus, X, Check, Pencil } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -69,11 +69,24 @@ function clavesUnicas(opciones: OpcionDisponible[], clave: (o: OpcionDisponible)
   return [...new Set(opciones.map(clave))]
 }
 
-interface ConfiguradorProductoProps {
-  onAgregarItem: (item: ItemCotizacion) => void
+export interface EdicionItem {
+  idx: number
+  item: ItemCotizacion
 }
 
-export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProps) {
+interface ConfiguradorProductoProps {
+  onAgregarItem: (item: ItemCotizacion) => void
+  edicion?: EdicionItem | null
+  onActualizarItem?: (idx: number, item: ItemCotizacion) => void
+  onCancelarEdicion?: () => void
+}
+
+export function ConfiguradorProducto({
+  onAgregarItem,
+  edicion,
+  onActualizarItem,
+  onCancelarEdicion,
+}: ConfiguradorProductoProps) {
   const [anchoCm, setAnchoCm] = useState(120)
   const [altoCm, setAltoCm] = useState(150)
   const [colorPerfil, setColorPerfil] = useState('#9CA3AF')
@@ -136,10 +149,19 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
     [plantillaSeleccionada]
   )
 
+  /** Vidrio a restaurar al precargar un ítem; se consume una sola vez, cuando el
+   *  catálogo ya tiene con qué resolverlo. null = sin precarga pendiente. */
+  const vidrioPendienteRef = useRef<{ itemId: string | null } | null>(null)
+
   useEffect(() => {
-    const preseleccion = componenteVidrio
-      ? catalogo.vidrios.find((o) => o.item.id === componenteVidrio.item_id)
+    const pendiente = vidrioPendienteRef.current
+    const objetivoId = pendiente ? pendiente.itemId : componenteVidrio?.item_id ?? null
+    const preseleccion = objetivoId
+      ? catalogo.vidrios.find((o) => o.item.id === objetivoId)
       : undefined
+    // El catálogo llega async: si hay precarga pendiente sin resolver, esperar.
+    if (pendiente && objetivoId && !preseleccion) return
+    vidrioPendienteRef.current = null
     setVidrioSel(
       preseleccion
         ? {
@@ -150,6 +172,24 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
         : VIDRIO_VACIO
     )
   }, [componenteVidrio, catalogo])
+
+  useEffect(() => {
+    if (!edicion) return
+    const it = edicion.item
+    setReferenciaId(it.referencia_id ?? '')
+    setAnchoCm(it.ancho_cm ?? 120)
+    setAltoCm(it.alto_cm ?? 150)
+    setColorPerfil(it.color_perfil ?? '#9CA3AF')
+    if (it.lado_medicion) setLadoMedicion(it.lado_medicion)
+    if (it.lado_corredizo) setLadoCorredizo(it.lado_corredizo)
+    setEspecificaciones(it.notas ?? '')
+    setChapaItemId(it.opciones?.find((o) => o.rol === 'chapa')?.item_id ?? NINGUNO)
+    setPeliculaItemId(it.opciones?.find((o) => o.rol === 'pelicula')?.item_id ?? NINGUNO)
+    vidrioPendienteRef.current = {
+      itemId: it.opciones?.find((o) => o.rol === 'vidrio')?.item_id ?? null,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edicion])
 
   const vidriosPorTipo = catalogo.vidrios.filter((o) => claveTipo(o) === vidrioSel.tipo)
   const vidriosPorCalibre = vidriosPorTipo.filter((o) => claveCalibre(o) === vidrioSel.calibre)
@@ -216,8 +256,8 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
     opcionesCalculadas.reduce((s, o) => s + o.costo_total, 0)
   const precioSugerido = costoTotal * MARGEN_VENTA
 
-  const agregarACotizacion = () => {
-    if (!referenciaSeleccionada) return
+  const construirItem = (): ItemCotizacion | null => {
+    if (!referenciaSeleccionada) return null
     const tipoLabel = TIPO_LABELS[tipoActivo] ?? tipoActivo
     const colorLabel = COLORES_PERFIL.find((c) => c.value === colorPerfil)?.label ?? colorPerfil
     const detalles = [
@@ -230,7 +270,7 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
     const descripcion = `${referenciaSeleccionada.nombre} (${tipoLabel}) ${anchoCm}×${altoCm}cm — ${detalles}`
     const precioRedondeado = Math.round(precioSugerido)
 
-    onAgregarItem({
+    return {
       plantilla_id: referenciaSeleccionada.plantilla_id,
       referencia_id: referenciaSeleccionada.id,
       descripcion,
@@ -245,7 +285,17 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
       lado_corredizo: esCorrediza ? ladoCorredizo : null,
       opciones,
       notas: especificaciones.trim() || null,
-    })
+    }
+  }
+
+  const guardarItem = () => {
+    const item = construirItem()
+    if (!item) return
+    if (edicion && onActualizarItem) {
+      onActualizarItem(edicion.idx, item)
+    } else {
+      onAgregarItem(item)
+    }
     // Los lados no se resetean: el lado de medición es constante para una obra
     // entera, y mantenerlo pegajoso entre ítems evita errores de reingreso.
     setEspecificaciones('')
@@ -298,29 +348,6 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
                 <td>${m.cantidad.toFixed(2)}</td>
                 <td>${m.simbolo}</td>
                 <td><span class="badge ${m.stock_ok ? 'ok' : 'no'}">${m.stock_ok ? 'Disponible' : 'Sin stock'}</span></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>`
-
-    const cortesHtml = cortesCalculados.length === 0 ? '' : `
-      <div class="section">
-        <h2>Medidas de corte</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Pieza</th>
-              <th>Cantidad</th>
-              <th class="right">Longitud (cm)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${cortesCalculados.map((c) => `
-              <tr>
-                <td>${c.nombre_pieza}</td>
-                <td>${c.cantidad_piezas} ${c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}</td>
-                <td class="right"><strong>${c.valor_cm.toFixed(1)} cm</strong></td>
               </tr>
             `).join('')}
           </tbody>
@@ -413,7 +440,6 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
 
   ${imagenHtml}
   ${materialesHtml}
-  ${cortesHtml}
   ${specsHtml}
 </body>
 </html>`
@@ -429,6 +455,14 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="space-y-4">
+        {edicion && (
+          <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm text-primary">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Pencil className="h-3.5 w-3.5" />
+              Editando ítem {edicion.idx + 1}
+            </span>
+          </div>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Producto</CardTitle>
@@ -775,6 +809,7 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
               colorPerfil={colorPerfil}
               esCorrediza={esCorrediza}
               ladoCorredizoVista={ladoVista ?? 'derecha'}
+              cortes={cortesCalculados}
             />
             <Separator />
             <div className="w-full space-y-1 text-sm">
@@ -811,10 +846,22 @@ export function ConfiguradorProducto({ onAgregarItem }: ConfiguradorProductoProp
                 </>
               )}
             </div>
-            <Button className="w-full" onClick={agregarACotizacion} disabled={!referenciaSeleccionada}>
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              Agregar a cotización
-            </Button>
+            {edicion ? (
+              <div className="flex w-full gap-2">
+                <Button variant="outline" className="flex-1" onClick={onCancelarEdicion}>
+                  Cancelar
+                </Button>
+                <Button className="flex-1" onClick={guardarItem} disabled={!referenciaSeleccionada}>
+                  <Check className="mr-2 h-4 w-4" />
+                  Guardar cambios
+                </Button>
+              </div>
+            ) : (
+              <Button className="w-full" onClick={guardarItem} disabled={!referenciaSeleccionada}>
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                Agregar a cotización
+              </Button>
+            )}
           </CardContent>
         </Card>
 
