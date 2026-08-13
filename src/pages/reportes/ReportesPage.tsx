@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Download, FileSpreadsheet, TrendingUp } from 'lucide-react'
+import { Banknote, Download, FileSpreadsheet, Landmark, TrendingUp } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,9 @@ import { supabase } from '@/lib/supabase'
 import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { useHistorialCaja } from '@/hooks/useCajaSesiones'
 import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
+import { useVentasPeriodo } from '@/hooks/useVentasCaja'
 import { ResumenVentasSesion } from '@/pages/caja/CajaPage'
+import type { Venta } from '@/types/database'
 
 type ItemValorizado = {
   id: string
@@ -42,6 +44,36 @@ const ESTADO_VARIANTS: Record<string, 'default' | 'secondary' | 'destructive' | 
   aprobada: 'success',
   rechazada: 'destructive',
   cancelada: 'outline',
+}
+
+type MetodoPago = Venta['metodo_pago']
+
+const METODO_LABEL: Record<MetodoPago, string> = {
+  efectivo: 'Efectivo',
+  tarjeta: 'Tarjeta',
+  transferencia: 'Transferencia',
+}
+
+const METODO_VARIANTS: Record<MetodoPago, 'default' | 'secondary' | 'success'> = {
+  efectivo: 'success',
+  transferencia: 'default',
+  tarjeta: 'secondary',
+}
+
+type ResumenDia = {
+  fecha: string
+  efectivo: number
+  transferencia: number
+  tarjeta: number
+  total: number
+}
+
+/** Clave YYYY-MM-DD en zona horaria local (no UTC) para agrupar por día. */
+function fechaLocal(dateStr: string): string {
+  const d = new Date(dateStr)
+  const mes = String(d.getMonth() + 1).padStart(2, '0')
+  const dia = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mes}-${dia}`
 }
 
 function exportarCSV(filas: string[][], nombreArchivo: string) {
@@ -116,6 +148,27 @@ export function ReportesPage() {
     enabled: !!desde && !!hasta,
   })
 
+  const { data: ingresos, isLoading: loadingIngresos } = useVentasPeriodo(desde, hasta)
+
+  // Ingresos separados por destino del dinero: efectivo = cajón físico, bancario = cuentas
+  const totalesMetodo: Record<MetodoPago, number> = { efectivo: 0, tarjeta: 0, transferencia: 0 }
+  for (const v of ingresos ?? []) totalesMetodo[v.metodo_pago] += v.monto
+  const totalBancario = totalesMetodo.transferencia + totalesMetodo.tarjeta
+  const totalIngresos = totalesMetodo.efectivo + totalBancario
+
+  const resumenPorDia: ResumenDia[] = (() => {
+    const mapa = new Map<string, ResumenDia>()
+    for (const v of ingresos ?? []) {
+      // Fecha local (no UTC): una venta de la tarde no debe contarse en el día siguiente
+      const fecha = fechaLocal(v.created_at)
+      const dia = mapa.get(fecha) ?? { fecha, efectivo: 0, transferencia: 0, tarjeta: 0, total: 0 }
+      dia[v.metodo_pago] += v.monto
+      dia.total += v.monto
+      mapa.set(fecha, dia)
+    }
+    return Array.from(mapa.values()).sort((a, b) => b.fecha.localeCompare(a.fecha))
+  })()
+
   const totalInventario = inventario?.reduce((acc, item) => acc + item.valor_total, 0) ?? 0
   const totalVentas = ventas?.reduce((acc, cot) => acc + cot.total, 0) ?? 0
   const totalVendidas = ventas?.filter((c) => c.estado === 'vendida').reduce((acc, c) => acc + c.total, 0) ?? 0
@@ -149,12 +202,42 @@ export function ReportesPage() {
     exportarCSV([encabezado, ...filas], `ventas_${desde}_${hasta}.csv`)
   }
 
+  const exportarResumenIngresos = () => {
+    if (!resumenPorDia.length) return
+    const encabezado = ['Fecha', 'Efectivo COP', 'Transferencia COP', 'Tarjeta COP', 'Total COP']
+    const filas = resumenPorDia.map((d) => [
+      d.fecha,
+      String(d.efectivo),
+      String(d.transferencia),
+      String(d.tarjeta),
+      String(d.total),
+    ])
+    const totales = ['TOTAL', String(totalesMetodo.efectivo), String(totalesMetodo.transferencia), String(totalesMetodo.tarjeta), String(totalIngresos)]
+    exportarCSV([encabezado, ...filas, totales], `ingresos-resumen-${desde}_${hasta}.csv`)
+  }
+
+  const exportarDetalleIngresos = () => {
+    if (!ingresos?.length) return
+    const encabezado = ['Fecha y hora', 'N° Cotización', 'Cliente', 'Método', 'Destino', 'Vendedor', 'Monto COP']
+    const filas = ingresos.map((v) => [
+      formatFechaHora(v.created_at),
+      v.cotizacion?.numero ?? '—',
+      v.cotizacion?.cliente ? `${v.cotizacion.cliente.nombre} ${v.cotizacion.cliente.apellido}` : '—',
+      METODO_LABEL[v.metodo_pago],
+      v.metodo_pago === 'efectivo' ? 'Caja' : 'Cuentas',
+      v.usuario ? `${v.usuario.nombre} ${v.usuario.apellido}` : '—',
+      String(v.monto),
+    ])
+    exportarCSV([encabezado, ...filas], `ingresos-detalle-${desde}_${hasta}.csv`)
+  }
+
   return (
     <div className="space-y-4">
       <Tabs defaultValue="inventario">
         <TabsList>
           <TabsTrigger value="inventario">Inventario valorizado</TabsTrigger>
           <TabsTrigger value="ventas">Ventas por período</TabsTrigger>
+          <TabsTrigger value="ingresos">Ingresos</TabsTrigger>
           <TabsTrigger value="caja">Caja</TabsTrigger>
         </TabsList>
 
@@ -326,6 +409,185 @@ export function ReportesPage() {
                           Total vendidas
                         </td>
                         <td className="px-4 py-3 text-right font-bold">{formatCOP(totalVendidas)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Tab Ingresos ──────────────────────────────────────── */}
+        <TabsContent value="ingresos" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Filtrar por período</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Desde</Label>
+                  <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="w-40" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Hasta</Label>
+                  <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="w-40" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card>
+              <CardContent className="flex items-start gap-4 p-5">
+                <Banknote className="h-8 w-8 shrink-0 text-emerald-600" />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">En caja — Efectivo</p>
+                  <p className="text-3xl font-bold">{formatCOP(totalesMetodo.efectivo)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Debe estar físicamente en la caja</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-start gap-4 p-5">
+                <Landmark className="h-8 w-8 shrink-0 text-blue-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">En cuentas — Bancario</p>
+                  <p className="text-3xl font-bold">{formatCOP(totalBancario)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Debe estar en las cuentas bancarias</p>
+                  <div className="mt-2 space-y-0.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Transferencia</span>
+                      <span className="font-mono">{formatCOP(totalesMetodo.transferencia)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tarjeta</span>
+                      <span className="font-mono">{formatCOP(totalesMetodo.tarjeta)}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            Total de ingresos del período:{' '}
+            <span className="font-semibold text-foreground">{formatCOP(totalIngresos)}</span>
+            {' · '}
+            {ingresos?.length ?? 0} ventas
+          </p>
+
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Resumen por día</h3>
+            <Button variant="outline" onClick={exportarResumenIngresos} disabled={resumenPorDia.length === 0}>
+              <Download className="mr-2 h-4 w-4" />
+              Exportar CSV
+            </Button>
+          </div>
+
+          <Card>
+            <CardContent className="p-0">
+              {loadingIngresos ? (
+                <LoadingSpinner className="py-12" />
+              ) : resumenPorDia.length === 0 ? (
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  No hay ingresos en el período seleccionado
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50 text-xs font-medium uppercase text-muted-foreground">
+                        <th className="px-4 py-3 text-left">Fecha</th>
+                        <th className="px-4 py-3 text-right">Efectivo</th>
+                        <th className="px-4 py-3 text-right">Transferencia</th>
+                        <th className="px-4 py-3 text-right">Tarjeta</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resumenPorDia.map((dia) => (
+                        <tr key={dia.fecha} className="border-b last:border-0 hover:bg-muted/30">
+                          {/* 'T00:00:00' fuerza interpretación local; sin él se parsea como UTC */}
+                          <td className="px-4 py-3 font-medium">{formatFecha(dia.fecha + 'T00:00:00')}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatCOP(dia.efectivo)}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatCOP(dia.transferencia)}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatCOP(dia.tarjeta)}</td>
+                          <td className="px-4 py-3 text-right font-semibold">{formatCOP(dia.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-muted/50">
+                        <td className="px-4 py-3 text-xs font-semibold uppercase text-muted-foreground">Total</td>
+                        <td className="px-4 py-3 text-right font-bold">{formatCOP(totalesMetodo.efectivo)}</td>
+                        <td className="px-4 py-3 text-right font-bold">{formatCOP(totalesMetodo.transferencia)}</td>
+                        <td className="px-4 py-3 text-right font-bold">{formatCOP(totalesMetodo.tarjeta)}</td>
+                        <td className="px-4 py-3 text-right font-bold">{formatCOP(totalIngresos)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Detalle de ingresos</h3>
+            <Button variant="outline" onClick={exportarDetalleIngresos} disabled={!ingresos || ingresos.length === 0}>
+              <Download className="mr-2 h-4 w-4" />
+              Exportar CSV
+            </Button>
+          </div>
+
+          <Card>
+            <CardContent className="p-0">
+              {loadingIngresos ? (
+                <LoadingSpinner className="py-12" />
+              ) : !ingresos || ingresos.length === 0 ? (
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  No hay ingresos en el período seleccionado
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50 text-xs font-medium uppercase text-muted-foreground">
+                        <th className="px-4 py-3 text-left">Fecha y hora</th>
+                        <th className="px-4 py-3 text-left">N° Cotización</th>
+                        <th className="px-4 py-3 text-left">Cliente</th>
+                        <th className="px-4 py-3 text-center">Método</th>
+                        <th className="px-4 py-3 text-left">Vendedor</th>
+                        <th className="px-4 py-3 text-right">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingresos.map((v) => (
+                        <tr key={v.id} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="px-4 py-3 text-muted-foreground">{formatFechaHora(v.created_at)}</td>
+                          <td className="px-4 py-3 font-mono text-xs font-medium">{v.cotizacion?.numero ?? '—'}</td>
+                          <td className="px-4 py-3">
+                            {v.cotizacion?.cliente
+                              ? `${v.cotizacion.cliente.nombre} ${v.cotizacion.cliente.apellido}`
+                              : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <Badge variant={METODO_VARIANTS[v.metodo_pago]}>{METODO_LABEL[v.metodo_pago]}</Badge>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {v.usuario ? `${v.usuario.nombre} ${v.usuario.apellido}` : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold">{formatCOP(v.monto)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-muted/50">
+                        <td colSpan={5} className="px-4 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">
+                          Total ingresos
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold">{formatCOP(totalIngresos)}</td>
                       </tr>
                     </tfoot>
                   </table>
