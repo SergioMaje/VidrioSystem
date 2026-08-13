@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, Plus, Truck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +14,7 @@ import { useToast } from '@/hooks/useToast'
 import type { Proveedor } from '@/types/database'
 
 export function ProveedoresPage() {
+  const navigate = useNavigate()
   const [busqueda, setBusqueda] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editProveedor, setEditProveedor] = useState<Proveedor | null>(null)
@@ -86,7 +88,11 @@ export function ProveedoresPage() {
                 </thead>
                 <tbody>
                   {filtrados.map((proveedor) => (
-                    <tr key={proveedor.id} className="border-b transition-colors hover:bg-muted/30">
+                    <tr
+                      key={proveedor.id}
+                      className="cursor-pointer border-b transition-colors hover:bg-muted/30"
+                      onClick={() => navigate(`/proveedores/${proveedor.id}`)}
+                    >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Truck className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -114,7 +120,7 @@ export function ProveedoresPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => { setEditProveedor(proveedor); setFormOpen(true) }}
+                            onClick={(e) => { e.stopPropagation(); setEditProveedor(proveedor); setFormOpen(true) }}
                           >
                             Editar
                           </Button>
@@ -122,7 +128,7 @@ export function ProveedoresPage() {
                             variant="ghost"
                             size="sm"
                             className="text-destructive hover:text-destructive"
-                            onClick={() => setConfirmarEliminar(proveedor)}
+                            onClick={(e) => { e.stopPropagation(); setConfirmarEliminar(proveedor) }}
                           >
                             Eliminar
                           </Button>

@@ -39,6 +39,18 @@ export interface Proveedor {
   updated_at: string
 }
 
+export interface ProveedorCuentaPago {
+  id: string
+  proveedor_id: string
+  alias: string | null
+  banco: string
+  tipo_cuenta: string
+  numero_cuenta: string
+  titular: string
+  created_at: string
+  updated_at: string
+}
+
 /** Rol de un item de inventario dentro de las opciones adicionales del configurador. */
 export type RolConfigurador = 'vidrio' | 'chapa' | 'pelicula'
 

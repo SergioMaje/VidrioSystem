@@ -16,6 +16,7 @@ import { ClientesPage } from '@/pages/clientes/ClientesPage'
 import { OrdenesPage } from '@/pages/ordenes/OrdenesPage'
 import { OrdenDetalle } from '@/pages/ordenes/OrdenDetalle'
 import { ProveedoresPage } from '@/pages/proveedores/ProveedoresPage'
+import { ProveedorDetalle } from '@/pages/proveedores/ProveedorDetalle'
 import { ReportesPage } from '@/pages/reportes/ReportesPage'
 import { CajaPage } from '@/pages/caja/CajaPage'
 
@@ -41,6 +42,7 @@ export function AppRoutes() {
           <Route path="/cotizaciones/nueva" element={<CotizacionFormPage />} />
           <Route path="/cotizaciones/:id" element={<CotizacionDetalle />} />
           <Route path="/proveedores" element={<ProveedoresPage />} />
+          <Route path="/proveedores/:id" element={<ProveedorDetalle />} />
           <Route path="/clientes" element={<ClientesPage />} />
           <Route path="/ordenes" element={<OrdenesPage />} />
           <Route path="/ordenes/:id" element={<OrdenDetalle />} />
