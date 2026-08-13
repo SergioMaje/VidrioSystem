@@ -13,12 +13,13 @@ import { formatFecha } from '@/lib/utils'
 import { calcularCortes, calcularMateriales, nombreColorPerfil } from '@/lib/produccion'
 import { calcularOpciones, esComponenteDeVidrio, lineasDeOpciones, type LineaMaterial } from '@/lib/opciones'
 import { ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
-import { textoLadoCorredizo } from '@/lib/lados'
+import { ladoCorredizoExterior, textoLadoCorredizo } from '@/lib/lados'
+import { PreviewProducto } from '@/pages/productos/PreviewProducto'
 import type { OrdenTrabajo, CotizacionItem } from '@/types/database'
 
 const SELECT_ITEMS_PRODUCCION = `
   *,
-  referencia:referencias_producto(*, cortes:referencia_cortes(*)),
+  referencia:referencias_producto(*, tipo_producto:tipos_producto(*), cortes:referencia_cortes(*)),
   plantilla:plantillas_producto(*, componentes:plantilla_componentes(*, item:items_inventario(*, categoria:categorias(*), unidad_medida:unidades_medida(*))))
 `
 
@@ -222,6 +223,13 @@ export function OrdenDetalle() {
         ? '<p class="warn">Sin referencia/plantilla guardada — verificar medidas de corte manualmente.</p>'
         : ''
 
+      // Se reaprovecha el SVG ya montado en la tarjeta del ítem en vez de renderizar
+      // uno oculto aparte: así el papel y la pantalla no pueden divergir.
+      const svg = document.querySelector(`[data-preview="${item.id}"] svg`)
+      const despieceHtml = svg
+        ? `<div class="preview">${new XMLSerializer().serializeToString(svg)}</div>`
+        : ''
+
       return `
         <div class="item">
           <div class="item-head">
@@ -238,6 +246,7 @@ export function OrdenDetalle() {
               ${item.notas ? `<p class="notas">${item.notas.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>` : ''}
             </div>
           </div>
+          ${despieceHtml}
           ${cortesHtml}
           ${materialesHtml}
           ${sinInfo}
@@ -251,7 +260,9 @@ export function OrdenDetalle() {
   <title>Ficha de Producción — ${orden.numero}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;padding:1.5cm}
+    /* Sin esto el navegador descarta fondos al imprimir y el despiece saldría sin el
+       color del perfil, sin los degradados del vidrio y sin el azul de la corredera. */
+    body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;padding:1.5cm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     h1{font-size:20px;font-weight:700;margin-bottom:2px}
     .sub{color:#666;font-size:12px;margin-bottom:20px}
     .head-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin-bottom:20px}
@@ -264,6 +275,8 @@ export function OrdenDetalle() {
     .meta{color:#555;font-size:12px;margin-top:2px}
     .lado{display:inline-block;margin-top:5px;padding:3px 9px;border:1.5px solid #1d4ed8;border-radius:4px;color:#1d4ed8;font-size:12px;font-weight:700}
     .notas{color:#374151;font-size:12px;margin-top:4px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:6px 8px}
+    .preview{text-align:center;margin:12px 0}
+    .preview svg{max-width:100%;height:auto;border:1px solid #e5e7eb;border-radius:6px}
     h3{font-size:10px;text-transform:uppercase;color:#888;letter-spacing:.05em;margin:10px 0 6px}
     table{width:100%;border-collapse:collapse}
     th{text-align:left;padding:4px;font-size:10px;text-transform:uppercase;color:#6b7280;border-bottom:2px solid #e5e7eb}
@@ -349,6 +362,8 @@ export function OrdenDetalle() {
             const ladoTexto = item.referencia?.es_corrediza
               ? textoLadoCorredizo(item.lado_corredizo, item.lado_medicion)
               : null
+            const ladoVista = ladoCorredizoExterior(item.lado_corredizo, item.lado_medicion)
+            const dibujable = !!item.referencia && !!item.ancho_cm && !!item.alto_cm
             return (
               <Card key={item.id}>
                 <CardHeader className="pb-3">
@@ -393,6 +408,23 @@ export function OrdenDetalle() {
                     </p>
                   ) : (
                     <>
+                      {dibujable && (
+                        <div className="flex justify-center" data-preview={item.id}>
+                          <PreviewProducto
+                            tipo={item.referencia!.tipo_producto?.nombre ?? 'ventana'}
+                            anchoCm={item.ancho_cm!}
+                            altoCm={item.alto_cm!}
+                            colorPerfil={item.color_perfil ?? undefined}
+                            // Sin lado registrado, ladoCorredizoExterior devuelve null y el
+                            // default del preview ('derecha') imprimiría una afirmación falsa
+                            // en el papel del taller. Mejor no dibujar F/C: la advertencia la
+                            // da el badge ámbar "Corrediza — lado sin registrar".
+                            esCorrediza={!!item.referencia!.es_corrediza && !!ladoVista}
+                            ladoCorredizoVista={ladoVista ?? undefined}
+                            cortes={cortes}
+                          />
+                        </div>
+                      )}
                       {cortes.length > 0 && (
                         <div>
                           <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
