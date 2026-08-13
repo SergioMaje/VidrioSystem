@@ -22,6 +22,31 @@ export function useVentasSesion(sessionId: string | undefined) {
   })
 }
 
+export type VentaReporte = Venta & {
+  cotizacion: { numero: string; cliente: { nombre: string; apellido: string } | null } | null
+  usuario: { nombre: string; apellido: string } | null
+}
+
+/** Ventas de un rango de fechas, sin importar el turno de caja: base del reporte de ingresos. */
+export function useVentasPeriodo(desde: string, hasta: string) {
+  return useQuery({
+    queryKey: ['ventas-periodo', desde, hasta],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ventas')
+        .select(
+          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), usuario:usuarios(nombre, apellido)'
+        )
+        .gte('created_at', desde)
+        .lte('created_at', hasta + 'T23:59:59')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data as unknown as VentaReporte[]
+    },
+    enabled: !!desde && !!hasta,
+  })
+}
+
 /**
  * Cliente aprueba la cotización = se vende: en un solo paso se registra el cobro
  * dentro de la sesión de caja abierta, la cotización pasa directo a 'vendida'
@@ -74,6 +99,7 @@ export function useVenderCotizacion() {
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['caja-actual'] })
       qc.invalidateQueries({ queryKey: ['ventas-sesion', variables.sessionId] })
+      qc.invalidateQueries({ queryKey: ['ventas-periodo'] })
       qc.invalidateQueries({ queryKey: ['cotizaciones'] })
       qc.invalidateQueries({ queryKey: ['cotizacion', variables.cotizacion.id] })
       qc.invalidateQueries({ queryKey: ['ordenes'] })
