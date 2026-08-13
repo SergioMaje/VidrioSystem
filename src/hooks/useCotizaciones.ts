@@ -103,6 +103,62 @@ export function useCrearCotizacion() {
   })
 }
 
+type CotizacionUpdateInput = {
+  id: string
+  cliente_id: string
+  estado: Cotizacion['estado']
+  fecha_vencimiento?: string
+  descuento_pct: number
+  iva_pct: number
+  notas?: string
+  items: Omit<CotizacionItem, 'id' | 'cotizacion_id'>[]
+}
+
+export function useActualizarCotizacion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: CotizacionUpdateInput) => {
+      const subtotal = input.items.reduce((s, i) => s + i.precio_total, 0)
+      const descuento = subtotal * (input.descuento_pct / 100)
+      const base = subtotal - descuento
+      const iva = base * (input.iva_pct / 100)
+      const total = base + iva
+
+      const { error } = await supabase
+        .from('cotizaciones')
+        .update({
+          cliente_id: input.cliente_id,
+          estado: input.estado,
+          fecha_vencimiento: input.fecha_vencimiento ?? null,
+          subtotal,
+          descuento_pct: input.descuento_pct,
+          iva_pct: input.iva_pct,
+          total,
+          notas: input.notas ?? null,
+        })
+        .eq('id', input.id)
+      if (error) throw error
+
+      const { error: deleteError } = await supabase
+        .from('cotizacion_items')
+        .delete()
+        .eq('cotizacion_id', input.id)
+      if (deleteError) throw deleteError
+
+      if (input.items.length > 0) {
+        const { error: itemsError } = await supabase.from('cotizacion_items').insert(
+          input.items.map((item) => ({ ...item, cotizacion_id: input.id }))
+        )
+        if (itemsError) throw itemsError
+      }
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['cotizaciones'] })
+      qc.invalidateQueries({ queryKey: ['cotizacion', variables.id] })
+    },
+  })
+}
+
 export function useCambiarEstadoCotizacion() {
   const qc = useQueryClient()
   return useMutation({
