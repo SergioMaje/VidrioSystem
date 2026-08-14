@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx'
 import ExcelJS from 'exceljs'
 import type { Categoria, UnidadMedida } from '@/types/database'
 
@@ -116,6 +115,24 @@ function numeroValido(valor: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? n : NaN
 }
 
+/**
+ * Aplana el valor de una celda: ExcelJS no siempre entrega un primitivo, una celda
+ * puede venir como fórmula, texto enriquecido, hipervínculo o error.
+ */
+function valorCelda(valor: ExcelJS.CellValue): string | number {
+  if (valor === null || valor === undefined) return ''
+  if (typeof valor === 'number' || typeof valor === 'string') return valor
+  if (typeof valor === 'boolean') return String(valor)
+  if (valor instanceof Date) return valor.toISOString()
+  if (typeof valor === 'object') {
+    if ('error' in valor) return ''
+    if ('result' in valor) return valorCelda(valor.result as ExcelJS.CellValue)
+    if ('richText' in valor) return valor.richText.map((t) => t.text).join('')
+    if ('text' in valor) return String(valor.text)
+  }
+  return String(valor)
+}
+
 /** Lee el archivo .xlsx y valida estrictamente cada fila contra los catálogos existentes. */
 export async function leerProductosExcel(
   file: File,
@@ -124,11 +141,26 @@ export async function leerProductosExcel(
   codigosExistentes: Set<string>
 ): Promise<ResultadoImportacion> {
   const buffer = await file.arrayBuffer()
-  const wb = XLSX.read(buffer, { type: 'array' })
-  const hoja = wb.Sheets['Productos'] ?? wb.Sheets[wb.SheetNames[0]]
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(buffer)
+  const hoja = wb.getWorksheet('Productos') ?? wb.worksheets[0]
   if (!hoja) return { validos: [], errores: [{ fila: 0, motivo: 'No se encontró la hoja "Productos" en el archivo' }] }
 
-  const filas = XLSX.utils.sheet_to_json<Record<string, unknown>>(hoja, { defval: '' })
+  // row.values es 1-indexado (la posición 0 va vacía), así que encabezados y valores
+  // se alinean por índice sin corrimientos.
+  const encabezados = (hoja.getRow(1).values as ExcelJS.CellValue[]).map((v) => String(valorCelda(v)).trim())
+
+  const filas: { numero: number; datos: Record<string, unknown> }[] = []
+  hoja.eachRow((fila, numero) => {
+    if (numero === 1) return
+    const valores = fila.values as ExcelJS.CellValue[]
+    const datos: Record<string, unknown> = {}
+    encabezados.forEach((titulo, i) => {
+      if (!titulo) return
+      datos[titulo] = valorCelda(valores[i])
+    })
+    filas.push({ numero, datos })
+  })
 
   const categoriasPorNombre = new Map(categorias.map((c) => [normalizar(c.nombre), c.id]))
   const unidadesPorNombre = new Map(unidades.map((u) => [normalizar(u.nombre), u.id]))
@@ -137,8 +169,9 @@ export async function leerProductosExcel(
   const validos: ProductoImportado[] = []
   const errores: ErrorImportacion[] = []
 
-  filas.forEach((fila, idx) => {
-    const numeroFila = idx + 2
+  // numeroFila es el número real de la fila en Excel, así el error apunta a la fila
+  // que el usuario ve al abrir el archivo aunque haya filas vacías intermedias.
+  filas.forEach(({ numero: numeroFila, datos: fila }) => {
     const motivos: string[] = []
 
     const codigo = String(fila['Código'] ?? '').trim()
