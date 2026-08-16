@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { Cotizacion, Venta } from '@/types/database'
+import { anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo, tipoDePago } from '@/lib/pagos'
+import { formatCOP } from '@/lib/utils'
+import type { Cotizacion, CotizacionSaldo, Usuario, Venta } from '@/types/database'
 
 export type VentaConCotizacion = Venta & {
   cotizacion: { numero: string; cliente: { nombre: string; apellido: string } | null } | null
@@ -47,34 +49,128 @@ export function useVentasPeriodo(desde: string, hasta: string) {
   })
 }
 
+export type PagoConUsuario = Venta & {
+  usuario: Pick<Usuario, 'nombre' | 'apellido'> | null
+}
+
+/** Saldo de una cotización, derivado en la vista `cotizaciones_saldo`. */
+export function useSaldoCotizacion(cotizacionId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['saldo-cotizacion', cotizacionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cotizaciones_saldo')
+        .select('*')
+        .eq('cotizacion_id', cotizacionId as string)
+        .maybeSingle()
+      if (error) throw error
+      return data as CotizacionSaldo | null
+    },
+    enabled: !!cotizacionId,
+  })
+}
+
+/** Historial de pagos de una cotización: anticipo y abonos posteriores. */
+export function usePagosCotizacion(cotizacionId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['pagos-cotizacion', cotizacionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ventas')
+        .select('*, usuario:usuarios(nombre, apellido)')
+        .eq('cotizacion_id', cotizacionId as string)
+        .order('created_at')
+      if (error) throw error
+      return data as unknown as PagoConUsuario[]
+    },
+    enabled: !!cotizacionId,
+  })
+}
+
 /**
- * Cliente aprueba la cotización = se vende: en un solo paso se registra el cobro
- * dentro de la sesión de caja abierta, la cotización pasa directo a 'vendida'
- * (sin estado 'aprobada' intermedio) y se crea la orden de producción.
+ * Todos los saldos de una sola consulta, para mezclarlos en el listado de
+ * cotizaciones. Supabase no infiere la relación con una vista sin FK, así que
+ * el cruce se hace en memoria (el volumen es pequeño).
  */
-export function useVenderCotizacion() {
+export function useSaldos() {
+  return useQuery({
+    queryKey: ['saldos'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cotizaciones_saldo').select('*')
+      if (error) throw error
+      const porCotizacion = new Map<string, CotizacionSaldo>()
+      for (const fila of (data ?? []) as CotizacionSaldo[]) {
+        porCotizacion.set(fila.cotizacion_id, fila)
+      }
+      return porCotizacion
+    },
+  })
+}
+
+function invalidarPagos(
+  qc: ReturnType<typeof useQueryClient>,
+  cotizacionId: string,
+  sessionId: string | undefined
+) {
+  qc.invalidateQueries({ queryKey: ['caja-actual'] })
+  qc.invalidateQueries({ queryKey: ['ventas-sesion', sessionId] })
+  qc.invalidateQueries({ queryKey: ['ventas-periodo'] })
+  qc.invalidateQueries({ queryKey: ['cotizaciones'] })
+  qc.invalidateQueries({ queryKey: ['cotizacion', cotizacionId] })
+  qc.invalidateQueries({ queryKey: ['saldo-cotizacion', cotizacionId] })
+  qc.invalidateQueries({ queryKey: ['pagos-cotizacion', cotizacionId] })
+  qc.invalidateQueries({ queryKey: ['saldos'] })
+  qc.invalidateQueries({ queryKey: ['ordenes'] })
+}
+
+/**
+ * Cliente aprueba la cotización: entrega el anticipo (mínimo 50% del total,
+ * salvo autorización de un admin), la cotización pasa directo a 'vendida' (sin
+ * estado 'aprobada' intermedio) y se crea la orden de producción, que ya puede
+ * arrancar. El saldo se cobra después en abonos, contra entrega.
+ */
+export function useRegistrarAnticipo() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({
       cotizacion,
       sessionId,
       metodoPago,
+      monto,
       usuarioId,
       fechaEntregaEstimada,
+      autorizadoPor,
+      motivoAutorizacion,
     }: {
       cotizacion: Cotizacion
       sessionId: string | undefined
       metodoPago: Venta['metodo_pago']
+      monto: number
       usuarioId: string
       fechaEntregaEstimada?: string
+      autorizadoPor?: string
+      motivoAutorizacion?: string
     }) => {
-      if (!sessionId) throw new Error('Debes abrir caja antes de vender')
+      if (!sessionId) throw new Error('Debes abrir caja antes de registrar el anticipo')
+      if (monto <= 0) throw new Error('El anticipo debe ser mayor a cero')
+      if (excedeSaldo(monto, cotizacion.total)) {
+        throw new Error(`El anticipo no puede superar el total (${formatCOP(cotizacion.total)})`)
+      }
+      // El trigger en Postgres es la garantía; esto solo da un error legible antes.
+      if (!cumpleAnticipoMinimo(monto, cotizacion.total) && !autorizadoPor) {
+        throw new Error(
+          `El anticipo debe ser al menos el 50% del total (mínimo: ${formatCOP(anticipoMinimo(cotizacion.total))})`
+        )
+      }
 
       const { error: ventaError } = await supabase.from('ventas').insert({
         cotizacion_id: cotizacion.id,
         session_id: sessionId,
         metodo_pago: metodoPago,
-        monto: cotizacion.total,
+        monto,
+        tipo: tipoDePago(0, monto, cotizacion.total),
+        autorizado_por: autorizadoPor ?? null,
+        motivo_autorizacion: motivoAutorizacion?.trim() || null,
         usuario_id: usuarioId,
       })
       if (ventaError) throw ventaError
@@ -96,13 +192,59 @@ export function useVenderCotizacion() {
       })
       if (ordenError) throw ordenError
     },
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ['caja-actual'] })
-      qc.invalidateQueries({ queryKey: ['ventas-sesion', variables.sessionId] })
-      qc.invalidateQueries({ queryKey: ['ventas-periodo'] })
-      qc.invalidateQueries({ queryKey: ['cotizaciones'] })
-      qc.invalidateQueries({ queryKey: ['cotizacion', variables.cotizacion.id] })
-      qc.invalidateQueries({ queryKey: ['ordenes'] })
+    onSuccess: (_data, variables) => invalidarPagos(qc, variables.cotizacion.id, variables.sessionId),
+  })
+}
+
+/**
+ * Abono posterior al anticipo. Solo registra el cobro en la caja abierta: no
+ * cambia el estado de la cotización ni toca la orden de trabajo. Cuando el
+ * abono liquida el saldo se marca como 'saldo_final' y la orden queda libre
+ * para entregarse.
+ */
+export function useRegistrarAbono() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      cotizacionId,
+      sessionId,
+      metodoPago,
+      monto,
+      usuarioId,
+    }: {
+      cotizacionId: string
+      sessionId: string | undefined
+      metodoPago: Venta['metodo_pago']
+      monto: number
+      usuarioId: string
+    }) => {
+      if (!sessionId) throw new Error('Debes abrir caja antes de registrar un abono')
+      if (monto <= 0) throw new Error('El abono debe ser mayor a cero')
+
+      // Se relee el saldo en vez de confiar en el de la pantalla: otro usuario
+      // pudo abonar mientras el diálogo estaba abierto.
+      const { data: saldoActual, error: saldoError } = await supabase
+        .from('cotizaciones_saldo')
+        .select('*')
+        .eq('cotizacion_id', cotizacionId)
+        .single()
+      if (saldoError) throw saldoError
+
+      const { total, total_abonado, saldo } = saldoActual as CotizacionSaldo
+      if (excedeSaldo(monto, saldo)) {
+        throw new Error(`El abono excede el saldo pendiente (${formatCOP(saldo)})`)
+      }
+
+      const { error } = await supabase.from('ventas').insert({
+        cotizacion_id: cotizacionId,
+        session_id: sessionId,
+        metodo_pago: metodoPago,
+        monto,
+        tipo: tipoDePago(total_abonado, monto, total),
+        usuario_id: usuarioId,
+      })
+      if (error) throw error
     },
+    onSuccess: (_data, variables) => invalidarPagos(qc, variables.cotizacionId, variables.sessionId),
   })
 }

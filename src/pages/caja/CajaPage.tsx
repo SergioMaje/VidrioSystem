@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useCajaActual, useAbrirCaja, useCerrarCaja } from '@/hooks/useCajaSesiones'
 import { useVentasSesion } from '@/hooks/useVentasCaja'
+import { TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP } from '@/lib/utils'
 import type { Venta } from '@/types/database'
 
@@ -44,7 +45,7 @@ export function ResumenVentasSesion({ sessionId, openingAmount }: { sessionId: s
       </div>
 
       {!ventas || ventas.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">No se registraron ventas en este turno</p>
+        <p className="py-4 text-center text-sm text-muted-foreground">No se registraron pagos en este turno</p>
       ) : (
         <div className="max-h-48 overflow-y-auto rounded-md border">
           <table className="w-full text-sm">
@@ -52,6 +53,7 @@ export function ResumenVentasSesion({ sessionId, openingAmount }: { sessionId: s
               <tr className="border-b bg-muted/50 text-left text-xs font-medium uppercase text-muted-foreground">
                 <th className="px-3 py-2">Cotización</th>
                 <th className="px-3 py-2">Cliente</th>
+                <th className="px-3 py-2">Tipo</th>
                 <th className="px-3 py-2">Método</th>
                 <th className="px-3 py-2 text-right">Monto</th>
               </tr>
@@ -63,6 +65,7 @@ export function ResumenVentasSesion({ sessionId, openingAmount }: { sessionId: s
                   <td className="px-3 py-2">
                     {v.cotizacion?.cliente ? `${v.cotizacion.cliente.nombre} ${v.cotizacion.cliente.apellido}` : '—'}
                   </td>
+                  <td className="px-3 py-2">{TIPO_PAGO_LABEL[v.tipo]}</td>
                   <td className="px-3 py-2">{METODO_LABEL[v.metodo_pago]}</td>
                   <td className="px-3 py-2 text-right font-mono">{formatCOP(v.monto)}</td>
                 </tr>
@@ -76,7 +79,7 @@ export function ResumenVentasSesion({ sessionId, openingAmount }: { sessionId: s
 
       <div className="space-y-1 text-sm">
         <div className="flex justify-between"><span className="text-muted-foreground">Fondo inicial</span><span className="font-mono">{formatCOP(openingAmount)}</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">Total ventas ({ventas?.length ?? 0})</span><span className="font-mono">{formatCOP(totalGeneral)}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Total cobrado ({ventas?.length ?? 0} pagos)</span><span className="font-mono">{formatCOP(totalGeneral)}</span></div>
         <div className="flex justify-between font-semibold"><span>Efectivo esperado en caja</span><span className="font-mono text-primary">{formatCOP(efectivoEsperado)}</span></div>
       </div>
     </div>

@@ -14,6 +14,16 @@ export function formatCOP(amount: number): string {
   }).format(amount)
 }
 
+/** Agrupa en miles sin símbolo de moneda, para inputs: 1500000 → "1.500.000". */
+export function formatMiles(valor: number): string {
+  return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(valor)
+}
+
+/** Deja solo los dígitos de lo que el usuario escribió en un input de dinero. */
+export function soloDigitos(texto: string): string {
+  return texto.replace(/\D/g, '')
+}
+
 export function formatFecha(dateStr: string): string {
   const date = new Date(dateStr)
   return new Intl.DateTimeFormat('es-CO', {

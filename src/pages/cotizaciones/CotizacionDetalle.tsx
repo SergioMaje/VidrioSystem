@@ -1,22 +1,24 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Loader2, Printer, AlertCircle, Pencil } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { useCotizacion, useCambiarEstadoCotizacion } from '@/hooks/useCotizaciones'
-import { useCajaActual } from '@/hooks/useCajaSesiones'
-import { useVenderCotizacion } from '@/hooks/useVentasCaja'
-import { useAuth } from '@/hooks/useAuth'
+import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
 import { useToast } from '@/hooks/useToast'
-import { formatCOP, formatFecha } from '@/lib/utils'
+import { estaLiquidada, TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import type { Cotizacion, CotizacionItem, Venta } from '@/types/database'
+
+const METODO_LABEL: Record<Venta['metodo_pago'], string> = {
+  efectivo: 'Efectivo',
+  tarjeta: 'Tarjeta',
+  transferencia: 'Transferencia',
+}
 
 const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline' }> = {
   borrador: { label: 'Borrador', variant: 'secondary' },
@@ -34,21 +36,12 @@ export function CotizacionDetalle() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { usuario } = useAuth()
   const { data: cotizacion, isLoading } = useCotizacion(id ?? '')
-  const { data: sesionCaja, isLoading: cargandoCaja } = useCajaActual()
+  const { data: saldoInfo } = useSaldoCotizacion(id)
+  const { data: pagos } = usePagosCotizacion(id)
   const cambiarEstado = useCambiarEstadoCotizacion()
-  const venderCotizacion = useVenderCotizacion()
 
-  const [venderOpen, setVenderOpen] = useState(false)
-  const [fechaEntrega, setFechaEntrega] = useState('')
-  const [metodoPago, setMetodoPago] = useState<Venta['metodo_pago']>('efectivo')
-
-  const cerrarDialogoVenta = () => {
-    setVenderOpen(false)
-    setFechaEntrega('')
-    setMetodoPago('efectivo')
-  }
+  const [pagoDialog, setPagoDialog] = useState<'anticipo' | 'abono' | null>(null)
 
   const handleRechazar = async () => {
     if (!id) return
@@ -60,29 +53,14 @@ export function CotizacionDetalle() {
     }
   }
 
-  const handleVender = async () => {
-    if (!cotizacion) return
-    try {
-      await venderCotizacion.mutateAsync({
-        cotizacion,
-        sessionId: sesionCaja?.id,
-        metodoPago,
-        usuarioId: usuario?.id ?? '',
-        fechaEntregaEstimada: fechaEntrega || undefined,
-      })
-      toast({ title: 'Venta registrada y orden creada', variant: 'success' })
-      cerrarDialogoVenta()
-    } catch (err) {
-      toast({ title: err instanceof Error ? err.message : 'Error al registrar la venta', variant: 'destructive' })
-    }
-  }
-
   const imprimir = () => {
     if (!cotizacion) return
     const cli = cotizacion.cliente as { nombre: string; apellido: string; empresa?: string; telefono?: string; email?: string } | undefined
     const items = (cotizacion.items ?? []) as CotizacionItem[]
     const descuentoValor = cotizacion.subtotal * (cotizacion.descuento_pct / 100)
     const ivaValor = cotizacion.total - cotizacion.subtotal * (1 - cotizacion.descuento_pct / 100)
+    const abonadoImpreso = saldoInfo?.total_abonado ?? 0
+    const saldoImpreso = saldoInfo?.saldo ?? cotizacion.total
 
     const filasHtml = items.map((item) => `
       <tr>
@@ -116,6 +94,8 @@ export function CotizacionDetalle() {
     .totales{margin-top:14px;margin-left:auto;width:280px}
     .totales .row{display:flex;justify-content:space-between;padding:4px 0}
     .totales .total{border-top:2px solid #e5e7eb;margin-top:6px;padding-top:8px;font-weight:700;font-size:16px;color:#1d4ed8}
+    .totales .abonado{color:#15803d;margin-top:6px}
+    .totales .saldo{border-top:1px solid #e5e7eb;margin-top:4px;padding-top:6px;font-weight:700}
     .notas{margin-top:24px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;color:#374151;line-height:1.5}
     .notas h2{font-size:11px;text-transform:uppercase;color:#888;letter-spacing:.05em;margin-bottom:6px}
     @media print{body{padding:1.2cm}}
@@ -146,6 +126,9 @@ export function CotizacionDetalle() {
     ${cotizacion.descuento_pct > 0 ? `<div class="row"><span>Descuento (${cotizacion.descuento_pct}%)</span><span>-${formatCOP(descuentoValor)}</span></div>` : ''}
     <div class="row"><span>IVA (${cotizacion.iva_pct}%)</span><span>${formatCOP(ivaValor)}</span></div>
     <div class="row total"><span>Total</span><span>${formatCOP(cotizacion.total)}</span></div>
+    ${abonadoImpreso > 0 ? `
+    <div class="row abonado"><span>Abonado</span><span>-${formatCOP(abonadoImpreso)}</span></div>
+    <div class="row saldo"><span>Saldo pendiente</span><span>${formatCOP(saldoImpreso)}</span></div>` : ''}
   </div>
 
   ${cotizacion.notas ? `<div class="notas"><h2>Notas</h2>${escapar(cotizacion.notas).replace(/\n/g, '<br/>')}</div>` : ''}
@@ -165,6 +148,10 @@ export function CotizacionDetalle() {
 
   const cliente = cotizacion.cliente as { nombre: string; apellido: string; empresa?: string; telefono?: string; email?: string } | undefined
   const cfg = estadoConfig[cotizacion.estado]
+  const abonado = saldoInfo?.total_abonado ?? 0
+  const saldo = saldoInfo?.saldo ?? cotizacion.total
+  const pctAbonado = saldoInfo?.pct_abonado ?? 0
+  const liquidada = estaLiquidada(saldo)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -240,6 +227,89 @@ export function CotizacionDetalle() {
         </CardContent>
       </Card>
 
+      {cotizacion.estado === 'vendida' && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Pagos</CardTitle>
+            {liquidada ? (
+              <Badge variant="success" className="gap-1">
+                <CheckCircle2 className="h-3 w-3" />
+                Pagada completa
+              </Badge>
+            ) : (
+              <Button size="sm" onClick={() => setPagoDialog('abono')}>
+                <Wallet className="mr-2 h-4 w-4" />
+                Registrar abono
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full transition-all ${liquidada ? 'bg-emerald-500' : 'bg-primary'}`}
+                  style={{ width: `${Math.min(100, pctAbonado)}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{Math.round(pctAbonado)}% del total abonado</p>
+            </div>
+
+            {pagos && pagos.length > 0 && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs font-medium uppercase text-muted-foreground">
+                    <th className="py-2">Fecha</th>
+                    <th className="py-2">Tipo</th>
+                    <th className="py-2">Método</th>
+                    <th className="py-2">Recibió</th>
+                    <th className="py-2 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagos.map((pago) => (
+                    <tr key={pago.id} className="border-b last:border-0">
+                      <td className="py-2">{formatFechaHora(pago.created_at)}</td>
+                      <td className="py-2">
+                        {TIPO_PAGO_LABEL[pago.tipo]}
+                        {pago.autorizado_por && (
+                          <span className="ml-1 text-xs text-amber-700" title={pago.motivo_autorizacion ?? ''}>
+                            (autorizado)
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2">{METODO_LABEL[pago.metodo_pago]}</td>
+                      <td className="py-2 text-muted-foreground">
+                        {pago.usuario ? `${pago.usuario.nombre} ${pago.usuario.apellido}` : '—'}
+                      </td>
+                      <td className="py-2 text-right font-mono">{formatCOP(pago.monto)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <div className="space-y-1 border-t pt-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Abonado</span>
+                <span className="font-mono">{formatCOP(abonado)}</span>
+              </div>
+              <div className="flex justify-between font-bold">
+                <span>Saldo pendiente</span>
+                <span className={`font-mono ${liquidada ? 'text-emerald-600' : 'text-destructive'}`}>
+                  {formatCOP(saldo)}
+                </span>
+              </div>
+            </div>
+
+            {!liquidada && (
+              <p className="text-xs text-muted-foreground">
+                La orden de producción ya puede avanzar, pero no se podrá entregar hasta que el saldo quede en cero.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {cotizacion.notas && (
         <Card>
           <CardHeader><CardTitle className="text-base">Notas</CardTitle></CardHeader>
@@ -268,11 +338,11 @@ export function CotizacionDetalle() {
           </Button>
           <Button
             className="flex-1"
-            onClick={() => setVenderOpen(true)}
-            disabled={cambiarEstado.isPending || cargandoCaja}
+            onClick={() => setPagoDialog('anticipo')}
+            disabled={cambiarEstado.isPending}
           >
             <ShoppingCart className="mr-2 h-4 w-4" />
-            Cliente aprobó — Registrar venta
+            Cliente aprobó — Registrar anticipo
           </Button>
           <Button
             variant="destructive"
@@ -285,54 +355,14 @@ export function CotizacionDetalle() {
         </div>
       )}
 
-      <Dialog open={venderOpen} onOpenChange={(open) => { if (!open) cerrarDialogoVenta() }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Registrar venta</DialogTitle>
-          </DialogHeader>
-          {!sesionCaja ? (
-            <div className="space-y-4">
-              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                Debes abrir caja antes de registrar una venta.
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={cerrarDialogoVenta}>Cancelar</Button>
-                <Button onClick={() => navigate('/caja')}>Ir a Caja</Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total a cobrar</span>
-                <span className="font-mono font-semibold">{formatCOP(cotizacion.total)}</span>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Método de pago</Label>
-                <Select value={metodoPago} onValueChange={(v) => setMetodoPago(v as Venta['metodo_pago'])}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="efectivo">Efectivo</SelectItem>
-                    <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                    <SelectItem value="transferencia">Transferencia</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Fecha de entrega estimada</Label>
-                <Input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} />
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={cerrarDialogoVenta}>Cancelar</Button>
-                <Button onClick={handleVender} disabled={venderCotizacion.isPending}>
-                  {venderCotizacion.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Confirmar venta
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {pagoDialog && (
+        <RegistrarPagoDialog
+          cotizacion={cotizacion}
+          modo={pagoDialog}
+          open
+          onOpenChange={(open) => { if (!open) setPagoDialog(null) }}
+        />
+      )}
     </div>
   )
 }
