@@ -1,24 +1,27 @@
 # project_id se sobreescribe automaticamente al correr `supabase link --project-ref <ref>`
 project_id = "glazz"
 
+# Puertos desplazados del rango por defecto (54321-54323) para poder correr el stack
+# local de este proyecto en paralelo con el de otros proyectos Supabase de la misma
+# maquina sin colisionar. Los valores por defecto quedan libres para quien los use.
 [api]
 enabled = true
-port = 54321
+port = 54421
 schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
 [db]
-port = 54322
+port = 54422
 major_version = 15
 
 [studio]
 enabled = true
-port = 54323
+port = 54423
 
 [auth]
 enabled = true
-site_url = "http://localhost:5173"
-additional_redirect_urls = ["https://localhost:5173"]
+site_url = "http://localhost:5180"
+additional_redirect_urls = ["https://localhost:5180"]
 jwt_expiry = 3600
 enable_signup = true
