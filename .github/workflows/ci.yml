@@ -20,3 +20,31 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+
+  # Verifica que las migraciones + el seed apliquen desde cero sobre una base
+  # limpia. Es la red que impide que una migracion rota llegue a main y de ahi
+  # al proyecto de produccion.
+  migraciones:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Aplicar migraciones y seed en una base limpia
+        run: supabase db start
+
+      - name: Reaplicar todo desde cero
+        run: supabase db reset
+
+  # Confirma que la imagen se construye. No la publica: el despliegue del
+  # frontend sigue siendo GitHub Pages (ver deploy.yml).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir la imagen del frontend
+        run: docker build -t glazz-web .

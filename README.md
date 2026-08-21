@@ -30,9 +30,10 @@ Configurar producto → Crear cotización → Cliente aprueba → Orden de traba
 | Formularios | React Hook Form + Zod |
 | Gráficos | Recharts |
 | Íconos | Lucide React |
-| Base de datos | Supabase (PostgreSQL) |
+| Base de datos | Supabase (PostgreSQL) — local en Docker, producción en Supabase Cloud |
 | Autenticación | Supabase Auth |
-| Despliegue | Vercel (frontend) + Supabase (DB) |
+| Contenedores | Docker (base de datos local + imagen nginx del frontend) |
+| Despliegue | GitHub Pages (frontend) + Supabase Cloud (DB) |
 
 ---
 
@@ -46,24 +47,36 @@ cd vidrieria
 npm install
 ```
 
-### 2. Variables de entorno
+### 2. Levantar la base de datos local
 
-Crea un archivo `.env.local` en la raíz del proyecto:
+Cada desarrollador trabaja contra su propia base en Docker, no contra el proyecto de la
+nube (que es producción). Requiere Docker Desktop:
 
-```env
-VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5c...
+```bash
+npx supabase start      # Postgres + Auth + API en contenedores
+npx supabase db reset   # aplica migraciones + datos semilla
+npx supabase status     # imprime la URL y la anon key locales
 ```
 
-Las credenciales las encuentras en tu proyecto de Supabase → **Settings → API**.
+### 3. Variables de entorno
 
-### 3. Levantar el servidor local
+Copia `.env.example` a `.env.local` y usa los valores que imprimió `supabase status`:
+
+```env
+VITE_SUPABASE_URL=http://127.0.0.1:54421
+VITE_SUPABASE_ANON_KEY=<anon key local>
+```
+
+### 4. Levantar el servidor local
 
 ```bash
 npm run dev
 ```
 
-La app queda disponible en `http://localhost:5180` (puerto fijo, para no chocar con otros proyectos que corran en el 5173).
+La app queda disponible en `http://localhost:5180` (puerto fijo, para no chocar con otros proyectos que corran en el 5173). Entra con el usuario semilla `admin@glazz.local` / `admin123`.
+
+Para correr la app tal como se despliega (imagen Docker con nginx), ver
+[docs/DOCKER.md](docs/DOCKER.md).
 
 ---
 
