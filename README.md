@@ -63,7 +63,7 @@ Las credenciales las encuentras en tu proyecto de Supabase → **Settings → AP
 npm run dev
 ```
 
-La app queda disponible en `http://localhost:5173`.
+La app queda disponible en `http://localhost:5180` (puerto fijo, para no chocar con otros proyectos que corran en el 5173).
 
 ---
 

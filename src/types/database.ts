@@ -273,13 +273,33 @@ export interface CashRegisterSession {
   closed_by_usuario?: Usuario
 }
 
+export type TipoPago = 'anticipo' | 'abono' | 'saldo_final'
+
+/**
+ * Un pago sobre una cotización. La tabla se sigue llamando `ventas`, pero desde
+ * los abonos hay varias filas por cotización: el anticipo (mínimo 50%) y los
+ * abonos posteriores hasta liquidar el saldo.
+ */
 export interface Venta {
   id: string
   cotizacion_id: string
   session_id: string
   metodo_pago: 'efectivo' | 'tarjeta' | 'transferencia'
   monto: number
+  tipo: TipoPago
+  /** Admin que autorizó un anticipo menor al 50%. */
+  autorizado_por: string | null
+  motivo_autorizacion: string | null
   usuario_id: string
   created_at: string
   cotizacion?: Cotizacion
+}
+
+/** Vista `cotizaciones_saldo`: el saldo se deriva, nunca se almacena. */
+export interface CotizacionSaldo {
+  cotizacion_id: string
+  total: number
+  total_abonado: number
+  saldo: number
+  pct_abonado: number
 }

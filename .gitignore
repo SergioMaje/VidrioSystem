@@ -21,6 +21,10 @@ dist-ssr/
 # claude code
 .claude/
 
+# supabase cli (estado local por desarrollador: project-ref linkeado, ramas)
+supabase/.branches/
+supabase/.temp/
+
 # logs
 *.log
 npm-debug.log*

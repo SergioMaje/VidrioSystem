@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { useCotizaciones } from '@/hooks/useCotizaciones'
+import { useSaldos } from '@/hooks/useVentasCaja'
+import { estaLiquidada } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
 import type { Cotizacion } from '@/types/database'
 
@@ -27,6 +29,7 @@ export function CotizacionesPage() {
   const [estadoFiltro, setEstadoFiltro] = useState('todos')
 
   const { data: cotizaciones, isLoading } = useCotizaciones()
+  const { data: saldos } = useSaldos()
 
   const filtradas = cotizaciones?.filter((c) => {
     const cliente = c.cliente as { nombre: string; apellido: string } | undefined
@@ -83,6 +86,7 @@ export function CotizacionesPage() {
                     <th className="px-4 py-3">Fecha emisión</th>
                     <th className="px-4 py-3">Vencimiento</th>
                     <th className="px-4 py-3 text-right">Total</th>
+                    <th className="px-4 py-3 text-right">Saldo</th>
                     <th className="px-4 py-3">Estado</th>
                   </tr>
                 </thead>
@@ -90,6 +94,7 @@ export function CotizacionesPage() {
                   {filtradas.map((cot) => {
                     const cliente = cot.cliente as { nombre: string; apellido: string } | undefined
                     const cfg = estadoConfig[cot.estado]
+                    const saldo = saldos?.get(cot.id)
                     return (
                       <tr
                         key={cot.id}
@@ -101,6 +106,17 @@ export function CotizacionesPage() {
                         <td className="px-4 py-3 text-muted-foreground">{formatFecha(cot.fecha_emision)}</td>
                         <td className="px-4 py-3 text-muted-foreground">{cot.fecha_vencimiento ? formatFecha(cot.fecha_vencimiento) : '—'}</td>
                         <td className="px-4 py-3 text-right font-mono font-medium">{formatCOP(cot.total)}</td>
+                        <td className="px-4 py-3 text-right">
+                          {cot.estado !== 'vendida' || !saldo ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : estaLiquidada(saldo.saldo) ? (
+                            <span className="text-xs font-medium text-emerald-600">Pagada</span>
+                          ) : (
+                            <span className="font-mono text-destructive" title={`${Math.round(saldo.pct_abonado)}% abonado`}>
+                              {formatCOP(saldo.saldo)}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3"><Badge variant={cfg.variant}>{cfg.label}</Badge></td>
                       </tr>
                     )

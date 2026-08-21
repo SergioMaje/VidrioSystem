@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Play, CheckSquare, Truck, Loader2, Printer, Scissors, Calculator } from 'lucide-react'
+import { ArrowLeft, Play, CheckSquare, Truck, Loader2, Printer, Scissors, Calculator, Wallet, AlertCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,7 +10,11 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import { formatFecha } from '@/lib/utils'
+import { useCotizacion } from '@/hooks/useCotizaciones'
+import { useSaldoCotizacion } from '@/hooks/useVentasCaja'
+import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
+import { estaLiquidada } from '@/lib/pagos'
+import { formatCOP, formatFecha } from '@/lib/utils'
 import { calcularCortes, calcularMateriales, nombreColorPerfil } from '@/lib/produccion'
 import { calcularOpciones, esComponenteDeVidrio, lineasDeOpciones, type LineaMaterial } from '@/lib/opciones'
 import { ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
@@ -93,6 +98,15 @@ export function OrdenDetalle() {
     },
     enabled: !!orden?.cotizacion_id,
   })
+
+  // El producto no sale del taller sin estar pagado: el saldo bloquea la entrega.
+  const { data: saldoInfo } = useSaldoCotizacion(orden?.cotizacion_id)
+  const { data: cotizacion } = useCotizacion(orden?.cotizacion_id ?? '')
+  const [pagoOpen, setPagoOpen] = useState(false)
+  const saldoPendiente = saldoInfo?.saldo ?? 0
+  // Mientras el saldo no haya cargado se asume bloqueado, para no habilitar el
+  // botón por un instante antes de saber si hay deuda.
+  const bloqueadaPorSaldo = !!orden?.cotizacion_id && (!saldoInfo || !estaLiquidada(saldoInfo.saldo))
 
   const cambiarEstado = useMutation({
     mutationFn: async (nuevoEstado: OrdenTrabajo['estado']) => {
@@ -497,12 +511,42 @@ export function OrdenDetalle() {
           </Button>
         )}
         {orden.estado === 'lista' && (
-          <Button onClick={() => cambiarEstado.mutate('entregada')} disabled={cambiarEstado.isPending}>
-            {cambiarEstado.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
-            Marcar como entregada
-          </Button>
+          <>
+            <Button
+              onClick={() => cambiarEstado.mutate('entregada')}
+              disabled={cambiarEstado.isPending || bloqueadaPorSaldo}
+            >
+              {cambiarEstado.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
+              Marcar como entregada
+            </Button>
+            {bloqueadaPorSaldo && (
+              <Button variant="outline" onClick={() => setPagoOpen(true)} disabled={!cotizacion}>
+                <Wallet className="mr-2 h-4 w-4" />
+                Registrar pago final
+              </Button>
+            )}
+          </>
         )}
       </div>
+
+      {orden.estado === 'lista' && bloqueadaPorSaldo && saldoInfo && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            No se puede entregar: quedan <strong className="font-mono">{formatCOP(saldoPendiente)}</strong> por cobrar.
+            Registra el pago final para poder marcar la orden como entregada.
+          </div>
+        </div>
+      )}
+
+      {cotizacion && (
+        <RegistrarPagoDialog
+          cotizacion={cotizacion}
+          modo="abono"
+          open={pagoOpen}
+          onOpenChange={setPagoOpen}
+        />
+      )}
     </div>
   )
 }
