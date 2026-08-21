@@ -5,7 +5,10 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist'] },
+  // supabase/.temp lo genera la CLI al correr `supabase start`: incluye codigo
+  // Deno del edge runtime que no es nuestro y que ensucia el lint con cientos de
+  // errores. No esta versionado, pero aparece en cuanto alguien levanta la base.
+  { ignores: ['dist', 'supabase/.temp', 'supabase/.branches'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

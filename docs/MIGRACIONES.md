@@ -88,14 +88,15 @@ etc.):
    alter table public.clientes
      add column descuento_pct numeric not null default 0;
    ```
-3. Pruébala localmente (requiere Docker):
+3. Pruébala contra tu base local:
    ```bash
-   npx supabase start        # levanta Postgres local con todas las migraciones existentes
-   npx supabase db reset     # reaplica TODAS las migraciones desde cero, incluida la nueva
+   npx supabase start        # si no está levantada
+   npx supabase db reset     # reaplica TODAS las migraciones desde cero + el seed
    ```
    Si `db reset` falla, tu migración tiene un error — corrígela antes de seguir. Esto es
    lo que hubiera detectado, por ejemplo, un error de sintaxis al crear en su momento
-   las tablas `referencias_producto` / `referencias_corte`.
+   las tablas `referencias_producto` / `referencias_corte`. El CI corre exactamente este
+   mismo `db reset` en cada PR.
 4. Commitea el archivo `.sql` junto con el código que lo usa (mismo PR). El código de
    la app y el esquema que necesita deben viajar juntos.
 

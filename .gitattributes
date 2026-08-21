@@ -1,0 +1,13 @@
+# Los scripts que corren dentro de contenedores Linux deben conservar finales de
+# linea LF. Si git los entrega con CRLF en Windows (core.autocrlf=true), el shebang
+# queda como "#!/bin/sh\r" y el contenedor falla al arrancar con un
+# "no such file or directory" bastante desconcertante.
+*.sh text eol=lf
+docker/entrypoint.sh text eol=lf
+
+# El SQL lo consume Postgres dentro del contenedor.
+*.sql text eol=lf
+
+# nginx tampoco necesita CRLF.
+docker/nginx.conf text eol=lf
+Dockerfile text eol=lf

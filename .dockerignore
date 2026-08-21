@@ -1,0 +1,21 @@
+node_modules
+dist
+dist-ssr
+
+.git
+.github
+.claude
+
+# Nunca deben entrar credenciales a la imagen: se inyectan al arrancar.
+.env
+.env.local
+.env.*.local
+
+# Estado local de la CLI de Supabase, propio de cada desarrollador.
+supabase/.branches
+supabase/.temp
+
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

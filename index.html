@@ -5,6 +5,9 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VidrioSystem</title>
+    <!-- Configuracion inyectada en tiempo de arranque por el contenedor.
+         Debe cargarse antes del modulo de la app. Ver public/config.js. -->
+    <script src="%BASE_URL%config.js"></script>
   </head>
   <body>
     <div id="root"></div>
