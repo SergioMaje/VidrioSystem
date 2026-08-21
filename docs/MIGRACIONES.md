@@ -21,32 +21,67 @@ del código.
 
 ## Setup inicial (una sola vez por persona)
 
-1. Instalar la Supabase CLI: https://supabase.com/docs/guides/cli/getting-started
-2. Iniciar sesión:
+1. **Instalar Docker Desktop.** No es opcional: el desarrollo se hace contra una base de
+   datos local en contenedores, no contra el proyecto de la nube. Ver
+   [DOCKER.md](DOCKER.md).
+2. La Supabase CLI se usa vía `npx supabase <comando>` (no hace falta instalarla global).
+3. Iniciar sesión:
    ```bash
-   supabase login
+   npx supabase login
    ```
-3. Conectar el repo local al proyecto remoto de Supabase (pide el `project-ref`, visible
+4. Conectar el repo local al proyecto remoto de Supabase (pide el `project-ref`, visible
    en Settings → General del proyecto en el dashboard):
    ```bash
-   supabase link --project-ref <ref>
+   npx supabase link --project-ref <ref>
    ```
-4. (Opcional pero recomendado) Instalar Docker Desktop para poder correr Supabase
-   localmente y probar migraciones antes de aplicarlas al proyecto remoto compartido.
+   El link se necesita solo para `db push` / `db pull` / `migration list`. El trabajo
+   diario ocurre contra la base local.
 
 ## Si acabas de clonar el repo
 
-El repo ya trae `supabase/migrations/20260706000000_baseline_schema.sql`, una
-aproximación del esquema actual. Antes de confiar en ella:
+Levanta tu base local y listo — no toques el proyecto de la nube:
 
 ```bash
-supabase link --project-ref <ref>
-supabase db pull
+npx supabase start      # Postgres + Auth + API en Docker
+npx supabase db reset   # aplica todas las migraciones + supabase/seed.sql
 ```
 
-Esto trae el esquema real del proyecto remoto y genera (o corrige) las migraciones
-locales para que coincidan exactamente con lo que ya existe en producción. Revisa el
-diff y commitea el resultado si `db pull` genera cambios sobre el baseline.
+Entra con el usuario semilla (`admin@glazz.local` / `admin123`). Los detalles están en
+[DOCKER.md](DOCKER.md).
+
+## Sobre el baseline y `db pull`
+
+`supabase/migrations/20260706000000_baseline_schema.sql` fue reconstruido a mano desde
+`src/types/database.ts`, **no** generado contra la base real: los tipos exactos, defaults,
+índices y políticas RLS pueden diferir de producción.
+
+Corregirlo requiere `supabase db pull`, pero ese comando **no trae "el esquema"**: genera
+una migración nueva con el *diff* entre el remoto y el historial local aplicado. Corrido
+en el momento equivocado duplica trabajo — vuelca en un `_remote_schema.sql` cambios que
+ya tienen su propia migración, y quedan dos definiciones del mismo cambio aplicándose en
+orden distinto según el entorno.
+
+Por eso `db pull` se corre **una sola vez**, y solo cuando se cumplen las tres condiciones:
+
+- estás en `main` actualizado (`git pull origin main`),
+- no queda ninguna migración sin mergear en ramas feature,
+- `npx supabase migration list` (solo lectura, no modifica nada) muestra local y remoto
+  alineados, sin filas pendientes de un lado solo.
+
+Si `migration list` muestra un cambio aplicado a mano en el remoto pero sin registrar, se
+registra sin reejecutarlo:
+
+```bash
+npx supabase migration repair --status applied <timestamp>
+```
+
+Y antes de cualquiera de estas operaciones, respalda el remoto: es la única copia de los
+datos reales de la vidriería.
+
+```bash
+npx supabase db dump -f backup_esquema.sql
+npx supabase db dump -f backup_datos.sql --data-only
+```
 
 ## Crear una migración nueva
 
@@ -63,27 +98,28 @@ etc.):
    alter table public.clientes
      add column descuento_pct numeric not null default 0;
    ```
-3. Pruébala localmente (requiere Docker):
+3. Pruébala contra tu base local:
    ```bash
-   supabase start        # levanta Postgres local con todas las migraciones existentes
-   supabase db reset     # reaplica TODAS las migraciones desde cero, incluida la nueva
+   npx supabase start        # si no está levantada
+   npx supabase db reset     # reaplica TODAS las migraciones desde cero + el seed
    ```
    Si `db reset` falla, tu migración tiene un error — corrígela antes de seguir. Esto es
    lo que hubiera detectado, por ejemplo, un error de sintaxis al crear en su momento
-   las tablas `referencias_producto` / `referencias_corte`.
+   las tablas `referencias_producto` / `referencias_corte`. El CI corre exactamente este
+   mismo `db reset` en cada PR.
 4. Commitea el archivo `.sql` junto con el código que lo usa (mismo PR). El código de
    la app y el esquema que necesita deben viajar juntos.
 
 ## Aplicar la migración al proyecto remoto compartido
 
 Las migraciones se aplican al remoto **solo cuando el PR ya fue aprobado y mergeado a
-`master`**, nunca antes — así se evita que alguien pruebe algo a medias contra la base
+`main`**, nunca antes — así se evita que alguien pruebe algo a medias contra la base
 de datos que usan ambos.
 
 ```bash
-git checkout master
+git checkout main
 git pull
-supabase db push
+npx supabase db push
 ```
 
 Quien mergea el PR es quien corre `db push`. Avisar en el chat del equipo antes de
@@ -95,8 +131,8 @@ mismo tiempo.
 El nombre del archivo empieza con un timestamp (`YYYYMMDDHHMMSS_...`), así que Supabase
 las aplica en orden cronológico. Si ambos crearon migraciones en ramas distintas:
 
-1. El primero en mergear a `master` hace su `db push` normalmente.
-2. El segundo, antes de mergear, hace `git pull origin master` en su rama para traer la
+1. El primero en mergear a `main` hace su `db push` normalmente.
+2. El segundo, antes de mergear, hace `git pull origin main` en su rama para traer la
    migración del otro, corre `supabase db reset` localmente para confirmar que las dos
    migraciones (la ya mergeada + la suya) conviven sin conflicto, y luego mergea.
 3. Si hay conflicto real de esquema (ej. ambos agregaron una columna con el mismo
@@ -107,7 +143,7 @@ las aplica en orden cronológico. Si ambos crearon migraciones en ramas distinta
 
 - **Una migración = un cambio lógico.** No mezcles "agregar tabla X" con "renombrar
   columna Y" en el mismo archivo si son cambios independientes.
-- **Nunca edites una migración ya commiteada y mergeada a `master`.** Si el proyecto
+- **Nunca edites una migración ya commiteada y mergeada a `main`.** Si el proyecto
   remoto ya la aplicó, editarla localmente no la vuelve a aplicar — vas a tener que
   crear una migración nueva que corrija lo que haga falta.
 - **Nombres descriptivos**: `agregar_indice_items_categoria`, no `fix` o `cambios`.

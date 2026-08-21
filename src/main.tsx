@@ -19,7 +19,8 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/VidrioSystem">
+      {/* Deriva del `base` de Vite: '/VidrioSystem/' en GitHub Pages, '/' en el contenedor. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthProvider>
           <AppRoutes />
           <Toaster />

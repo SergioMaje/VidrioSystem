@@ -1,0 +1,29 @@
+# Levanta el frontend de Glazz ya construido, tal como correria en produccion.
+#
+# La base de datos NO se define aqui: la gestiona la CLI de Supabase con sus
+# propios contenedores (`npx supabase start`, puertos 54421-54423 segun
+# supabase/config.toml). Duplicarla aqui daria dos Postgres distintos y datos
+# divididos entre ambos.
+#
+# Uso:
+#   npx supabase start                     # base de datos local
+#   docker compose up --build              # frontend en http://localhost:8180
+#
+# Las variables salen del archivo `.env` de la raiz (que docker compose lee solo,
+# y que ya esta en .gitignore). Copia los valores que imprime `npx supabase status`.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Puerto desplazado a proposito, igual que 5180 en Vite y 54421+ en Supabase,
+    # para no chocar con otros proyectos de la misma maquina.
+    ports:
+      - '8180:80'
+    environment:
+      # Ojo: esta URL la usa el NAVEGADOR del desarrollador, no el contenedor.
+      # Por eso apunta a 127.0.0.1 (el host) y no a un nombre de servicio interno.
+      SUPABASE_URL: ${SUPABASE_URL:-http://127.0.0.1:54421}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?define SUPABASE_ANON_KEY en .env — la imprime 'npx supabase status'}
+    restart: unless-stopped
