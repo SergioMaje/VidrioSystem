@@ -31,10 +31,14 @@ do $$
 declare
   v_user_id uuid := '00000000-0000-4000-8000-000000000001';
 begin
+  -- Las cuatro columnas de token del final no tienen default y quedarian en
+  -- NULL. GoTrue las lee como texto no nulo, asi que un NULL ahi hace que el
+  -- login falle con un opaco "Database error querying schema" (HTTP 500).
   insert into auth.users (
     instance_id, id, aud, role, email, encrypted_password,
     email_confirmed_at, created_at, updated_at,
-    raw_app_meta_data, raw_user_meta_data
+    raw_app_meta_data, raw_user_meta_data,
+    confirmation_token, recovery_token, email_change, email_change_token_new
   ) values (
     '00000000-0000-0000-0000-000000000000',
     v_user_id,
@@ -44,7 +48,8 @@ begin
     extensions.crypt('admin123', extensions.gen_salt('bf')),
     now(), now(), now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
-    '{"nombre":"Admin","apellido":"Local"}'::jsonb
+    '{"nombre":"Admin","apellido":"Local"}'::jsonb,
+    '', '', '', ''
   )
   on conflict (id) do nothing;
 
