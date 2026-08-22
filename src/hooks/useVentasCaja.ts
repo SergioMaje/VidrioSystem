@@ -181,6 +181,26 @@ export function useRegistrarAnticipo() {
         .eq('id', cotizacion.id)
       if (cotizacionError) throw cotizacionError
 
+      // Un flujo anterior creaba la orden al aprobar, antes de cobrar nada: esas
+      // cotizaciones llegan aquí con orden ya existente y no debe duplicarse.
+      const { data: ordenExistente, error: buscarError } = await supabase
+        .from('ordenes_trabajo')
+        .select('id')
+        .eq('cotizacion_id', cotizacion.id)
+        .maybeSingle()
+      if (buscarError) throw buscarError
+
+      if (ordenExistente) {
+        if (fechaEntregaEstimada) {
+          const { error: fechaError } = await supabase
+            .from('ordenes_trabajo')
+            .update({ fecha_entrega_estimada: fechaEntregaEstimada })
+            .eq('id', ordenExistente.id)
+          if (fechaError) throw fechaError
+        }
+        return
+      }
+
       const numero = `OT-${Date.now()}`
       const { error: ordenError } = await supabase.from('ordenes_trabajo').insert({
         numero,

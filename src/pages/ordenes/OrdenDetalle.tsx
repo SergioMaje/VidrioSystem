@@ -13,11 +13,11 @@ import { useToast } from '@/hooks/useToast'
 import { useCotizacion } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion } from '@/hooks/useVentasCaja'
 import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
-import { estaLiquidada } from '@/lib/pagos'
-import { formatCOP, formatFecha } from '@/lib/utils'
+import { anticipoMinimo, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
+import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import { calcularCortes, calcularMateriales, nombreColorPerfil } from '@/lib/produccion'
 import { calcularOpciones, esComponenteDeVidrio, lineasDeOpciones, type LineaMaterial } from '@/lib/opciones'
-import { ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
+import { ESTADOS_ACTIVOS, ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
 import { ladoCorredizoExterior, textoLadoCorredizo } from '@/lib/lados'
 import { PreviewProducto } from '@/pages/productos/PreviewProducto'
 import type { OrdenTrabajo, CotizacionItem } from '@/types/database'
@@ -99,14 +99,21 @@ export function OrdenDetalle() {
     enabled: !!orden?.cotizacion_id,
   })
 
-  // El producto no sale del taller sin estar pagado: el saldo bloquea la entrega.
+  // El pago marca los dos extremos del ciclo: el anticipo habilita la producción
+  // y el saldo en cero habilita la entrega. Entre medias el cliente abona libre.
   const { data: saldoInfo } = useSaldoCotizacion(orden?.cotizacion_id)
   const { data: cotizacion } = useCotizacion(orden?.cotizacion_id ?? '')
   const [pagoOpen, setPagoOpen] = useState(false)
+  const total = saldoInfo?.total ?? 0
+  const abonado = saldoInfo?.total_abonado ?? 0
   const saldoPendiente = saldoInfo?.saldo ?? 0
-  // Mientras el saldo no haya cargado se asume bloqueado, para no habilitar el
-  // botón por un instante antes de saber si hay deuda.
-  const bloqueadaPorSaldo = !!orden?.cotizacion_id && (!saldoInfo || !estaLiquidada(saldoInfo.saldo))
+  const pctAbonado = saldoInfo?.pct_abonado ?? 0
+  const conCotizacion = !!orden?.cotizacion_id
+  // Mientras el saldo no haya cargado se asume bloqueado, para no habilitar los
+  // botones por un instante antes de saber qué se ha cobrado.
+  const sinAnticipo = conCotizacion && (!saldoInfo || !puedeIniciarProduccion(abonado, total))
+  const bloqueadaPorSaldo = conCotizacion && (!saldoInfo || !estaLiquidada(saldoInfo.saldo))
+  const enCurso = orden ? ESTADOS_ACTIVOS.includes(orden.estado) : false
 
   const cambiarEstado = useMutation({
     mutationFn: async (nuevoEstado: OrdenTrabajo['estado']) => {
@@ -188,7 +195,9 @@ export function OrdenDetalle() {
       }
       toast({ title: nuevoEstado === 'entregada' ? 'Orden entregada — stock descontado' : 'Estado actualizado', variant: 'success' })
     },
-    onError: () => toast({ title: 'Error al actualizar', variant: 'destructive' }),
+    // Los triggers de avance explican por qué se rechazó el cambio (falta el
+    // anticipo, queda saldo); ese motivo es más útil que un error genérico.
+    onError: (err) => toast({ title: mensajeError(err, 'Error al actualizar'), variant: 'destructive' }),
   })
 
   const imprimirFichaProduccion = () => {
@@ -495,11 +504,55 @@ export function OrdenDetalle() {
         </Card>
       )}
 
+      {/* El cobro acompaña toda la producción, no solo el momento de entregar:
+          el cliente tiene plazo hasta la entrega para terminar de abonar. */}
+      {conCotizacion && enCurso && saldoInfo && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Pagos</CardTitle>
+            {estaLiquidada(saldoPendiente) ? (
+              <Badge variant="success">Pagada completa</Badge>
+            ) : (
+              <Button size="sm" onClick={() => setPagoOpen(true)} disabled={!cotizacion}>
+                <Wallet className="mr-2 h-4 w-4" />
+                {sinAnticipo ? 'Cobrar anticipo' : 'Registrar abono'}
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full transition-all ${estaLiquidada(saldoPendiente) ? 'bg-emerald-500' : 'bg-primary'}`}
+                  style={{ width: `${Math.min(100, pctAbonado)}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{Math.round(pctAbonado)}% del total abonado</p>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Abonado</span>
+                <span className="font-mono">{formatCOP(abonado)}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span>Saldo pendiente</span>
+                <span className={`font-mono ${estaLiquidada(saldoPendiente) ? 'text-emerald-600' : 'text-destructive'}`}>
+                  {formatCOP(saldoPendiente)}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Separator />
 
       <div className="flex flex-wrap gap-3">
         {orden.estado === 'pendiente' && (
-          <Button onClick={() => cambiarEstado.mutate('en_produccion')} disabled={cambiarEstado.isPending}>
+          <Button
+            onClick={() => cambiarEstado.mutate('en_produccion')}
+            disabled={cambiarEstado.isPending || sinAnticipo}
+          >
             {cambiarEstado.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
             Iniciar producción
           </Button>
@@ -511,23 +564,36 @@ export function OrdenDetalle() {
           </Button>
         )}
         {orden.estado === 'lista' && (
-          <>
-            <Button
-              onClick={() => cambiarEstado.mutate('entregada')}
-              disabled={cambiarEstado.isPending || bloqueadaPorSaldo}
-            >
-              {cambiarEstado.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
-              Marcar como entregada
-            </Button>
-            {bloqueadaPorSaldo && (
-              <Button variant="outline" onClick={() => setPagoOpen(true)} disabled={!cotizacion}>
-                <Wallet className="mr-2 h-4 w-4" />
-                Registrar pago final
-              </Button>
-            )}
-          </>
+          <Button
+            onClick={() => cambiarEstado.mutate('entregada')}
+            disabled={cambiarEstado.isPending || bloqueadaPorSaldo}
+          >
+            {cambiarEstado.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
+            Marcar como entregada
+          </Button>
         )}
       </div>
+
+      {orden.estado === 'pendiente' && sinAnticipo && saldoInfo && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            No se puede iniciar producción: falta cobrar el anticipo
+            (mínimo <strong className="font-mono">{formatCOP(anticipoMinimo(total))}</strong>).
+            Con el anticipo registrado el taller ya puede arrancar.
+          </div>
+        </div>
+      )}
+
+      {orden.estado === 'en_produccion' && bloqueadaPorSaldo && saldoInfo && (
+        <div className="flex items-start gap-2 rounded-md border px-4 py-3 text-sm text-muted-foreground">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            Quedan <strong className="font-mono text-foreground">{formatCOP(saldoPendiente)}</strong> por cobrar.
+            El cliente puede abonar hasta el día de la entrega, pero la orden no se entregará con saldo pendiente.
+          </div>
+        </div>
+      )}
 
       {orden.estado === 'lista' && bloqueadaPorSaldo && saldoInfo && (
         <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -542,7 +608,6 @@ export function OrdenDetalle() {
       {cotizacion && (
         <RegistrarPagoDialog
           cotizacion={cotizacion}
-          modo="abono"
           open={pagoOpen}
           onOpenChange={setPagoOpen}
         />

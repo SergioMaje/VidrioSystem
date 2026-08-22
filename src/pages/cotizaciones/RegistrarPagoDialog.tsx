@@ -11,23 +11,27 @@ import { useRegistrarAnticipo, useRegistrarAbono, useSaldoCotizacion } from '@/h
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo } from '@/lib/pagos'
-import { formatCOP, formatMiles, soloDigitos } from '@/lib/utils'
+import { formatCOP, formatMiles, mensajeError, soloDigitos } from '@/lib/utils'
 import type { Cotizacion, Venta } from '@/types/database'
 
 type Props = {
   cotizacion: Cotizacion
-  /** 'anticipo' es el primer pago (cierra la venta y crea la orden); 'abono' es un cobro posterior. */
-  modo: 'anticipo' | 'abono'
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Props) {
+/**
+ * Cobra un pago de la cotización. El primer pago es el anticipo —cierra la venta,
+ * crea la orden y exige el mínimo del 50%—; los siguientes son abonos libres.
+ * Cuál de los dos es no lo decide quien abre el diálogo sino lo ya abonado, para
+ * que la regla del mínimo no dependa del punto de entrada.
+ */
+export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
   const navigate = useNavigate()
   const { toast } = useToast()
   const { usuario } = useAuth()
   const { data: sesionCaja } = useCajaActual()
-  const { data: saldoInfo } = useSaldoCotizacion(cotizacion.id)
+  const { data: saldoInfo, isSuccess: saldoListo } = useSaldoCotizacion(cotizacion.id)
   const registrarAnticipo = useRegistrarAnticipo()
   const registrarAbono = useRegistrarAbono()
 
@@ -36,6 +40,9 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
   const saldo = saldoInfo?.saldo ?? total
   const minimo = anticipoMinimo(total)
   const esAdmin = usuario?.rol === 'admin'
+  // Mientras el saldo no ha cargado se asume anticipo: es el lado que exige el
+  // mínimo, así nunca se ofrece un cobro más laxo del que corresponde.
+  const esAnticipo = abonado <= 0
 
   const [monto, setMonto] = useState('')
   const [metodoPago, setMetodoPago] = useState<Venta['metodo_pago']>('efectivo')
@@ -45,26 +52,26 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
   const [inicializado, setInicializado] = useState(false)
 
   // Al abrir se precarga el monto habitual: el mínimo en el anticipo, el saldo
-  // completo cuando se viene a liquidar. Se hace una sola vez por apertura para
-  // no pisar lo que el usuario escriba, y en modo abono se espera a conocer el
-  // saldo real antes de precargarlo.
+  // completo cuando se viene a liquidar. Se espera a conocer lo abonado —de eso
+  // depende cuál de los dos es— y se hace una sola vez por apertura para no
+  // pisar lo que el usuario escriba.
   useEffect(() => {
     if (!open) {
       setInicializado(false)
       return
     }
-    if (inicializado || (modo === 'abono' && !saldoInfo)) return
-    setMonto(String(modo === 'anticipo' ? minimo : Math.round(saldo)))
+    if (inicializado || !saldoListo) return
+    setMonto(String(esAnticipo ? minimo : Math.round(saldo)))
     setMetodoPago('efectivo')
     setFechaEntrega('')
     setAutorizar(false)
     setMotivo('')
     setInicializado(true)
-  }, [open, inicializado, modo, minimo, saldo, saldoInfo])
+  }, [open, inicializado, esAnticipo, minimo, saldo, saldoListo])
 
   const montoNum = Number(monto) || 0
-  const bajoMinimo = modo === 'anticipo' && !cumpleAnticipoMinimo(montoNum, total)
-  const sobrepasa = excedeSaldo(montoNum, modo === 'anticipo' ? total : saldo)
+  const bajoMinimo = esAnticipo && !cumpleAnticipoMinimo(montoNum, total)
+  const sobrepasa = excedeSaldo(montoNum, esAnticipo ? total : saldo)
   const requiereAutorizacion = bajoMinimo && !(esAdmin && autorizar && motivo.trim().length > 0)
   const pendiente = registrarAnticipo.isPending || registrarAbono.isPending
   const puedeConfirmar = montoNum > 0 && !sobrepasa && !requiereAutorizacion && !pendiente
@@ -72,7 +79,7 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
   const handleConfirmar = async () => {
     if (!usuario) return
     try {
-      if (modo === 'anticipo') {
+      if (esAnticipo) {
         await registrarAnticipo.mutateAsync({
           cotizacion,
           sessionId: sesionCaja?.id,
@@ -83,7 +90,7 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
           autorizadoPor: bajoMinimo ? usuario.id : undefined,
           motivoAutorizacion: bajoMinimo ? motivo : undefined,
         })
-        toast({ title: 'Anticipo registrado — orden de producción creada', variant: 'success' })
+        toast({ title: 'Anticipo registrado — la producción ya puede iniciar', variant: 'success' })
       } else {
         await registrarAbono.mutateAsync({
           cotizacionId: cotizacion.id,
@@ -97,19 +104,19 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
       onOpenChange(false)
     } catch (err) {
       toast({
-        title: err instanceof Error ? err.message : 'Error al registrar el pago',
+        title: mensajeError(err, 'Error al registrar el pago'),
         variant: 'destructive',
       })
     }
   }
 
-  const saldoResultante = Math.max(0, (modo === 'anticipo' ? total : saldo) - montoNum)
+  const saldoResultante = Math.max(0, (esAnticipo ? total : saldo) - montoNum)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>{modo === 'anticipo' ? 'Registrar anticipo' : 'Registrar abono'}</DialogTitle>
+          <DialogTitle>{esAnticipo ? 'Registrar anticipo' : 'Registrar abono'}</DialogTitle>
         </DialogHeader>
 
         {!sesionCaja ? (
@@ -161,7 +168,7 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
                 />
               </div>
               <div className="flex gap-2 pt-0.5">
-                {modo === 'anticipo' && (
+                {esAnticipo && (
                   <Button type="button" variant="outline" size="sm" onClick={() => setMonto(String(minimo))}>
                     50% ({formatCOP(minimo)})
                   </Button>
@@ -170,14 +177,14 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setMonto(String(Math.round(modo === 'anticipo' ? total : saldo)))}
+                  onClick={() => setMonto(String(Math.round(esAnticipo ? total : saldo)))}
                 >
-                  {modo === 'anticipo' ? 'Total' : 'Saldo completo'}
+                  {esAnticipo ? 'Total' : 'Saldo completo'}
                 </Button>
               </div>
               {sobrepasa ? (
                 <p className="text-xs text-destructive">
-                  El monto excede el saldo pendiente ({formatCOP(modo === 'anticipo' ? total : saldo)}).
+                  El monto excede el saldo pendiente ({formatCOP(esAnticipo ? total : saldo)}).
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
@@ -232,7 +239,7 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
               </Select>
             </div>
 
-            {modo === 'anticipo' && (
+            {esAnticipo && (
               <div className="space-y-1.5">
                 <Label>Fecha de entrega estimada</Label>
                 <Input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} />
@@ -243,7 +250,7 @@ export function RegistrarPagoDialog({ cotizacion, modo, open, onOpenChange }: Pr
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button onClick={handleConfirmar} disabled={!puedeConfirmar}>
                 {pendiente && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {modo === 'anticipo' ? 'Confirmar anticipo' : 'Confirmar abono'}
+                {esAnticipo ? 'Confirmar anticipo' : 'Confirmar abono'}
               </Button>
             </DialogFooter>
           </div>

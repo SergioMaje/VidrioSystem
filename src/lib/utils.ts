@@ -5,6 +5,20 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * Texto legible de un error. Los errores de supabase-js son objetos planos
+ * (`PostgrestError`), no instancias de `Error`, así que un `instanceof Error`
+ * solo se queda con el mensaje genérico y esconde lo que dijo la base.
+ */
+export function mensajeError(err: unknown, porDefecto: string): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const mensaje = (err as { message: unknown }).message
+    if (typeof mensaje === 'string' && mensaje.trim()) return mensaje
+  }
+  return porDefecto
+}
+
 export function formatCOP(amount: number): string {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
