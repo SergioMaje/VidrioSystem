@@ -41,7 +41,7 @@ export function CotizacionDetalle() {
   const { data: pagos } = usePagosCotizacion(id)
   const cambiarEstado = useCambiarEstadoCotizacion()
 
-  const [pagoDialog, setPagoDialog] = useState<'anticipo' | 'abono' | null>(null)
+  const [pagoOpen, setPagoOpen] = useState(false)
 
   const handleRechazar = async () => {
     if (!id) return
@@ -227,7 +227,9 @@ export function CotizacionDetalle() {
         </CardContent>
       </Card>
 
-      {cotizacion.estado === 'vendida' && (
+      {/* 'aprobada' viene de un flujo anterior que creaba la orden sin cobrar:
+          esas cotizaciones también necesitan poder cobrar su anticipo aquí. */}
+      {(cotizacion.estado === 'vendida' || cotizacion.estado === 'aprobada') && (
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Pagos</CardTitle>
@@ -237,9 +239,9 @@ export function CotizacionDetalle() {
                 Pagada completa
               </Badge>
             ) : (
-              <Button size="sm" onClick={() => setPagoDialog('abono')}>
+              <Button size="sm" onClick={() => setPagoOpen(true)}>
                 <Wallet className="mr-2 h-4 w-4" />
-                Registrar abono
+                {abonado > 0 ? 'Registrar abono' : 'Registrar anticipo'}
               </Button>
             )}
           </CardHeader>
@@ -303,7 +305,9 @@ export function CotizacionDetalle() {
 
             {!liquidada && (
               <p className="text-xs text-muted-foreground">
-                La orden de producción ya puede avanzar, pero no se podrá entregar hasta que el saldo quede en cero.
+                {abonado > 0
+                  ? 'La producción ya puede avanzar. El cliente tiene plazo hasta el día de la entrega para abonar el saldo: la orden no se entregará mientras quede pendiente.'
+                  : 'La producción no puede iniciar hasta cobrar el anticipo.'}
               </p>
             )}
           </CardContent>
@@ -338,7 +342,7 @@ export function CotizacionDetalle() {
           </Button>
           <Button
             className="flex-1"
-            onClick={() => setPagoDialog('anticipo')}
+            onClick={() => setPagoOpen(true)}
             disabled={cambiarEstado.isPending}
           >
             <ShoppingCart className="mr-2 h-4 w-4" />
@@ -355,14 +359,11 @@ export function CotizacionDetalle() {
         </div>
       )}
 
-      {pagoDialog && (
-        <RegistrarPagoDialog
-          cotizacion={cotizacion}
-          modo={pagoDialog}
-          open
-          onOpenChange={(open) => { if (!open) setPagoDialog(null) }}
-        />
-      )}
+      <RegistrarPagoDialog
+        cotizacion={cotizacion}
+        open={pagoOpen}
+        onOpenChange={setPagoOpen}
+      />
     </div>
   )
 }

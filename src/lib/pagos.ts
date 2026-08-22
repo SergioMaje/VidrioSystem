@@ -13,6 +13,14 @@ export const cumpleAnticipoMinimo = (monto: number, total: number) =>
 
 export const estaLiquidada = (saldo: number) => saldo <= TOLERANCIA
 
+/**
+ * La producción arranca con el anticipo cobrado; el saldo se cobra durante la
+ * producción y hasta el día de la entrega. Lo mismo valida el trigger
+ * `validar_avance_orden` en Postgres.
+ */
+export const puedeIniciarProduccion = (abonado: number, total: number) =>
+  cumpleAnticipoMinimo(abonado, total)
+
 export const excedeSaldo = (monto: number, saldo: number) => monto > saldo + TOLERANCIA
 
 /** El primer pago es el anticipo; el que liquida la cotización es el saldo final. */

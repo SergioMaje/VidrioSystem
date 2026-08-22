@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { supabase } from '@/lib/supabase'
-import { formatFecha } from '@/lib/utils'
+import { useSaldos } from '@/hooks/useVentasCaja'
+import { estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
+import { formatCOP, formatFecha } from '@/lib/utils'
 import { ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
 import type { OrdenTrabajo } from '@/types/database'
 
@@ -30,6 +32,10 @@ export function OrdenesPage() {
       return data as OrdenTrabajo[]
     },
   })
+
+  // Los saldos vienen de una vista sin FK, así que se cruzan en memoria — igual
+  // que en el listado de cotizaciones.
+  const { data: saldos } = useSaldos()
 
   const filtradas = ordenes?.filter((o) => {
     const cliente = o.cliente as { nombre: string; apellido: string } | undefined
@@ -80,12 +86,16 @@ export function OrdenesPage() {
                     <th className="px-4 py-3">Estado</th>
                     <th className="px-4 py-3">Fecha inicio</th>
                     <th className="px-4 py-3">Entrega estimada</th>
+                    <th className="px-4 py-3 text-right">Saldo</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtradas.map((orden) => {
                     const cliente = orden.cliente as { nombre: string; apellido: string } | undefined
                     const cfg = estadoConfig[orden.estado]
+                    const saldo = orden.cotizacion_id ? saldos?.get(orden.cotizacion_id) : undefined
+                    // Sin el anticipo cobrado el taller no debería tomar la orden.
+                    const sinAnticipo = !!saldo && !puedeIniciarProduccion(saldo.total_abonado, saldo.total)
                     return (
                       <tr
                         key={orden.id}
@@ -97,6 +107,17 @@ export function OrdenesPage() {
                         <td className="px-4 py-3"><Badge variant={cfg.variant}>{cfg.label}</Badge></td>
                         <td className="px-4 py-3 text-muted-foreground">{orden.fecha_inicio ? formatFecha(orden.fecha_inicio) : '—'}</td>
                         <td className="px-4 py-3 text-muted-foreground">{orden.fecha_entrega_estimada ? formatFecha(orden.fecha_entrega_estimada) : '—'}</td>
+                        <td className="px-4 py-3 text-right">
+                          {!saldo ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : sinAnticipo ? (
+                            <Badge variant="destructive">Sin anticipo</Badge>
+                          ) : estaLiquidada(saldo.saldo) ? (
+                            <span className="font-mono text-xs text-emerald-600">Pagada</span>
+                          ) : (
+                            <span className="font-mono text-xs text-amber-700">{formatCOP(saldo.saldo)}</span>
+                          )}
+                        </td>
                       </tr>
                     )
                   })}
