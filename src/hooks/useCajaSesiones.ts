@@ -44,43 +44,23 @@ export function useAbrirCaja() {
 export function useCerrarCaja() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ sessionId, counted_amount, closed_by }: { sessionId: string; counted_amount: number; closed_by: string }) => {
-      const { data: session, error: sessionError } = await supabase
-        .from('cash_register_sessions')
-        .select('opening_amount')
-        .eq('id', sessionId)
-        .single()
-      if (sessionError) throw sessionError
-
-      const { data: ventasEfectivo, error: ventasError } = await supabase
-        .from('ventas')
-        .select('monto')
-        .eq('session_id', sessionId)
-        .eq('metodo_pago', 'efectivo')
-      if (ventasError) throw ventasError
-
-      const totalEfectivo = (ventasEfectivo ?? []).reduce((acc, v) => acc + v.monto, 0)
-      const expected_amount = session.opening_amount + totalEfectivo
-      const difference = counted_amount - expected_amount
-
-      const { error } = await supabase
-        .from('cash_register_sessions')
-        .update({
-          closed_at: new Date().toISOString(),
-          closed_by,
-          expected_amount,
-          counted_amount,
-          difference,
-          status: 'closed',
-        })
-        .eq('id', sessionId)
+    /**
+     * El arqueo lo calcula Postgres (`cerrar_caja`), no el navegador: es la cifra
+     * de control de la caja y el cliente no debe poder dictarla. El RPC también
+     * resuelve `closed_by` desde `auth.uid()`.
+     */
+    mutationFn: async ({ sessionId, counted_amount }: { sessionId: string; counted_amount: number }) => {
+      const { data, error } = await supabase.rpc('cerrar_caja', {
+        p_session_id: sessionId,
+        p_counted_amount: counted_amount,
+      })
       if (error) throw error
-
-      return { expected_amount, counted_amount, difference }
+      return data as unknown as CashRegisterSession
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['caja-actual'] })
       qc.invalidateQueries({ queryKey: ['historial-caja'] })
+      qc.invalidateQueries({ queryKey: ['resumen-sesiones'] })
     },
   })
 }
@@ -100,6 +80,33 @@ export function useHistorialCaja() {
         .order('closed_at', { ascending: false })
       if (error) throw error
       return data as SesionCajaHistorial[]
+    },
+  })
+}
+
+export type ResumenSesion = {
+  session_id: string
+  total_efectivo: number
+  total_transferencia: number
+  total_tarjeta: number
+  total_cobrado: number
+  num_pagos: number
+}
+
+/**
+ * Movimiento completo de cada turno (no solo efectivo). Supabase no infiere la
+ * relación con una vista sin FK, así que el cruce con el historial se hace en
+ * memoria — mismo patrón que `useSaldos` en useVentasCaja.ts.
+ */
+export function useResumenSesiones() {
+  return useQuery({
+    queryKey: ['resumen-sesiones'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('caja_sesiones_resumen').select('*')
+      if (error) throw error
+      const porSesion = new Map<string, ResumenSesion>()
+      for (const fila of (data ?? []) as ResumenSesion[]) porSesion.set(fila.session_id, fila)
+      return porSesion
     },
   })
 }

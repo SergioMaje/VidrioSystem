@@ -10,8 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
-import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
-import { useHistorialCaja } from '@/hooks/useCajaSesiones'
+import { fechaISOLocal, finDeDia, formatCOP, formatDuracion, formatFecha, formatFechaHora, formatHora } from '@/lib/utils'
+import { useHistorialCaja, useResumenSesiones } from '@/hooks/useCajaSesiones'
 import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
 import { ResumenVentasSesion } from '@/pages/caja/CajaPage'
@@ -38,12 +38,14 @@ type CotizacionReporte = {
   items_count: number
 }
 
+/** Debe cubrir el enum `estado_cotizacion` completo, o el estado cae al fallback gris. */
 const ESTADO_VARIANTS: Record<string, 'default' | 'secondary' | 'destructive' | 'success' | 'warning' | 'outline'> = {
   borrador: 'secondary',
   enviada: 'default',
   aprobada: 'success',
   rechazada: 'destructive',
-  cancelada: 'outline',
+  vencida: 'warning',
+  vendida: 'success',
 }
 
 type MetodoPago = Venta['metodo_pago']
@@ -68,14 +70,6 @@ type ResumenDia = {
   total: number
 }
 
-/** Clave YYYY-MM-DD en zona horaria local (no UTC) para agrupar por día. */
-function fechaLocal(dateStr: string): string {
-  const d = new Date(dateStr)
-  const mes = String(d.getMonth() + 1).padStart(2, '0')
-  const dia = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${mes}-${dia}`
-}
-
 function exportarCSV(filas: string[][], nombreArchivo: string) {
   const contenido = filas.map((fila) => fila.map((celda) => `"${String(celda).replace(/"/g, '""')}"`).join(',')).join('\n')
   const blob = new Blob(['﻿' + contenido], { type: 'text/csv;charset=utf-8;' })
@@ -88,14 +82,16 @@ function exportarCSV(filas: string[][], nombreArchivo: string) {
 }
 
 export function ReportesPage() {
-  const hoy = new Date().toISOString().split('T')[0]
-  const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  // Fecha local, no UTC: `toISOString()` ya adelanta el día a las 7 p.m. en Colombia.
+  const hoy = fechaISOLocal(new Date())
+  const hace30 = fechaISOLocal(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
 
   const [desde, setDesde] = useState(hace30)
   const [hasta, setHasta] = useState(hoy)
   const [sesionDetalle, setSesionDetalle] = useState<SesionCajaHistorial | null>(null)
 
   const { data: historialCaja, isLoading: loadingCaja } = useHistorialCaja()
+  const { data: resumenSesiones } = useResumenSesiones()
 
   const { data: inventario, isLoading: loadingInv } = useQuery({
     queryKey: ['reporte_inventario'],
@@ -127,7 +123,7 @@ export function ReportesPage() {
         .from('cotizaciones')
         .select('id, numero, created_at, estado, total, cliente:clientes(nombre, apellido), cotizacion_items(id)')
         .gte('created_at', desde)
-        .lte('created_at', hasta + 'T23:59:59')
+        .lt('created_at', finDeDia(hasta))
         .order('created_at', { ascending: false })
       if (error) throw error
 
@@ -160,7 +156,7 @@ export function ReportesPage() {
     const mapa = new Map<string, ResumenDia>()
     for (const v of ingresos ?? []) {
       // Fecha local (no UTC): una venta de la tarde no debe contarse en el día siguiente
-      const fecha = fechaLocal(v.created_at)
+      const fecha = fechaISOLocal(v.created_at)
       const dia = mapa.get(fecha) ?? { fecha, efectivo: 0, transferencia: 0, tarjeta: 0, total: 0 }
       dia[v.metodo_pago] += v.monto
       dia.total += v.monto
@@ -602,6 +598,10 @@ export function ReportesPage() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Historial de cierres de caja</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Abre <span className="font-medium">Ver detalle</span> para el desglose por método de pago,
+                los pagos del turno y el arqueo completo.
+              </p>
             </CardHeader>
             <CardContent className="p-0">
               {loadingCaja ? (
@@ -614,26 +614,24 @@ export function ReportesPage() {
                     <thead>
                       <tr className="border-b bg-muted/50 text-left text-xs font-medium uppercase text-muted-foreground">
                         <th className="px-4 py-3">Apertura</th>
-                        <th className="px-4 py-3">Cierre</th>
-                        <th className="px-4 py-3">Abrió</th>
+                        <th className="px-4 py-3 text-right">Duración</th>
                         <th className="px-4 py-3">Cerró</th>
-                        <th className="px-4 py-3 text-right">Fondo inicial</th>
-                        <th className="px-4 py-3 text-right">Esperado</th>
-                        <th className="px-4 py-3 text-right">Contado</th>
+                        <th className="px-4 py-3 text-right">Total cobrado</th>
                         <th className="px-4 py-3 text-right">Diferencia</th>
                         <th className="px-4 py-3" />
                       </tr>
                     </thead>
                     <tbody>
-                      {historialCaja.map((sesion) => (
+                      {historialCaja.map((sesion) => {
+                        const resumen = resumenSesiones?.get(sesion.id)
+                        return (
                         <tr key={sesion.id} className="border-b last:border-0 hover:bg-muted/30">
                           <td className="px-4 py-3 text-muted-foreground">{formatFechaHora(sesion.opened_at)}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{sesion.closed_at ? formatFechaHora(sesion.closed_at) : '—'}</td>
-                          <td className="px-4 py-3">{sesion.abierta_por ? `${sesion.abierta_por.nombre} ${sesion.abierta_por.apellido}` : '—'}</td>
+                          <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                            {sesion.closed_at ? formatDuracion(sesion.opened_at, sesion.closed_at) : '—'}
+                          </td>
                           <td className="px-4 py-3">{sesion.cerrada_por ? `${sesion.cerrada_por.nombre} ${sesion.cerrada_por.apellido}` : '—'}</td>
-                          <td className="px-4 py-3 text-right font-mono">{formatCOP(sesion.opening_amount)}</td>
-                          <td className="px-4 py-3 text-right font-mono">{sesion.expected_amount != null ? formatCOP(sesion.expected_amount) : '—'}</td>
-                          <td className="px-4 py-3 text-right font-mono">{sesion.counted_amount != null ? formatCOP(sesion.counted_amount) : '—'}</td>
+                          <td className="px-4 py-3 text-right font-semibold">{resumen ? formatCOP(resumen.total_cobrado) : '—'}</td>
                           <td className="px-4 py-3 text-right font-mono">
                             {sesion.difference != null ? (
                               <span className={sesion.difference === 0 ? '' : sesion.difference > 0 ? 'text-emerald-600' : 'text-destructive'}>
@@ -642,10 +640,11 @@ export function ReportesPage() {
                             ) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <Button size="sm" variant="outline" onClick={() => setSesionDetalle(sesion)}>Ver ventas</Button>
+                            <Button size="sm" variant="outline" onClick={() => setSesionDetalle(sesion)}>Ver detalle</Button>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -656,12 +655,44 @@ export function ReportesPage() {
       </Tabs>
 
       <Dialog open={!!sesionDetalle} onOpenChange={(o) => !o && setSesionDetalle(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Ventas del turno</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-2xl">
           {sesionDetalle && (
-            <ResumenVentasSesion sessionId={sesionDetalle.id} openingAmount={sesionDetalle.opening_amount} />
+            <>
+              <DialogHeader>
+                <DialogTitle>Turno del {formatFecha(sesionDetalle.opened_at)}</DialogTitle>
+                <p className="text-sm text-muted-foreground">
+                  {formatHora(sesionDetalle.opened_at)}
+                  {' → '}
+                  {sesionDetalle.closed_at ? formatHora(sesionDetalle.closed_at) : '—'}
+                  {sesionDetalle.closed_at && ` · ${formatDuracion(sesionDetalle.opened_at, sesionDetalle.closed_at)}`}
+                </p>
+              </DialogHeader>
+
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                <span className="text-muted-foreground">
+                  Abrió:{' '}
+                  <span className="text-foreground">
+                    {sesionDetalle.abierta_por
+                      ? `${sesionDetalle.abierta_por.nombre} ${sesionDetalle.abierta_por.apellido}`
+                      : '—'}
+                  </span>
+                </span>
+                <span className="text-muted-foreground">
+                  Cerró:{' '}
+                  <span className="text-foreground">
+                    {sesionDetalle.cerrada_por
+                      ? `${sesionDetalle.cerrada_por.nombre} ${sesionDetalle.cerrada_por.apellido}`
+                      : '—'}
+                  </span>
+                </span>
+              </div>
+
+              <ResumenVentasSesion
+                sessionId={sesionDetalle.id}
+                openingAmount={sesionDetalle.opening_amount}
+                arqueo={sesionDetalle}
+              />
+            </>
           )}
         </DialogContent>
       </Dialog>
