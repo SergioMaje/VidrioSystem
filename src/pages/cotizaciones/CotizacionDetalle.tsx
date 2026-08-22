@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -42,6 +42,16 @@ export function CotizacionDetalle() {
   const cambiarEstado = useCambiarEstadoCotizacion()
 
   const [pagoOpen, setPagoOpen] = useState(false)
+
+  const handleMarcarEnviada = async () => {
+    if (!id) return
+    try {
+      await cambiarEstado.mutateAsync({ id, estado: 'enviada' })
+      toast({ title: 'Cotización marcada como enviada', variant: 'success' })
+    } catch {
+      toast({ title: 'Error al actualizar estado', variant: 'destructive' })
+    }
+  }
 
   const handleRechazar = async () => {
     if (!id) return
@@ -331,31 +341,51 @@ export function CotizacionDetalle() {
         </div>
       )}
 
+      {/* El anticipo solo se cobra sobre una cotización que ya se le pasó al cliente:
+          desde 'borrador' el paso obligado es marcarla como enviada. */}
       {(cotizacion.estado === 'borrador' || cotizacion.estado === 'enviada') && (
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            onClick={() => navigate(`/cotizaciones/${id}/editar`)}
-          >
-            <Pencil className="mr-2 h-4 w-4" />
-            Editar
-          </Button>
-          <Button
-            className="flex-1"
-            onClick={() => setPagoOpen(true)}
-            disabled={cambiarEstado.isPending}
-          >
-            <ShoppingCart className="mr-2 h-4 w-4" />
-            Cliente aprobó — Registrar anticipo
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={handleRechazar}
-            disabled={cambiarEstado.isPending}
-          >
-            <XCircle className="mr-2 h-4 w-4" />
-            Rechazar
-          </Button>
+        <div className="space-y-2">
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/cotizaciones/${id}/editar`)}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Editar
+            </Button>
+            {cotizacion.estado === 'borrador' ? (
+              <Button
+                className="flex-1"
+                onClick={handleMarcarEnviada}
+                disabled={cambiarEstado.isPending}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Marcar como enviada
+              </Button>
+            ) : (
+              <Button
+                className="flex-1"
+                onClick={() => setPagoOpen(true)}
+                disabled={cambiarEstado.isPending}
+              >
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                Cliente aprobó — Registrar anticipo
+              </Button>
+            )}
+            <Button
+              variant="destructive"
+              onClick={handleRechazar}
+              disabled={cambiarEstado.isPending}
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              Rechazar
+            </Button>
+          </div>
+          {cotizacion.estado === 'borrador' && (
+            <p className="text-xs text-muted-foreground">
+              Marca la cotización como enviada al cliente para poder registrar el anticipo.
+            </p>
+          )}
         </div>
       )}
 
