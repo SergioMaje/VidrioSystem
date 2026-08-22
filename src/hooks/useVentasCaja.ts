@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo, tipoDePago } from '@/lib/pagos'
-import { formatCOP } from '@/lib/utils'
+import { finDeDia, formatCOP } from '@/lib/utils'
 import type { Cotizacion, CotizacionSaldo, Usuario, Venta } from '@/types/database'
 
 export type VentaConCotizacion = Venta & {
@@ -37,10 +37,12 @@ export function useVentasPeriodo(desde: string, hasta: string) {
       const { data, error } = await supabase
         .from('ventas')
         .select(
-          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), usuario:usuarios(nombre, apellido)'
+          // `ventas` tiene dos FK a `usuarios` (usuario_id y autorizado_por): sin el
+          // hint explícito PostgREST no sabe cuál usar y responde 300 (PGRST201).
+          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido)'
         )
         .gte('created_at', desde)
-        .lte('created_at', hasta + 'T23:59:59')
+        .lt('created_at', finDeDia(hasta))
         .order('created_at', { ascending: false })
       if (error) throw error
       return data as unknown as VentaReporte[]
@@ -77,7 +79,8 @@ export function usePagosCotizacion(cotizacionId: string | null | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('ventas')
-        .select('*, usuario:usuarios(nombre, apellido)')
+        // Mismo motivo que en useVentasPeriodo: el hint de FK es obligatorio.
+        .select('*, usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido)')
         .eq('cotizacion_id', cotizacionId as string)
         .order('created_at')
       if (error) throw error
@@ -114,6 +117,7 @@ function invalidarPagos(
 ) {
   qc.invalidateQueries({ queryKey: ['caja-actual'] })
   qc.invalidateQueries({ queryKey: ['ventas-sesion', sessionId] })
+  qc.invalidateQueries({ queryKey: ['resumen-sesiones'] })
   qc.invalidateQueries({ queryKey: ['ventas-periodo'] })
   qc.invalidateQueries({ queryKey: ['cotizaciones'] })
   qc.invalidateQueries({ queryKey: ['cotizacion', cotizacionId] })

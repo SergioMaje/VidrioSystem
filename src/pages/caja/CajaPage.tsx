@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/useToast'
 import { useCajaActual, useAbrirCaja, useCerrarCaja } from '@/hooks/useCajaSesiones'
 import { useVentasSesion } from '@/hooks/useVentasCaja'
 import { TIPO_PAGO_LABEL } from '@/lib/pagos'
-import { formatCOP } from '@/lib/utils'
+import { formatCOP, mensajeError } from '@/lib/utils'
 import type { Venta } from '@/types/database'
 
 const METODO_LABEL: Record<Venta['metodo_pago'], string> = {
@@ -23,7 +23,27 @@ const METODO_LABEL: Record<Venta['metodo_pago'], string> = {
   transferencia: 'Transferencia',
 }
 
-export function ResumenVentasSesion({ sessionId, openingAmount }: { sessionId: string; openingAmount: number }) {
+/** Cifras del cierre, ya guardadas. Solo existen en un turno cerrado. */
+export type Arqueo = {
+  expected_amount: number | null
+  counted_amount: number | null
+  difference: number | null
+}
+
+/**
+ * Movimiento de un turno de caja. Sirve a dos momentos distintos: con la caja
+ * abierta (sin `arqueo`) proyecta el efectivo que debería haber en el cajón;
+ * con el turno ya cerrado (con `arqueo`) muestra el conteo real y el descuadre.
+ */
+export function ResumenVentasSesion({
+  sessionId,
+  openingAmount,
+  arqueo,
+}: {
+  sessionId: string
+  openingAmount: number
+  arqueo?: Arqueo
+}) {
   const { data: ventas, isLoading } = useVentasSesion(sessionId)
 
   if (isLoading) return <LoadingSpinner className="py-8" />
@@ -78,9 +98,42 @@ export function ResumenVentasSesion({ sessionId, openingAmount }: { sessionId: s
       <Separator />
 
       <div className="space-y-1 text-sm">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Total cobrado ({ventas?.length ?? 0} pagos)</span>
+          <span className="font-mono font-semibold">{formatCOP(totalGeneral)}</span>
+        </div>
+        <p className="pt-2 text-xs font-medium uppercase text-muted-foreground">Arqueo de efectivo</p>
         <div className="flex justify-between"><span className="text-muted-foreground">Fondo inicial</span><span className="font-mono">{formatCOP(openingAmount)}</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">Total cobrado ({ventas?.length ?? 0} pagos)</span><span className="font-mono">{formatCOP(totalGeneral)}</span></div>
-        <div className="flex justify-between font-semibold"><span>Efectivo esperado en caja</span><span className="font-mono text-primary">{formatCOP(efectivoEsperado)}</span></div>
+
+        {arqueo ? (
+          <>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Esperado</span>
+              <span className="font-mono">{arqueo.expected_amount != null ? formatCOP(arqueo.expected_amount) : '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Contado</span>
+              <span className="font-mono">{arqueo.counted_amount != null ? formatCOP(arqueo.counted_amount) : '—'}</span>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <span>Diferencia</span>
+              {arqueo.difference != null ? (
+                <span className={`font-mono ${arqueo.difference === 0 ? '' : arqueo.difference > 0 ? 'text-emerald-600' : 'text-destructive'}`}>
+                  {formatCOP(arqueo.difference)}
+                </span>
+              ) : <span className="font-mono">—</span>}
+            </div>
+          </>
+        ) : (
+          <div className="flex justify-between font-semibold">
+            <span>Efectivo esperado en caja</span>
+            <span className="font-mono text-primary">{formatCOP(efectivoEsperado)}</span>
+          </div>
+        )}
+
+        <p className="pt-1 text-xs text-muted-foreground">
+          El arqueo cubre solo el efectivo: transferencias y tarjetas no pasan por el cajón.
+        </p>
       </div>
     </div>
   )
@@ -147,7 +200,6 @@ function CerrarCajaDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { usuario } = useAuth()
   const { toast } = useToast()
   const cerrarCaja = useCerrarCaja()
   const [conteo, setConteo] = useState('')
@@ -155,13 +207,17 @@ function CerrarCajaDialog({
 
   const handleCerrar = async () => {
     const counted_amount = Number(conteo)
-    if (!usuario || !conteo || counted_amount < 0) return
+    if (!conteo || counted_amount < 0) return
     try {
-      const res = await cerrarCaja.mutateAsync({ sessionId, counted_amount, closed_by: usuario.id })
-      setResultado(res)
+      const sesion = await cerrarCaja.mutateAsync({ sessionId, counted_amount })
+      setResultado({
+        expected_amount: sesion.expected_amount ?? 0,
+        counted_amount: sesion.counted_amount ?? counted_amount,
+        difference: sesion.difference ?? 0,
+      })
       toast({ title: 'Caja cerrada', variant: 'success' })
     } catch (err) {
-      toast({ title: err instanceof Error ? err.message : 'Error al cerrar caja', variant: 'destructive' })
+      toast({ title: mensajeError(err, 'Error al cerrar caja'), variant: 'destructive' })
     }
   }
 
