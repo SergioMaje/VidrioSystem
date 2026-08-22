@@ -94,17 +94,25 @@ export function CotizacionFormPage() {
     }
     try {
       if (modoEdicion && id && cotizacionExistente) {
+        // Editar los ítems o precios invalida lo que ya vio el cliente: la cotización
+        // vuelve a borrador y hay que reenviarla antes de poder cobrar el anticipo.
+        const revierteABorrador = cotizacionExistente.estado === 'enviada'
         await actualizarCotizacion.mutateAsync({
           id,
           cliente_id: clienteId,
-          estado: cotizacionExistente.estado,
+          estado: revierteABorrador ? 'borrador' : cotizacionExistente.estado,
           fecha_vencimiento: fechaVencimiento,
           descuento_pct: descuentoPct,
           iva_pct: ivaPct,
           notas: notas || undefined,
           items,
         })
-        toast({ title: 'Cotización actualizada', variant: 'success' })
+        toast({
+          title: revierteABorrador
+            ? 'Cotización actualizada — vuelve a borrador, márcala como enviada de nuevo'
+            : 'Cotización actualizada',
+          variant: 'success',
+        })
         navigate(`/cotizaciones/${id}`)
       } else {
         await crearCotizacion.mutateAsync({
