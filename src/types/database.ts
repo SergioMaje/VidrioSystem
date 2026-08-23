@@ -273,18 +273,23 @@ export interface CashRegisterSession {
   closed_by_usuario?: Usuario
 }
 
-export type TipoPago = 'anticipo' | 'abono' | 'saldo_final'
+export type TipoPago = 'anticipo' | 'abono' | 'saldo_final' | 'contado'
+
+export type MetodoPago = 'efectivo' | 'tarjeta' | 'transferencia'
 
 /**
- * Un pago sobre una cotización. La tabla se sigue llamando `ventas`, pero desde
- * los abonos hay varias filas por cotización: el anticipo (mínimo 50%) y los
- * abonos posteriores hasta liquidar el saldo.
+ * Un pago. La tabla se sigue llamando `ventas`, pero es un libro de cobros:
+ * desde los abonos hay varias filas por cotización (anticipo del 50% y abonos
+ * hasta liquidar), y desde la venta de mostrador un pago puede venir de una
+ * cotización o de una `ventas_mostrador` — exactamente uno de los dos, garantía
+ * del check `ventas_origen_unico`.
  */
 export interface Venta {
   id: string
-  cotizacion_id: string
+  cotizacion_id: string | null
+  venta_mostrador_id: string | null
   session_id: string
-  metodo_pago: 'efectivo' | 'tarjeta' | 'transferencia'
+  metodo_pago: MetodoPago
   monto: number
   tipo: TipoPago
   /** Admin que autorizó un anticipo menor al 50%. */
@@ -293,6 +298,31 @@ export interface Venta {
   usuario_id: string
   created_at: string
   cotizacion?: Cotizacion
+}
+
+/** Venta directa de mostrador: productos que salen del inventario tal cual. */
+export interface VentaMostrador {
+  id: string
+  numero: string
+  /** Nullable: puede ser una venta a público general. */
+  cliente_id: string | null
+  session_id: string
+  usuario_id: string
+  total: number
+  created_at: string
+  cliente?: Cliente | null
+  items?: VentaMostradorItem[]
+}
+
+export interface VentaMostradorItem {
+  id: string
+  venta_id: string
+  item_id: string
+  /** Snapshot del nombre al momento de vender. */
+  descripcion: string
+  cantidad: number
+  precio_unitario: number
+  precio_total: number
 }
 
 /** Vista `cotizaciones_saldo`: el saldo se deriva, nunca se almacena. */

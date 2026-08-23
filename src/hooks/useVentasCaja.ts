@@ -4,8 +4,12 @@ import { anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo, tipoDePago } from '@
 import { finDeDia, formatCOP } from '@/lib/utils'
 import type { Cotizacion, CotizacionSaldo, Usuario, Venta } from '@/types/database'
 
+/** Origen de un pago: una cotización o una venta de mostrador, nunca las dos. */
+type Origen = { numero: string; cliente: { nombre: string; apellido: string } | null } | null
+
 export type VentaConCotizacion = Venta & {
-  cotizacion: { numero: string; cliente: { nombre: string; apellido: string } | null } | null
+  cotizacion: Origen
+  venta_mostrador: Origen
 }
 
 export function useVentasSesion(sessionId: string | undefined) {
@@ -14,18 +18,21 @@ export function useVentasSesion(sessionId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('ventas')
-        .select('*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido))')
+        .select(
+          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), venta_mostrador:ventas_mostrador(numero, cliente:clientes(nombre, apellido))'
+        )
         .eq('session_id', sessionId as string)
         .order('created_at')
       if (error) throw error
-      return data as VentaConCotizacion[]
+      return data as unknown as VentaConCotizacion[]
     },
     enabled: !!sessionId,
   })
 }
 
 export type VentaReporte = Venta & {
-  cotizacion: { numero: string; cliente: { nombre: string; apellido: string } | null } | null
+  cotizacion: Origen
+  venta_mostrador: Origen
   usuario: { nombre: string; apellido: string } | null
 }
 
@@ -39,7 +46,7 @@ export function useVentasPeriodo(desde: string, hasta: string) {
         .select(
           // `ventas` tiene dos FK a `usuarios` (usuario_id y autorizado_por): sin el
           // hint explícito PostgREST no sabe cuál usar y responde 300 (PGRST201).
-          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido)'
+          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), venta_mostrador:ventas_mostrador(numero, cliente:clientes(nombre, apellido)), usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido)'
         )
         .gte('created_at', desde)
         .lt('created_at', finDeDia(hasta))

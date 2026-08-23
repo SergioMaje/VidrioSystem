@@ -13,7 +13,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useCajaActual, useAbrirCaja, useCerrarCaja } from '@/hooks/useCajaSesiones'
 import { useVentasSesion } from '@/hooks/useVentasCaja'
-import { TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { TIPO_PAGO_LABEL, origenDeVenta } from '@/lib/pagos'
 import { formatCOP, mensajeError } from '@/lib/utils'
 import type { Venta } from '@/types/database'
 
@@ -79,17 +79,18 @@ export function ResumenVentasSesion({
               </tr>
             </thead>
             <tbody>
-              {ventas.map((v) => (
-                <tr key={v.id} className="border-b last:border-0">
-                  <td className="px-3 py-2 font-mono text-xs">{v.cotizacion?.numero ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    {v.cotizacion?.cliente ? `${v.cotizacion.cliente.nombre} ${v.cotizacion.cliente.apellido}` : '—'}
-                  </td>
-                  <td className="px-3 py-2">{TIPO_PAGO_LABEL[v.tipo]}</td>
-                  <td className="px-3 py-2">{METODO_LABEL[v.metodo_pago]}</td>
-                  <td className="px-3 py-2 text-right font-mono">{formatCOP(v.monto)}</td>
-                </tr>
-              ))}
+              {ventas.map((v) => {
+                const origen = origenDeVenta(v)
+                return (
+                  <tr key={v.id} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-mono text-xs">{origen.numero}</td>
+                    <td className="px-3 py-2">{origen.cliente}</td>
+                    <td className="px-3 py-2">{TIPO_PAGO_LABEL[v.tipo]}</td>
+                    <td className="px-3 py-2">{METODO_LABEL[v.metodo_pago]}</td>
+                    <td className="px-3 py-2 text-right font-mono">{formatCOP(v.monto)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
