@@ -9,10 +9,11 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { useCotizacion, useCambiarEstadoCotizacion } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
+import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { estaLiquidada, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
-import type { Cotizacion, CotizacionItem, Venta } from '@/types/database'
+import type { Cliente, Cotizacion, CotizacionItem, Venta } from '@/types/database'
 
 const METODO_LABEL: Record<Venta['metodo_pago'], string> = {
   efectivo: 'Efectivo',
@@ -32,6 +33,9 @@ const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'defa
 const escapar = (texto: string) =>
   texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/** Una empresa se identifica con NIT; una persona natural, con cédula. */
+const etiquetaDocumento = (tipo?: Cliente['tipo']) => (tipo === 'juridico' ? 'NIT' : 'C.C.')
+
 export function CotizacionDetalle() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -39,6 +43,8 @@ export function CotizacionDetalle() {
   const { data: cotizacion, isLoading } = useCotizacion(id ?? '')
   const { data: saldoInfo } = useSaldoCotizacion(id)
   const { data: pagos } = usePagosCotizacion(id)
+  // Se cargan aqui y no dentro de imprimir(), que es sincrono y no puede esperar la query.
+  const { data: cuentasPago } = useCuentasPagoEmpresa(true)
   const cambiarEstado = useCambiarEstadoCotizacion()
 
   const [pagoDialog, setPagoDialog] = useState<'anticipo' | 'abono' | null>(null)
@@ -55,7 +61,9 @@ export function CotizacionDetalle() {
 
   const imprimir = () => {
     if (!cotizacion) return
-    const cli = cotizacion.cliente as { nombre: string; apellido: string; empresa?: string; telefono?: string; email?: string } | undefined
+    const cli = cotizacion.cliente as Cliente | undefined
+    // A una empresa se le factura por su razon social; el contacto va como dato aparte.
+    const razonSocial = cli ? (cli.empresa ?? `${cli.nombre} ${cli.apellido}`) : '—'
     const items = (cotizacion.items ?? []) as CotizacionItem[]
     const descuentoValor = cotizacion.subtotal * (cotizacion.descuento_pct / 100)
     const ivaValor = cotizacion.total - cotizacion.subtotal * (1 - cotizacion.descuento_pct / 100)
@@ -65,13 +73,31 @@ export function CotizacionDetalle() {
     const filasHtml = items.map((item) => `
       <tr>
         <td>
-          ${escapar(item.descripcion)}
-          ${item.ancho_cm && item.alto_cm ? `<div class="dim">${item.ancho_cm} × ${item.alto_cm} cm</div>` : ''}
+          ${escapar(item.descripcion)}${item.ancho_cm && item.alto_cm ? ` <span class="dim">(${item.ancho_cm} × ${item.alto_cm} cm)</span>` : ''}
         </td>
         <td class="right">${item.cantidad}</td>
         <td class="right">${formatCOP(item.precio_unitario)}</td>
         <td class="right"><strong>${formatCOP(item.precio_total)}</strong></td>
       </tr>`).join('')
+
+    const cuentas = cuentasPago ?? []
+    const cuentasHtml = cuentas.length === 0 ? '' : `
+      <div class="caja">
+        <h2>Medios de pago</h2>
+        ${cuentas.map((cuenta) => `
+        <div class="cuenta">
+          <span class="cuenta-banco">${escapar(cuenta.banco)} · ${escapar(cuenta.tipo_cuenta)}</span>
+          <span class="cuenta-num">${escapar(cuenta.numero_cuenta)}</span>
+          <div class="cuenta-tit">${escapar(cuenta.titular)}</div>
+        </div>`).join('')}
+      </div>`
+
+    const notasHtml = !cotizacion.notas ? '' : `
+      <div class="caja"><h2>Notas</h2>${escapar(cotizacion.notas).replace(/\n/g, '<br/>')}</div>`
+
+    // Si solo hay uno de los dos bloques, ocupa el ancho completo en vez de dejar un hueco.
+    const pieHtml = !notasHtml && !cuentasHtml ? '' :
+      `<div class="pie${notasHtml && cuentasHtml ? '' : ' una'}">${notasHtml}${cuentasHtml}</div>`
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -80,38 +106,87 @@ export function CotizacionDetalle() {
   <title>Cotización ${cotizacion.numero}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;padding:2cm}
-    h1{font-size:22px;font-weight:700}
-    .sub{color:#666;font-size:12px;margin-bottom:20px}
-    .head-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin-bottom:20px}
-    .kv{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f3f4f6}
-    .kv strong{font-weight:600}
-    table{width:100%;border-collapse:collapse;margin-top:8px}
-    th{text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:#6b7280;border-bottom:2px solid #e5e7eb}
-    td{padding:8px;border-bottom:1px solid #f3f4f6;vertical-align:top}
-    .right{text-align:right}
-    .dim{color:#6b7280;font-size:11px;margin-top:2px}
-    .totales{margin-top:14px;margin-left:auto;width:280px}
-    .totales .row{display:flex;justify-content:space-between;padding:4px 0}
-    .totales .total{border-top:2px solid #e5e7eb;margin-top:6px;padding-top:8px;font-weight:700;font-size:16px;color:#1d4ed8}
-    .totales .abonado{color:#15803d;margin-top:6px}
-    .totales .saldo{border-top:1px solid #e5e7eb;margin-top:4px;padding-top:6px;font-weight:700}
-    .notas{margin-top:24px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;color:#374151;line-height:1.5}
-    .notas h2{font-size:11px;text-transform:uppercase;color:#888;letter-spacing:.05em;margin-bottom:6px}
-    @media print{body{padding:1.2cm}}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.35;color:#000;padding:1.4cm}
+    .membrete{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;
+      padding-bottom:8px;border-bottom:1.5px solid #000;margin-bottom:12px}
+    .marca{font-size:17px;font-weight:700;letter-spacing:-.01em}
+    .marca span{display:block;font-size:10px;font-weight:400;color:#555;letter-spacing:0}
+    .doc{text-align:right}
+    .doc h1{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#555}
+    .doc .numero{font-size:17px;font-weight:700}
+    .doc .fecha{font-size:10px;color:#555}
+    /* Dos bloques independientes: los datos del cliente no se mezclan con los del documento. */
+    .bloques{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;margin-bottom:12px}
+    .bloque h2{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+      color:#000;padding-bottom:3px;border-bottom:1px solid #999;margin-bottom:5px}
+    /* Etiqueta en columna fija: un valor largo envuelve dentro de su celda y nunca la invade. */
+    .campos{display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
+    .campos dt{color:#555;white-space:nowrap}
+    .campos dd{font-weight:600;word-break:break-word}
+    .razon{font-weight:700;font-size:12px;margin-bottom:3px}
+    table{width:100%;border-collapse:collapse}
+    th{text-align:left;padding:4px 6px;font-size:9px;text-transform:uppercase;
+      letter-spacing:.05em;border-bottom:1.5px solid #000;border-top:1px solid #000}
+    td{padding:4px 6px;border-bottom:1px solid #ddd;vertical-align:top}
+    tr{page-break-inside:avoid}
+    .right{text-align:right;white-space:nowrap}
+    /* Las medidas van junto a la descripcion: una linea menos por item. */
+    .dim{color:#555;font-size:10px}
+    .totales{margin-top:8px;margin-left:auto;width:230px}
+    .totales .row{display:flex;justify-content:space-between;padding:2px 0}
+    /* Doble filete sobre el total: convencion de documento contable. */
+    .totales .total{border-top:3px double #000;margin-top:3px;padding-top:5px;font-weight:700;font-size:13px}
+    .totales .abonado{margin-top:3px}
+    .totales .saldo{border-top:1px solid #999;margin-top:2px;padding-top:3px;font-weight:700}
+    /* Notas y cuentas comparten fila: ahorra un bloque completo de alto. */
+    .pie{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;align-items:start}
+    .pie.una{grid-template-columns:1fr}
+    .caja{border:1px solid #999;padding:6px 9px;page-break-inside:avoid}
+    .caja h2{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+      margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid #ddd}
+    .cuenta{padding:2px 0}
+    .cuenta+.cuenta{border-top:1px solid #ddd;margin-top:2px}
+    .cuenta-banco{font-weight:600}
+    .cuenta-num{font-family:"Courier New",monospace}
+    .cuenta-tit{font-size:10px;color:#555}
+    @media print{
+      body{padding:0}
+      /* El navegador ya aplica los margenes de pagina; duplicarlos empujaba el pie a otra hoja. */
+      @page{margin:1.2cm}
+    }
   </style>
 </head>
 <body>
-  <h1>Cotización ${cotizacion.numero}</h1>
-  <div class="sub">Emitida el ${formatFecha(cotizacion.fecha_emision)} · VidrioSystem</div>
+  <div class="membrete">
+    <div class="marca">VidrioSystem<span>Vidriería y aluminio</span></div>
+    <div class="doc">
+      <h1>Cotización</h1>
+      <div class="numero">${cotizacion.numero}</div>
+      <div class="fecha">Emitida el ${formatFecha(cotizacion.fecha_emision)}</div>
+    </div>
+  </div>
 
-  <div class="head-grid">
-    <div class="kv"><span>Cliente</span><strong>${cli ? escapar(`${cli.nombre} ${cli.apellido}`) : '—'}</strong></div>
-    <div class="kv"><span>Empresa</span><strong>${cli?.empresa ? escapar(cli.empresa) : '—'}</strong></div>
-    <div class="kv"><span>Teléfono</span><strong>${cli?.telefono ? escapar(cli.telefono) : '—'}</strong></div>
-    <div class="kv"><span>Correo</span><strong>${cli?.email ? escapar(cli.email) : '—'}</strong></div>
-    <div class="kv"><span>Vencimiento</span><strong>${cotizacion.fecha_vencimiento ? formatFecha(cotizacion.fecha_vencimiento) : '—'}</strong></div>
-    <div class="kv"><span>Estado</span><strong>${estadoConfig[cotizacion.estado].label}</strong></div>
+  <div class="bloques">
+    <div class="bloque">
+      <h2>Cliente</h2>
+      <div class="razon">${escapar(razonSocial)}</div>
+      <dl class="campos">
+        ${cli?.documento ? `<dt>${etiquetaDocumento(cli.tipo)}</dt><dd>${escapar(cli.documento)}</dd>` : ''}
+        ${cli?.empresa ? `<dt>Contacto</dt><dd>${escapar(`${cli.nombre} ${cli.apellido}`)}</dd>` : ''}
+        ${cli?.direccion ? `<dt>Dirección</dt><dd>${escapar(cli.direccion)}${cli.ciudad ? `, ${escapar(cli.ciudad)}` : ''}</dd>` : ''}
+        ${cli?.telefono ? `<dt>Teléfono</dt><dd>${escapar(cli.telefono)}</dd>` : ''}
+        ${cli?.email ? `<dt>Correo</dt><dd>${escapar(cli.email)}</dd>` : ''}
+      </dl>
+    </div>
+    <div class="bloque">
+      <h2>Datos de la cotización</h2>
+      <dl class="campos">
+        <dt>Estado</dt><dd>${estadoConfig[cotizacion.estado].label}</dd>
+        <dt>Emisión</dt><dd>${formatFecha(cotizacion.fecha_emision)}</dd>
+        <dt>Vence</dt><dd>${cotizacion.fecha_vencimiento ? formatFecha(cotizacion.fecha_vencimiento) : '—'}</dd>
+        <dt>IVA</dt><dd>${cotizacion.iva_pct}%</dd>
+      </dl>
+    </div>
   </div>
 
   <table>
@@ -131,7 +206,7 @@ export function CotizacionDetalle() {
     <div class="row saldo"><span>Saldo pendiente</span><span>${formatCOP(saldoImpreso)}</span></div>` : ''}
   </div>
 
-  ${cotizacion.notas ? `<div class="notas"><h2>Notas</h2>${escapar(cotizacion.notas).replace(/\n/g, '<br/>')}</div>` : ''}
+  ${pieHtml}
 </body>
 </html>`
 
@@ -146,7 +221,7 @@ export function CotizacionDetalle() {
   if (isLoading) return <LoadingSpinner className="py-20" />
   if (!cotizacion) return <p className="text-center text-muted-foreground">Cotización no encontrada</p>
 
-  const cliente = cotizacion.cliente as { nombre: string; apellido: string; empresa?: string; telefono?: string; email?: string } | undefined
+  const cliente = cotizacion.cliente as Cliente | undefined
   const cfg = estadoConfig[cotizacion.estado]
   const abonado = saldoInfo?.total_abonado ?? 0
   const saldo = saldoInfo?.saldo ?? cotizacion.total
@@ -176,8 +251,10 @@ export function CotizacionDetalle() {
           <CardContent className="space-y-1 text-sm">
             <p className="font-medium">{cliente ? `${cliente.nombre} ${cliente.apellido}` : '—'}</p>
             {cliente?.empresa && <p className="text-muted-foreground">{cliente.empresa}</p>}
+            {cliente?.documento && <p className="text-muted-foreground">{etiquetaDocumento(cliente.tipo)} {cliente.documento}</p>}
             {cliente?.telefono && <p>{cliente.telefono}</p>}
             {cliente?.email && <p className="text-muted-foreground">{cliente.email}</p>}
+            {cliente?.direccion && <p className="text-muted-foreground">{cliente.direccion}</p>}
           </CardContent>
         </Card>
         <Card>
