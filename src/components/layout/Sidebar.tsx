@@ -2,14 +2,15 @@ import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Package, Boxes, FileText, Users, ClipboardList,
-  LogOut, Menu, X, Layers, Truck, BarChart2, DollarSign, ShoppingCart,
+  LogOut, Menu, X, Layers, Truck, BarChart2, DollarSign, ShoppingCart, Settings,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 
-const navItems = [
+const navItems: { to: string; label: string; icon: LucideIcon; soloAdmin?: boolean }[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/inventario', label: 'Inventario', icon: Boxes },
   { to: '/proveedores', label: 'Proveedores', icon: Truck },
@@ -20,6 +21,7 @@ const navItems = [
   { to: '/ventas', label: 'Venta directa', icon: ShoppingCart },
   { to: '/caja', label: 'Caja', icon: DollarSign },
   { to: '/reportes', label: 'Reportes', icon: BarChart2 },
+  { to: '/configuracion', label: 'Configuración', icon: Settings, soloAdmin: true },
 ]
 
 function SidebarContent({ onClose }: { onClose?: () => void }) {
@@ -43,7 +45,9 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
       <Separator />
 
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map(({ to, label, icon: Icon }) => (
+        {navItems
+          .filter(({ soloAdmin }) => !soloAdmin || usuario?.rol === 'admin')
+          .map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
