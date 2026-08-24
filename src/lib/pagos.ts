@@ -33,4 +33,21 @@ export const TIPO_PAGO_LABEL: Record<TipoPago, string> = {
   anticipo: 'Anticipo',
   abono: 'Abono',
   saldo_final: 'Saldo final',
+  contado: 'Contado',
+}
+
+/** Un pago viene de una cotización o de una venta de mostrador, nunca de las dos. */
+type VentaConOrigen = {
+  cotizacion?: { numero: string; cliente?: { nombre: string; apellido: string } | null } | null
+  venta_mostrador?: { numero: string; cliente?: { nombre: string; apellido: string } | null } | null
+}
+
+/** Número y cliente de un pago, venga del origen que venga. */
+export function origenDeVenta(venta: VentaConOrigen): { numero: string; cliente: string } {
+  const origen = venta.cotizacion ?? venta.venta_mostrador
+  const cliente = origen?.cliente
+  return {
+    numero: origen?.numero ?? '—',
+    cliente: cliente ? `${cliente.nombre} ${cliente.apellido}` : '—',
+  }
 }

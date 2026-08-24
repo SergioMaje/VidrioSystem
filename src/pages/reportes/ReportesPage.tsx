@@ -15,6 +15,7 @@ import { useHistorialCaja, useResumenSesiones } from '@/hooks/useCajaSesiones'
 import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
 import { ResumenVentasSesion } from '@/pages/caja/CajaPage'
+import { TIPO_PAGO_LABEL, origenDeVenta } from '@/lib/pagos'
 import type { Venta } from '@/types/database'
 
 type ItemValorizado = {
@@ -214,16 +215,20 @@ export function ReportesPage() {
 
   const exportarDetalleIngresos = () => {
     if (!ingresos?.length) return
-    const encabezado = ['Fecha y hora', 'N° Cotización', 'Cliente', 'Método', 'Destino', 'Vendedor', 'Monto COP']
-    const filas = ingresos.map((v) => [
-      formatFechaHora(v.created_at),
-      v.cotizacion?.numero ?? '—',
-      v.cotizacion?.cliente ? `${v.cotizacion.cliente.nombre} ${v.cotizacion.cliente.apellido}` : '—',
-      METODO_LABEL[v.metodo_pago],
-      v.metodo_pago === 'efectivo' ? 'Caja' : 'Cuentas',
-      v.usuario ? `${v.usuario.nombre} ${v.usuario.apellido}` : '—',
-      String(v.monto),
-    ])
+    const encabezado = ['Fecha y hora', 'N° Documento', 'Cliente', 'Tipo', 'Método', 'Destino', 'Vendedor', 'Monto COP']
+    const filas = ingresos.map((v) => {
+      const origen = origenDeVenta(v)
+      return [
+        formatFechaHora(v.created_at),
+        origen.numero,
+        origen.cliente,
+        TIPO_PAGO_LABEL[v.tipo],
+        METODO_LABEL[v.metodo_pago],
+        v.metodo_pago === 'efectivo' ? 'Caja' : 'Cuentas',
+        v.usuario ? `${v.usuario.nombre} ${v.usuario.apellido}` : '—',
+        String(v.monto),
+      ]
+    })
     exportarCSV([encabezado, ...filas], `ingresos-detalle-${desde}_${hasta}.csv`)
   }
 
@@ -551,23 +556,23 @@ export function ReportesPage() {
                     <thead>
                       <tr className="border-b bg-muted/50 text-xs font-medium uppercase text-muted-foreground">
                         <th className="px-4 py-3 text-left">Fecha y hora</th>
-                        <th className="px-4 py-3 text-left">N° Cotización</th>
+                        <th className="px-4 py-3 text-left">N° Documento</th>
                         <th className="px-4 py-3 text-left">Cliente</th>
+                        <th className="px-4 py-3 text-left">Tipo</th>
                         <th className="px-4 py-3 text-center">Método</th>
                         <th className="px-4 py-3 text-left">Vendedor</th>
                         <th className="px-4 py-3 text-right">Monto</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {ingresos.map((v) => (
+                      {ingresos.map((v) => {
+                        const origen = origenDeVenta(v)
+                        return (
                         <tr key={v.id} className="border-b last:border-0 hover:bg-muted/30">
                           <td className="px-4 py-3 text-muted-foreground">{formatFechaHora(v.created_at)}</td>
-                          <td className="px-4 py-3 font-mono text-xs font-medium">{v.cotizacion?.numero ?? '—'}</td>
-                          <td className="px-4 py-3">
-                            {v.cotizacion?.cliente
-                              ? `${v.cotizacion.cliente.nombre} ${v.cotizacion.cliente.apellido}`
-                              : '—'}
-                          </td>
+                          <td className="px-4 py-3 font-mono text-xs font-medium">{origen.numero}</td>
+                          <td className="px-4 py-3">{origen.cliente}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{TIPO_PAGO_LABEL[v.tipo]}</td>
                           <td className="px-4 py-3 text-center">
                             <Badge variant={METODO_VARIANTS[v.metodo_pago]}>{METODO_LABEL[v.metodo_pago]}</Badge>
                           </td>
@@ -576,11 +581,12 @@ export function ReportesPage() {
                           </td>
                           <td className="px-4 py-3 text-right font-semibold">{formatCOP(v.monto)}</td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                     <tfoot>
                       <tr className="border-t bg-muted/50">
-                        <td colSpan={5} className="px-4 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">
+                        <td colSpan={6} className="px-4 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">
                           Total ingresos
                         </td>
                         <td className="px-4 py-3 text-right font-bold">{formatCOP(totalIngresos)}</td>
