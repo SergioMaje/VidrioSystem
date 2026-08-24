@@ -51,6 +51,20 @@ export interface ProveedorCuentaPago {
   updated_at: string
 }
 
+/** Cuenta propia de la vidrieria, la que se le muestra al cliente para que transfiera. */
+export interface CuentaPagoEmpresa {
+  id: string
+  alias: string | null
+  banco: string
+  tipo_cuenta: string
+  numero_cuenta: string
+  titular: string
+  activo: boolean
+  orden: number
+  created_at: string
+  updated_at: string
+}
+
 /** Rol de un item de inventario dentro de las opciones adicionales del configurador. */
 export type RolConfigurador = 'vidrio' | 'chapa' | 'pelicula'
 
