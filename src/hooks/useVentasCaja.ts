@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo, tipoDePago } from '@/lib/pagos'
+import { anticipoMinimo, cumpleAnticipoMinimo, estaLiquidada, excedeSaldo, tipoDePago } from '@/lib/pagos'
 import { finDeDia, formatCOP } from '@/lib/utils'
 import type { Cotizacion, CotizacionSaldo, Usuario, Venta } from '@/types/database'
 
@@ -117,6 +117,70 @@ export function useSaldos() {
   })
 }
 
+/** Una cotización vendida que aún debe plata, con el cliente ya resuelto. */
+export type CotizacionMorosa = {
+  cotizacion_id: string
+  numero: string
+  cliente: string
+  fecha_emision: string
+  total: number
+  total_abonado: number
+  saldo: number
+  pct_abonado: number
+}
+
+type CotizacionVendida = Pick<Cotizacion, 'id' | 'numero' | 'fecha_emision'> & {
+  cliente: { nombre: string; apellido: string } | null
+}
+
+/**
+ * Cartera pendiente: cotizaciones ya vendidas (anticipo cobrado) cuyo saldo
+ * sigue abierto. Se devuelve la lista completa ordenada por saldo; recortarla
+ * es decisión de quien la pinta.
+ */
+export function useCotizacionesMorosas() {
+  return useQuery({
+    queryKey: ['cotizaciones-morosas'],
+    queryFn: async (): Promise<CotizacionMorosa[]> => {
+      // `cotizaciones_saldo` es una vista sin FK: PostgREST no puede embeber el
+      // cliente desde ahí, así que se traen las dos partes y se cruzan aquí.
+      const [{ data: cotizaciones, error: cotError }, { data: saldos, error: saldoError }] =
+        await Promise.all([
+          supabase
+            .from('cotizaciones')
+            .select('id, numero, fecha_emision, cliente:clientes(nombre, apellido)')
+            .eq('estado', 'vendida'),
+          supabase.from('cotizaciones_saldo').select('*'),
+        ])
+      if (cotError) throw cotError
+      if (saldoError) throw saldoError
+
+      const porCotizacion = new Map<string, CotizacionSaldo>()
+      for (const fila of (saldos ?? []) as CotizacionSaldo[]) {
+        porCotizacion.set(fila.cotizacion_id, fila)
+      }
+
+      const morosas: CotizacionMorosa[] = []
+      for (const cot of (cotizaciones ?? []) as unknown as CotizacionVendida[]) {
+        const saldo = porCotizacion.get(cot.id)
+        if (!saldo || estaLiquidada(saldo.saldo)) continue
+        morosas.push({
+          cotizacion_id: cot.id,
+          numero: cot.numero,
+          cliente: cot.cliente ? `${cot.cliente.nombre} ${cot.cliente.apellido}` : '—',
+          fecha_emision: cot.fecha_emision,
+          total: saldo.total,
+          total_abonado: saldo.total_abonado,
+          saldo: saldo.saldo,
+          pct_abonado: saldo.pct_abonado,
+        })
+      }
+
+      return morosas.sort((a, b) => b.saldo - a.saldo)
+    },
+  })
+}
+
 function invalidarPagos(
   qc: ReturnType<typeof useQueryClient>,
   cotizacionId: string,
@@ -131,6 +195,7 @@ function invalidarPagos(
   qc.invalidateQueries({ queryKey: ['saldo-cotizacion', cotizacionId] })
   qc.invalidateQueries({ queryKey: ['pagos-cotizacion', cotizacionId] })
   qc.invalidateQueries({ queryKey: ['saldos'] })
+  qc.invalidateQueries({ queryKey: ['cotizaciones-morosas'] })
   qc.invalidateQueries({ queryKey: ['ordenes'] })
 }
 
