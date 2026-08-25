@@ -1,4 +1,4 @@
-import type { TipoPago } from '@/types/database'
+import type { MetodoPago, TipoPago } from '@/types/database'
 
 /** El cliente debe entregar al menos este porcentaje del total como anticipo. */
 export const ANTICIPO_MIN_PCT = 0.5
@@ -34,6 +34,13 @@ export const TIPO_PAGO_LABEL: Record<TipoPago, string> = {
   abono: 'Abono',
   saldo_final: 'Saldo final',
   contado: 'Contado',
+}
+
+/** El orden importa: es el que se usa para listar métodos en selects y tiles. */
+export const METODO_PAGO_LABEL: Record<MetodoPago, string> = {
+  efectivo: 'Efectivo',
+  tarjeta: 'Tarjeta',
+  transferencia: 'Transferencia',
 }
 
 /** Un pago viene de una cotización o de una venta de mostrador, nunca de las dos. */

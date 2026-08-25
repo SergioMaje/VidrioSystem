@@ -19,7 +19,6 @@ import { ProveedoresPage } from '@/pages/proveedores/ProveedoresPage'
 import { ProveedorDetalle } from '@/pages/proveedores/ProveedorDetalle'
 import { ReportesPage } from '@/pages/reportes/ReportesPage'
 import { CajaPage } from '@/pages/caja/CajaPage'
-import { VentaDirectaPage } from '@/pages/ventas/VentaDirectaPage'
 import { ConfiguracionPage } from '@/pages/configuracion/ConfiguracionPage'
 
 function RootRedirect() {
@@ -49,7 +48,8 @@ export function AppRoutes() {
           <Route path="/clientes" element={<ClientesPage />} />
           <Route path="/ordenes" element={<OrdenesPage />} />
           <Route path="/ordenes/:id" element={<OrdenDetalle />} />
-          <Route path="/ventas" element={<VentaDirectaPage />} />
+          {/* La venta directa vive ahora dentro de Caja. */}
+          <Route path="/ventas" element={<Navigate to="/caja" replace />} />
           <Route path="/caja" element={<CajaPage />} />
           <Route path="/reportes" element={<ReportesPage />} />
           <Route path="/configuracion" element={<ConfiguracionPage />} />
