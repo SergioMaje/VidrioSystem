@@ -1,11 +1,13 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Package, AlertTriangle, FileText, TrendingUp, Users, Factory, Truck } from 'lucide-react'
+import { Package, AlertTriangle, FileText, TrendingUp, Users, Factory, Truck, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/hooks/useAuth'
 import { expirarCotizacionesVencidas } from '@/hooks/useCotizaciones'
+import { useCotizacionesMorosas } from '@/hooks/useVentasCaja'
 import { supabase } from '@/lib/supabase'
 import { getSaludo, formatFecha, formatCOP, diasHasta } from '@/lib/utils'
 import { ESTADOS_ORDEN_CONFIG, ESTADOS_ACTIVOS } from '@/lib/estadosOrden'
@@ -164,12 +166,20 @@ export function DashboardPage() {
     },
   })
 
+  const { data: morosas } = useCotizacionesMorosas()
+
+  const carteraTotal = useMemo(
+    () => (morosas ?? []).reduce((suma, m) => suma + m.saldo, 0),
+    [morosas]
+  )
+
   const saludo = usuario ? getSaludo(usuario.nombre) : 'Bienvenido'
 
   const metricas = [
     { label: 'Total items inventario', value: totalItems ?? 0, icon: Package, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'Items con stock bajo', value: itemsStockBajo?.length ?? 0, icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-50' },
     { label: 'Cotizaciones pendientes', value: cotizacionesPendientes ?? 0, icon: FileText, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Cotizaciones por cobrar', value: morosas?.length ?? 0, icon: Wallet, color: 'text-red-600', bg: 'bg-red-50' },
   ]
 
   return (
@@ -179,7 +189,7 @@ export function DashboardPage() {
         <p className="text-muted-foreground">Aquí tienes el resumen de hoy</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {metricas.map(({ label, value, icon: Icon, color, bg }) => (
           <Card key={label}>
             <CardContent className="flex items-center gap-4 p-6">
@@ -292,6 +302,62 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-red-600">
+            <Wallet className="h-5 w-5" />
+            Cuentas por cobrar
+          </CardTitle>
+          <CardDescription>Cotizaciones vendidas con saldo pendiente — haz clic para cobrar</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!morosas ? (
+            <LoadingSpinner />
+          ) : morosas.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">No hay saldos pendientes</p>
+          ) : (
+            <>
+              <div className="divide-y">
+                {morosas.slice(0, 6).map((m) => (
+                  <div
+                    key={m.cotizacion_id}
+                    className="flex cursor-pointer items-center justify-between py-3 transition-colors hover:bg-muted/30"
+                    onClick={() => navigate(`/cotizaciones/${m.cotizacion_id}`)}
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{m.numero}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {m.cliente} · Abonado {formatCOP(m.total_abonado)} de {formatCOP(m.total)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-red-600">{formatCOP(m.saldo)}</p>
+                      <Badge variant="destructive">{m.pct_abonado}%</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs">
+                {morosas.length > 6 ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/cotizaciones')}
+                    className="text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    +{morosas.length - 6} más
+                  </button>
+                ) : (
+                  <span />
+                )}
+                <span className="text-muted-foreground">
+                  Cartera pendiente: <span className="font-semibold text-foreground">{formatCOP(carteraTotal)}</span>
+                </span>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
