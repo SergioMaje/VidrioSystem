@@ -11,15 +11,9 @@ import { useCotizacion, useCambiarEstadoCotizacion } from '@/hooks/useCotizacion
 import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useToast } from '@/hooks/useToast'
-import { estaLiquidada, TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { estaLiquidada, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
-import type { Cliente, Cotizacion, CotizacionItem, Venta } from '@/types/database'
-
-const METODO_LABEL: Record<Venta['metodo_pago'], string> = {
-  efectivo: 'Efectivo',
-  tarjeta: 'Tarjeta',
-  transferencia: 'Transferencia',
-}
+import type { Cliente, Cotizacion, CotizacionItem } from '@/types/database'
 
 const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline' }> = {
   borrador: { label: 'Borrador', variant: 'secondary' },
@@ -366,7 +360,7 @@ export function CotizacionDetalle() {
                           </span>
                         )}
                       </td>
-                      <td className="py-2">{METODO_LABEL[pago.metodo_pago]}</td>
+                      <td className="py-2">{METODO_PAGO_LABEL[pago.metodo_pago]}</td>
                       <td className="py-2 text-muted-foreground">
                         {pago.usuario ? `${pago.usuario.nombre} ${pago.usuario.apellido}` : '—'}
                       </td>

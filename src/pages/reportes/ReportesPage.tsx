@@ -14,8 +14,8 @@ import { fechaISOLocal, finDeDia, formatCOP, formatDuracion, formatFecha, format
 import { useHistorialCaja, useResumenSesiones } from '@/hooks/useCajaSesiones'
 import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
-import { ResumenVentasSesion } from '@/pages/caja/CajaPage'
-import { TIPO_PAGO_LABEL, origenDeVenta } from '@/lib/pagos'
+import { ResumenVentasSesion } from '@/pages/caja/ResumenVentasSesion'
+import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, origenDeVenta } from '@/lib/pagos'
 import type { Venta } from '@/types/database'
 
 type ItemValorizado = {
@@ -50,12 +50,6 @@ const ESTADO_VARIANTS: Record<string, 'default' | 'secondary' | 'destructive' | 
 }
 
 type MetodoPago = Venta['metodo_pago']
-
-const METODO_LABEL: Record<MetodoPago, string> = {
-  efectivo: 'Efectivo',
-  tarjeta: 'Tarjeta',
-  transferencia: 'Transferencia',
-}
 
 const METODO_VARIANTS: Record<MetodoPago, 'default' | 'secondary' | 'success'> = {
   efectivo: 'success',
@@ -223,7 +217,7 @@ export function ReportesPage() {
         origen.numero,
         origen.cliente,
         TIPO_PAGO_LABEL[v.tipo],
-        METODO_LABEL[v.metodo_pago],
+        METODO_PAGO_LABEL[v.metodo_pago],
         v.metodo_pago === 'efectivo' ? 'Caja' : 'Cuentas',
         v.usuario ? `${v.usuario.nombre} ${v.usuario.apellido}` : '—',
         String(v.monto),
@@ -574,7 +568,7 @@ export function ReportesPage() {
                           <td className="px-4 py-3">{origen.cliente}</td>
                           <td className="px-4 py-3 text-muted-foreground">{TIPO_PAGO_LABEL[v.tipo]}</td>
                           <td className="px-4 py-3 text-center">
-                            <Badge variant={METODO_VARIANTS[v.metodo_pago]}>{METODO_LABEL[v.metodo_pago]}</Badge>
+                            <Badge variant={METODO_VARIANTS[v.metodo_pago]}>{METODO_PAGO_LABEL[v.metodo_pago]}</Badge>
                           </td>
                           <td className="px-4 py-3 text-muted-foreground">
                             {v.usuario ? `${v.usuario.nombre} ${v.usuario.apellido}` : '—'}

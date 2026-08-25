@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Package, Boxes, FileText, Users, ClipboardList,
-  LogOut, Menu, X, Layers, Truck, BarChart2, DollarSign, ShoppingCart, Settings,
+  LogOut, Menu, X, Layers, Truck, BarChart2, DollarSign, Settings,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,6 @@ const navItems: { to: string; label: string; icon: LucideIcon; soloAdmin?: boole
   { to: '/cotizaciones', label: 'Cotizaciones', icon: FileText },
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/ordenes', label: 'Órdenes', icon: ClipboardList },
-  { to: '/ventas', label: 'Venta directa', icon: ShoppingCart },
   { to: '/caja', label: 'Caja', icon: DollarSign },
   { to: '/reportes', label: 'Reportes', icon: BarChart2 },
   { to: '/configuracion', label: 'Configuración', icon: Settings, soloAdmin: true },
