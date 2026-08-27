@@ -253,7 +253,7 @@ export function useRegistrarAnticipo() {
 
       const { error: cotizacionError } = await supabase
         .from('cotizaciones')
-        .update({ estado: 'vendida' })
+        .update({ estado: 'vendida', fecha_aprobacion: new Date().toISOString() })
         .eq('id', cotizacion.id)
       if (cotizacionError) throw cotizacionError
 

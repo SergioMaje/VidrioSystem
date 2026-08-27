@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,10 +23,19 @@ const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'defa
   vendida: { label: 'Vendida', variant: 'outline' },
 }
 
+// Agrupaciones que no son un estado suelto de la tabla, pero sí las que el
+// usuario pide desde el dashboard.
+const FILTROS_COMPUESTOS: Record<string, string> = {
+  pendientes: 'Pendientes',
+  por_cobrar: 'Por cobrar',
+}
+
 export function CotizacionesPage() {
   const navigate = useNavigate()
+  // El dashboard entra con ?estado=pendientes o ?estado=por_cobrar.
+  const [searchParams] = useSearchParams()
   const [busqueda, setBusqueda] = useState('')
-  const [estadoFiltro, setEstadoFiltro] = useState('todos')
+  const [estadoFiltro, setEstadoFiltro] = useState(searchParams.get('estado') ?? 'todos')
 
   const { data: cotizaciones, isLoading } = useCotizaciones()
   const { data: saldos } = useSaldos()
@@ -35,7 +44,15 @@ export function CotizacionesPage() {
     const cliente = c.cliente as { nombre: string; apellido: string } | undefined
     const q = busqueda.toLowerCase()
     const coincide = c.numero.toLowerCase().includes(q) || (cliente ? `${cliente.nombre} ${cliente.apellido}`.toLowerCase().includes(q) : false)
-    const coincideEstado = estadoFiltro === 'todos' || c.estado === estadoFiltro
+    const saldo = saldos?.get(c.id)
+    const coincideEstado =
+      estadoFiltro === 'todos' ? true
+        // 'Pendientes' es lo mismo que cuenta la métrica del dashboard.
+        : estadoFiltro === 'pendientes' ? c.estado === 'borrador' || c.estado === 'enviada'
+        // 'Por cobrar' replica el criterio de useCotizacionesMorosas: vendida
+        // y con saldo aún abierto.
+        : estadoFiltro === 'por_cobrar' ? c.estado === 'vendida' && !!saldo && !estaLiquidada(saldo.saldo)
+        : c.estado === estadoFiltro
     return coincide && coincideEstado
   }) ?? []
 
@@ -53,11 +70,14 @@ export function CotizacionesPage() {
             />
           </div>
           <Select value={estadoFiltro} onValueChange={setEstadoFiltro}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos</SelectItem>
+              {Object.entries(FILTROS_COMPUESTOS).map(([key, label]) => (
+                <SelectItem key={key} value={key}>{label}</SelectItem>
+              ))}
               {Object.entries(estadoConfig).map(([key, { label }]) => (
                 <SelectItem key={key} value={key}>{label}</SelectItem>
               ))}

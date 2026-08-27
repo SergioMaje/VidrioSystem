@@ -240,7 +240,7 @@ export function CotizacionDetalle() {
         </Button>
         <div className="flex-1">
           <h2 className="text-xl font-bold">{cotizacion.numero}</h2>
-          <p className="text-sm text-muted-foreground">Emitida el {formatFecha(cotizacion.fecha_emision)}</p>
+          <p className="text-sm text-muted-foreground">Creada el {formatFechaHora(cotizacion.created_at)}</p>
         </div>
         <Button variant="outline" size="sm" onClick={imprimir}>
           <Printer className="mr-2 h-4 w-4" />
@@ -264,8 +264,12 @@ export function CotizacionDetalle() {
         <Card>
           <CardHeader><CardTitle className="text-base">Detalles</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
+            <div className="flex justify-between"><span className="text-muted-foreground">Creación:</span><span>{formatFechaHora(cotizacion.created_at)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Emisión:</span><span>{formatFecha(cotizacion.fecha_emision)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Vencimiento:</span><span>{cotizacion.fecha_vencimiento ? formatFecha(cotizacion.fecha_vencimiento) : '—'}</span></div>
+            {cotizacion.fecha_aprobacion && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Aprobación:</span><span>{formatFechaHora(cotizacion.fecha_aprobacion)}</span></div>
+            )}
             <div className="flex justify-between"><span className="text-muted-foreground">IVA:</span><span>{cotizacion.iva_pct}%</span></div>
           </CardContent>
         </Card>
