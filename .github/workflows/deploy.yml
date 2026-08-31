@@ -29,12 +29,17 @@ jobs:
         with:
           version: latest
 
+      # Se conecta con --db-url en vez de `supabase link`, que exigiria un access
+      # token de cuenta: esos caducan a los 30 dias (el deploy se romperia solo) y
+      # dan acceso a TODOS los proyectos de la cuenta, no solo a este. La cadena
+      # de conexion no caduca y solo alcanza esta base.
+      #
+      # Va por el pooler en modo sesion (puerto 5432), no por db.<ref>.supabase.co:
+      # la conexion directa es IPv6 y los runners de GitHub solo tienen IPv4.
       - name: Aplicar migraciones pendientes
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" && supabase db push
+        run: supabase db push --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
 
   build:
     needs: migrations
