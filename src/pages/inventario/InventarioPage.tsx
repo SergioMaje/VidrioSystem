@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, Plus, Filter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,8 +16,12 @@ import { formatCOP } from '@/lib/utils'
 import type { ItemInventario } from '@/types/database'
 
 export function InventarioPage() {
-  const [busqueda, setBusqueda] = useState('')
+  // El dashboard entra aquí con ?stock=bajo (y a veces ?q=<nombre>) al pulsar
+  // sus tarjetas; los filtros arrancan en lo que traiga la URL.
+  const [searchParams] = useSearchParams()
+  const [busqueda, setBusqueda] = useState(searchParams.get('q') ?? '')
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
+  const [stockFiltro, setStockFiltro] = useState(searchParams.get('stock') ?? 'todos')
   const [itemSeleccionado, setItemSeleccionado] = useState<ItemInventario | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [editItem, setEditItem] = useState<ItemInventario | null>(null)
@@ -29,7 +34,12 @@ export function InventarioPage() {
       item.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
       item.codigo.toLowerCase().includes(busqueda.toLowerCase())
     const coincideCategoria = categoriaFiltro === 'todas' || item.categoria_id === categoriaFiltro
-    return coincideBusqueda && coincideCategoria
+    // Mismo criterio que la métrica del dashboard: bajo es <= al mínimo.
+    const coincideStock =
+      stockFiltro === 'todos' ||
+      (stockFiltro === 'bajo' && item.stock_actual <= item.stock_minimo) ||
+      (stockFiltro === 'sin_stock' && item.stock_actual === 0)
+    return coincideBusqueda && coincideCategoria && coincideStock
   }) ?? []
 
   return (
@@ -55,6 +65,16 @@ export function InventarioPage() {
               {categorias?.map((cat) => (
                 <SelectItem key={cat.id} value={cat.id}>{cat.nombre}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={stockFiltro} onValueChange={setStockFiltro}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Stock" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todo el stock</SelectItem>
+              <SelectItem value="bajo">Stock bajo</SelectItem>
+              <SelectItem value="sin_stock">Sin stock</SelectItem>
             </SelectContent>
           </Select>
         </div>

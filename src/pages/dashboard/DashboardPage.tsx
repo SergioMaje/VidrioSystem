@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Package, AlertTriangle, FileText, TrendingUp, Users, Factory, Truck, Wallet } from 'lucide-react'
+import { Package, AlertTriangle, FileText, TrendingUp, Users, Factory, Truck, Wallet, ChevronRight } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -31,7 +31,7 @@ export function DashboardPage() {
     },
   })
 
-  const { data: itemsStockBajo } = useQuery({
+  const { data: stockBajo } = useQuery({
     queryKey: ['dashboard_stock_bajo'],
     queryFn: async () => {
       // PostgREST no soporta comparar dos columnas entre sí en el query string,
@@ -43,8 +43,9 @@ export function DashboardPage() {
       const bajos = (data ?? [] as StockBajoItem[])
         .filter((item) => item.stock_actual <= item.stock_minimo)
         .sort((a, b) => a.stock_actual - b.stock_actual)
-        .slice(0, 5)
-      return bajos
+      // `total` alimenta la métrica y `top` la lista de alertas: recortar antes
+      // dejaba la tarjeta clavada en 5 aunque faltaran muchos más items.
+      return { total: bajos.length, top: bajos.slice(0, 5) }
     },
   })
 
@@ -175,11 +176,13 @@ export function DashboardPage() {
 
   const saludo = usuario ? getSaludo(usuario.nombre) : 'Bienvenido'
 
+  // `to` deja cada métrica en su listado con el filtro ya aplicado, para que el
+  // número de la tarjeta y el de la página coincidan.
   const metricas = [
-    { label: 'Total items inventario', value: totalItems ?? 0, icon: Package, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Items con stock bajo', value: itemsStockBajo?.length ?? 0, icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-    { label: 'Cotizaciones pendientes', value: cotizacionesPendientes ?? 0, icon: FileText, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { label: 'Cotizaciones por cobrar', value: morosas?.length ?? 0, icon: Wallet, color: 'text-red-600', bg: 'bg-red-50' },
+    { label: 'Total items inventario', value: totalItems ?? 0, icon: Package, color: 'text-blue-600', bg: 'bg-blue-50', to: '/inventario' },
+    { label: 'Items con stock bajo', value: stockBajo?.total ?? 0, icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-50', to: '/inventario?stock=bajo' },
+    { label: 'Cotizaciones pendientes', value: cotizacionesPendientes ?? 0, icon: FileText, color: 'text-purple-600', bg: 'bg-purple-50', to: '/cotizaciones?estado=pendientes' },
+    { label: 'Cotizaciones por cobrar', value: morosas?.length ?? 0, icon: Wallet, color: 'text-red-600', bg: 'bg-red-50', to: '/cotizaciones?estado=por_cobrar' },
   ]
 
   return (
@@ -190,17 +193,23 @@ export function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {metricas.map(({ label, value, icon: Icon, color, bg }) => (
-          <Card key={label}>
-            <CardContent className="flex items-center gap-4 p-6">
+        {metricas.map(({ label, value, icon: Icon, color, bg, to }) => (
+          <Card key={label} className="transition-shadow hover:shadow-md">
+            <button
+              type="button"
+              onClick={() => navigate(to)}
+              aria-label={`${label}: ${value}. Ver listado`}
+              className="group flex w-full items-center gap-4 rounded-lg p-6 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
               <div className={`rounded-full p-3 ${bg}`}>
                 <Icon className={`h-5 w-5 ${color}`} />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-2xl font-bold">{value}</p>
                 <p className="text-xs text-muted-foreground">{label}</p>
               </div>
-            </CardContent>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
           </Card>
         ))}
       </div>
@@ -278,14 +287,19 @@ export function DashboardPage() {
             <CardDescription>Items que requieren reabastecimiento</CardDescription>
           </CardHeader>
           <CardContent>
-            {!itemsStockBajo ? (
+            {!stockBajo ? (
               <LoadingSpinner />
-            ) : itemsStockBajo.length === 0 ? (
+            ) : stockBajo.total === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">Todo el inventario está en orden</p>
             ) : (
               <div className="space-y-3">
-                {itemsStockBajo.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-md bg-yellow-50 px-3 py-2">
+                {stockBajo.top.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => navigate(`/inventario?stock=bajo&q=${encodeURIComponent(item.nombre)}`)}
+                    className="flex w-full items-center justify-between rounded-md bg-yellow-50 px-3 py-2 text-left transition-colors hover:bg-yellow-100"
+                  >
                     <div>
                       <p className="text-sm font-medium">{item.nombre}</p>
                       <p className="text-xs text-muted-foreground">
@@ -295,8 +309,17 @@ export function DashboardPage() {
                     <Badge variant={item.stock_actual === 0 ? 'destructive' : 'warning'}>
                       {item.stock_actual === 0 ? 'Sin stock' : 'Bajo'}
                     </Badge>
-                  </div>
+                  </button>
                 ))}
+                {stockBajo.total > stockBajo.top.length && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/inventario?stock=bajo')}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    +{stockBajo.total - stockBajo.top.length} más
+                  </button>
+                )}
               </div>
             )}
           </CardContent>

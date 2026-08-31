@@ -164,6 +164,8 @@ export interface Cotizacion {
   estado: 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'vencida' | 'vendida'
   fecha_emision: string
   fecha_vencimiento: string | null
+  /** Cuándo el cliente aprobó (pagó el anticipo y pasó a 'vendida'). Null hasta entonces. */
+  fecha_aprobacion: string | null
   subtotal: number
   descuento_pct: number
   iva_pct: number

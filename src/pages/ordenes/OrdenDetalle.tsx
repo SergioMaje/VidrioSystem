@@ -243,7 +243,7 @@ export function OrdenDetalle() {
         </table>`
 
       const sinInfo = cortes.length === 0 && materiales.length === 0
-        ? '<p class="warn">Sin referencia/plantilla guardada — verificar medidas de corte manualmente.</p>'
+        ? '<p class="warn">Ítem manual: sin despiece ni lista de materiales. Tomar las medidas de corte y descontar los materiales a mano.</p>'
         : ''
 
       // Se reaprovecha el SVG ya montado en la tarjeta del ítem en vez de renderizar
@@ -263,6 +263,7 @@ export function OrdenDetalle() {
                 ${item.ancho_cm && item.alto_cm ? `${item.ancho_cm} × ${item.alto_cm} cm` : 'Sin medidas'}
                 · Cantidad: ${item.cantidad}
                 ${color ? ` · Perfil: ${color}` : ''}
+                ${item.referencia ? ` · Ref: ${item.referencia.nombre}` : ' · <strong>MANUAL (sin plantilla)</strong>'}
                 ${item.referencia?.es_corrediza && !ladoTexto ? ' · <strong>Corrediza (lado sin registrar)</strong>' : ''}
               </p>
               ${ladoTexto ? `<p><span class="lado">${ladoTexto}</span></p>` : ''}
@@ -407,7 +408,13 @@ export function OrdenDetalle() {
                             Perfil: {color}
                           </span>
                         )}
-                        {item.referencia && <Badge variant="outline" className="text-xs">{item.referencia.nombre}</Badge>}
+                        {item.referencia
+                          ? <Badge variant="outline" className="text-xs">{item.referencia.nombre}</Badge>
+                          : (
+                            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-xs text-amber-800">
+                              Manual — sin plantilla
+                            </Badge>
+                          )}
                         {item.referencia?.es_corrediza && (
                           ladoTexto
                             ? <Badge className="text-xs">{ladoTexto}</Badge>
@@ -427,7 +434,8 @@ export function OrdenDetalle() {
                 <CardContent className="space-y-4">
                   {cortes.length === 0 && materiales.length === 0 ? (
                     <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      Este ítem no tiene referencia ni plantilla guardada — verificar medidas de corte manualmente.
+                      Ítem manual: sin despiece ni lista de materiales. Tomar las medidas de corte
+                      y descontar los materiales a mano.
                     </p>
                   ) : (
                     <>
