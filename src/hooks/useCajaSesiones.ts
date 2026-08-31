@@ -91,6 +91,12 @@ export type ResumenSesion = {
   total_tarjeta: number
   total_cobrado: number
   num_pagos: number
+  /** Gastos vivos del turno; solo los de efectivo bajan el arqueo. */
+  total_gastos_efectivo: number
+  total_gastos: number
+  num_gastos: number
+  /** Lo que debería quedar en el cajón: fondo + ventas en efectivo − gastos. */
+  neto_efectivo: number
 }
 
 /**

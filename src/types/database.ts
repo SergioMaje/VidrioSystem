@@ -361,6 +361,40 @@ export interface VentaMostradorItem {
   precio_total: number
 }
 
+export type CategoriaGasto =
+  | 'domicilio'
+  | 'transporte'
+  | 'papeleria'
+  | 'servicios'
+  | 'refrigerio'
+  | 'proveedor'
+  | 'retiro'
+  | 'otro'
+
+/**
+ * Salida de dinero del turno. Anular no borra la fila (`anulado_at`): un
+ * movimiento de efectivo borrado es evidencia perdida. Un movimiento vivo —el
+ * que cuenta para el arqueo— es el que tiene `anulado_at` en null.
+ */
+export interface MovimientoCaja {
+  id: string
+  session_id: string
+  categoria: CategoriaGasto
+  concepto: string
+  monto: number
+  metodo_pago: MetodoPago
+  usuario_id: string
+  created_at: string
+  anulado_at: string | null
+  anulado_por: string | null
+  motivo_anulacion: string | null
+}
+
+export type MovimientoCajaConUsuario = MovimientoCaja & {
+  usuario: Pick<Usuario, 'nombre' | 'apellido'> | null
+  anulado_por_usuario: Pick<Usuario, 'nombre' | 'apellido'> | null
+}
+
 /** Vista `cotizaciones_saldo`: el saldo se deriva, nunca se almacena. */
 export interface CotizacionSaldo {
   cotizacion_id: string
