@@ -14,7 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Las migraciones van ANTES de publicar el front, y el deploy depende de que
+  # esta pasen. El 31/08/2026 se publico un build que escribia
+  # cotizaciones.fecha_aprobacion contra una base que no tenia la columna:
+  # useRegistrarAnticipo son cuatro llamadas sin transaccion, asi que el pago
+  # quedo cobrado y la cotizacion nunca paso a 'vendida' ni genero orden.
+  # Mientras el front se despliegue solo, eso se repite con cada migracion nueva.
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Se conecta con --db-url en vez de `supabase link`, que exigiria un access
+      # token de cuenta: esos caducan a los 30 dias (el deploy se romperia solo) y
+      # dan acceso a TODOS los proyectos de la cuenta, no solo a este. La cadena
+      # de conexion no caduca y solo alcanza esta base.
+      #
+      # Va por el pooler en modo sesion (puerto 5432), no por db.<ref>.supabase.co:
+      # la conexion directa es IPv6 y los runners de GitHub solo tienen IPv4.
+      - name: Aplicar migraciones pendientes
+        run: supabase db push --db-url "$SUPABASE_DB_URL"
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
   build:
+    needs: migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
