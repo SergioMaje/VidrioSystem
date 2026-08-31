@@ -15,7 +15,14 @@ import { useSaldoCotizacion } from '@/hooks/useVentasCaja'
 import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
 import { anticipoMinimo, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
 import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
-import { calcularCortes, calcularMateriales, nombreColorPerfil } from '@/lib/produccion'
+import {
+  calcularCortes,
+  calcularMateriales,
+  detalleMedidasPorLado,
+  medidasDeItem,
+  nombreColorPerfil,
+  nombrePiezaConLado,
+} from '@/lib/produccion'
 import { calcularOpciones, esComponenteDeVidrio, lineasDeOpciones, type LineaMaterial } from '@/lib/opciones'
 import { ESTADOS_ACTIVOS, ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
 import { ladoCorredizoExterior, textoLadoCorredizo } from '@/lib/lados'
@@ -44,20 +51,21 @@ function detalleProduccion(item: CotizacionItem) {
   const anchoCm = item.ancho_cm ?? 0
   const altoCm = item.alto_cm ?? 0
   const conMedidas = anchoCm > 0 && altoCm > 0
+  const medidas = medidasDeItem(item)
 
   const cortes = conMedidas && item.referencia?.cortes?.length
-    ? calcularCortes([...item.referencia.cortes].sort((a, b) => a.orden - b.orden), anchoCm, altoCm)
+    ? calcularCortes([...item.referencia.cortes].sort((a, b) => a.orden - b.orden), medidas)
     : []
 
   const materiales: LineaMaterial[] = conMedidas
     ? [
-        ...calcularMateriales(componentesEstructurales(item), anchoCm, altoCm, item.cantidad).map((m) => ({
+        ...calcularMateriales(componentesEstructurales(item), medidas, item.cantidad).map((m) => ({
           key: m.id,
           nombre: m.item?.nombre ?? '—',
           simbolo: m.item?.unidad_medida?.simbolo ?? '',
           cantidad: m.cantidad_calculada,
         })),
-        ...lineasDeOpciones(item.opciones, anchoCm, altoCm, item.cantidad),
+        ...lineasDeOpciones(item.opciones, medidas, item.cantidad),
       ]
     : []
 
@@ -135,17 +143,16 @@ export function OrdenDetalle() {
         for (const cotItem of (cotItems ?? []) as unknown as CotizacionItem[]) {
           if (!cotItem.ancho_cm || !cotItem.alto_cm) continue
 
+          const medidasItem = medidasDeItem(cotItem)
           const consumos = [
             ...calcularMateriales(
               componentesEstructurales(cotItem),
-              cotItem.ancho_cm,
-              cotItem.alto_cm,
+              medidasItem,
               cotItem.cantidad
             ).map((m) => ({ item_id: m.item_id, cantidad: m.cantidad_calculada })),
             ...calcularOpciones(
               cotItem.opciones,
-              cotItem.ancho_cm,
-              cotItem.alto_cm,
+              medidasItem,
               cotItem.cantidad
             ).map((o) => ({ item_id: o.opcion.item_id, cantidad: o.cantidad_calculada })),
           ]
@@ -219,7 +226,7 @@ export function OrdenDetalle() {
           <tbody>
             ${cortes.map((c) => `
               <tr>
-                <td>${c.nombre_pieza}</td>
+                <td>${nombrePiezaConLado(c)}</td>
                 <td>${c.cantidad_piezas} ${c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}${item.cantidad > 1 ? ` × ${item.cantidad} und = ${c.cantidad_piezas * item.cantidad}` : ''}</td>
                 <td class="right"><strong>${c.valor_cm.toFixed(1)} cm</strong></td>
               </tr>
@@ -266,6 +273,7 @@ export function OrdenDetalle() {
                 ${item.referencia ? ` · Ref: ${item.referencia.nombre}` : ' · <strong>MANUAL (sin plantilla)</strong>'}
                 ${item.referencia?.es_corrediza && !ladoTexto ? ' · <strong>Corrediza (lado sin registrar)</strong>' : ''}
               </p>
+              ${detalleMedidasPorLado(medidasDeItem(item)) ? `<p><span class="lado">Fuera de escuadra — ${detalleMedidasPorLado(medidasDeItem(item))}</span></p>` : ''}
               ${ladoTexto ? `<p><span class="lado">${ladoTexto}</span></p>` : ''}
               ${item.notas ? `<p class="notas">${item.notas.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>` : ''}
             </div>
@@ -425,6 +433,11 @@ export function OrdenDetalle() {
                             )
                         )}
                       </div>
+                      {detalleMedidasPorLado(medidasDeItem(item)) && (
+                        <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+                          Fuera de escuadra — {detalleMedidasPorLado(medidasDeItem(item))}
+                        </p>
+                      )}
                       {item.notas && (
                         <p className="rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">{item.notas}</p>
                       )}
@@ -453,6 +466,7 @@ export function OrdenDetalle() {
                             esCorrediza={!!item.referencia!.es_corrediza && !!ladoVista}
                             ladoCorredizoVista={ladoVista ?? undefined}
                             cortes={cortes}
+                            medidas={medidasDeItem(item)}
                           />
                         </div>
                       )}
@@ -464,9 +478,9 @@ export function OrdenDetalle() {
                           </p>
                           <div className="grid gap-2 sm:grid-cols-2">
                             {cortes.map((c) => (
-                              <div key={c.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                              <div key={c.key} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                                 <div>
-                                  <p className="font-medium">{c.nombre_pieza}</p>
+                                  <p className="font-medium">{nombrePiezaConLado(c)}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {c.cantidad_piezas} {c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}
                                     {item.cantidad > 1 && ` × ${item.cantidad} und = ${c.cantidad_piezas * item.cantidad}`}

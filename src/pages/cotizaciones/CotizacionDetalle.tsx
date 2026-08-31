@@ -13,6 +13,7 @@ import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { estaLiquidada, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
+import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import type { Cliente, Cotizacion, CotizacionItem } from '@/types/database'
 
 const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline' }> = {
@@ -78,6 +79,7 @@ export function CotizacionDetalle() {
       <tr>
         <td>
           ${escapar(item.descripcion)}${item.ancho_cm && item.alto_cm ? ` <span class="dim">(${item.ancho_cm} × ${item.alto_cm} cm)</span>` : ''}
+          ${detalleMedidasPorLado(medidasDeItem(item)) ? `<br/><span class="dim">${escapar(detalleMedidasPorLado(medidasDeItem(item))!)}</span>` : ''}
         </td>
         <td class="right">${item.cantidad}</td>
         <td class="right">${formatCOP(item.precio_unitario)}</td>
@@ -293,6 +295,9 @@ export function CotizacionDetalle() {
                   <td className="px-4 py-3">
                     <p>{item.descripcion}</p>
                     {item.ancho_cm && item.alto_cm && <p className="text-xs text-muted-foreground">{item.ancho_cm}×{item.alto_cm}cm</p>}
+                    {detalleMedidasPorLado(medidasDeItem(item)) && (
+                      <p className="text-xs text-amber-700">{detalleMedidasPorLado(medidasDeItem(item))}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right font-mono">{item.cantidad}</td>
                   <td className="px-4 py-3 text-right font-mono">{formatCOP(item.precio_unitario)}</td>

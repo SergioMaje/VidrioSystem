@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { useCrearReferencia, useEditarReferencia, useUsosReferencia } from '@/hooks/useReferencias'
 import { usePlantillas, useTiposProducto } from '@/hooks/useProductos'
@@ -24,10 +24,52 @@ const FORMULAS_CORTE = [
   { value: 'fijo',               label: 'Valor fijo (cm)' },
 ]
 
+/**
+ * Para vanos fuera de escuadra, donde los dos altos o los dos anchos difieren. Van
+ * en un grupo aparte porque solo tienen sentido cuando quien mide capturó las cuatro
+ * medidas; en un vano a escuadra devuelven la medida única.
+ */
+const FORMULAS_POR_LADO = [
+  { value: 'alto_izquierdo', label: 'Alto izquierdo (cm)' },
+  { value: 'alto_derecho',   label: 'Alto derecho (cm)' },
+  { value: 'ancho_superior', label: 'Ancho superior (cm)' },
+  { value: 'ancho_inferior', label: 'Ancho inferior (cm)' },
+]
+
+/** El descuento se resta siempre en las fórmulas por lado, por eso no duplican el enum. */
+const FORMULAS_CON_DESCUENTO = new Set([
+  'ancho_menos_margen',
+  'alto_menos_margen',
+  ...FORMULAS_POR_LADO.map((f) => f.value),
+])
+
+/**
+ * Las fórmulas regulares se desdoblan en un vano fuera de escuadra, así que cada una
+ * de las dos piezas puede llevar su propio descuento. Estos son los dos lados de cada eje.
+ */
+const LADOS_DEL_EJE: Record<string, [{ campo: 'margen_izq_cm' | 'margen_der_cm' | 'margen_sup_cm' | 'margen_inf_cm'; label: string }, { campo: 'margen_izq_cm' | 'margen_der_cm' | 'margen_sup_cm' | 'margen_inf_cm'; label: string }]> = {
+  alto_menos_margen:  [{ campo: 'margen_izq_cm', label: 'Izquierdo' }, { campo: 'margen_der_cm', label: 'Derecho' }],
+  ancho_menos_margen: [{ campo: 'margen_sup_cm', label: 'Superior' }, { campo: 'margen_inf_cm', label: 'Inferior' }],
+}
+
+/** Campo numérico opcional: el input vacío es NULL (hereda el descuento base), no 0. */
+const descuentoOpcional = z
+  .union([z.literal(''), z.coerce.number()])
+  .optional()
+  .transform((v) => (v === '' || v === undefined ? null : v))
+
 const corteSchema = z.object({
   nombre_pieza:     z.string().min(1, 'Nombre requerido'),
-  formula:          z.enum(['ancho', 'alto', 'ancho_menos_margen', 'alto_menos_margen', 'mitad_ancho', 'mitad_alto', 'fijo']),
-  margen_cm:        z.coerce.number().min(0).default(0),
+  formula:          z.enum([
+    'ancho', 'alto', 'ancho_menos_margen', 'alto_menos_margen', 'mitad_ancho', 'mitad_alto', 'fijo',
+    'alto_izquierdo', 'alto_derecho', 'ancho_superior', 'ancho_inferior',
+  ]),
+  // Sin min(0): un descuento negativo suma, que es como se pide holgura extra.
+  margen_cm:        z.coerce.number().default(0),
+  margen_izq_cm:    descuentoOpcional,
+  margen_der_cm:    descuentoOpcional,
+  margen_sup_cm:    descuentoOpcional,
+  margen_inf_cm:    descuentoOpcional,
   cantidad_fija_cm: z.coerce.number().min(0).optional(),
   cantidad_piezas:  z.coerce.number().int().min(1).default(1),
   orden:            z.coerce.number().int().min(0),
@@ -43,6 +85,19 @@ const schema = z.object({
 })
 
 type FormData = z.infer<typeof schema>
+
+const CORTE_VACIO: FormData['cortes'][number] = {
+  nombre_pieza: '',
+  formula: 'ancho',
+  margen_cm: 0,
+  margen_izq_cm: null,
+  margen_der_cm: null,
+  margen_sup_cm: null,
+  margen_inf_cm: null,
+  cantidad_fija_cm: undefined,
+  cantidad_piezas: 1,
+  orden: 0,
+}
 
 interface ReferenciaFormDialogProps {
   open: boolean
@@ -66,7 +121,7 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
       tipo_producto_id: '',
       plantilla_id: '',
       es_corrediza: false,
-      cortes: [{ nombre_pieza: '', formula: 'ancho', margen_cm: 0, cantidad_fija_cm: undefined, cantidad_piezas: 1, orden: 0 }],
+      cortes: [CORTE_VACIO],
     },
   })
 
@@ -91,6 +146,10 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
           nombre_pieza: c.nombre_pieza,
           formula: c.formula,
           margen_cm: c.margen_cm,
+          margen_izq_cm: c.margen_izq_cm,
+          margen_der_cm: c.margen_der_cm,
+          margen_sup_cm: c.margen_sup_cm,
+          margen_inf_cm: c.margen_inf_cm,
           cantidad_fija_cm: c.cantidad_fija_cm ?? undefined,
           cantidad_piezas: c.cantidad_piezas,
           orden: i,
@@ -103,7 +162,7 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
         tipo_producto_id: '',
         plantilla_id: '',
         es_corrediza: false,
-        cortes: [{ nombre_pieza: '', formula: 'ancho', margen_cm: 0, cantidad_fija_cm: undefined, cantidad_piezas: 1, orden: 0 }],
+        cortes: [CORTE_VACIO],
       })
     }
   }, [open, referencia, reset])
@@ -113,11 +172,21 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
       const payload = {
         ...data,
         descripcion: data.descripcion || undefined,
-        cortes: data.cortes.map((c, i) => ({
-          ...c,
-          orden: i,
-          cantidad_fija_cm: c.formula === 'fijo' ? (c.cantidad_fija_cm ?? 0) : undefined,
-        })),
+        cortes: data.cortes.map((c, i) => {
+          // Solo el eje de la fórmula conserva sus descuentos por lado: si el usuario
+          // cambió de fórmula, los del otro eje quedarían guardados sin poder verse.
+          const eje = LADOS_DEL_EJE[c.formula]
+          const campos = eje?.map((l) => l.campo) ?? []
+          return {
+            ...c,
+            orden: i,
+            margen_izq_cm: campos.includes('margen_izq_cm') ? c.margen_izq_cm : null,
+            margen_der_cm: campos.includes('margen_der_cm') ? c.margen_der_cm : null,
+            margen_sup_cm: campos.includes('margen_sup_cm') ? c.margen_sup_cm : null,
+            margen_inf_cm: campos.includes('margen_inf_cm') ? c.margen_inf_cm : null,
+            cantidad_fija_cm: c.formula === 'fijo' ? (c.cantidad_fija_cm ?? 0) : undefined,
+          }
+        }),
       }
       if (referencia) {
         await editarReferencia.mutateAsync({ id: referencia.id, input: payload })
@@ -236,14 +305,7 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => append({
-                  nombre_pieza: '',
-                  formula: 'ancho',
-                  margen_cm: 0,
-                  cantidad_fija_cm: undefined,
-                  cantidad_piezas: 1,
-                  orden: fields.length,
-                })}
+                onClick={() => append({ ...CORTE_VACIO, orden: fields.length })}
               >
                 <Plus className="mr-1 h-3 w-3" />
                 Agregar pieza
@@ -257,8 +319,11 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
             <div className="space-y-3">
               {fields.map((field, index) => {
                 const formula = watchedCortes[index]?.formula
-                const conDescuento = formula === 'ancho_menos_margen' || formula === 'alto_menos_margen'
+                const conDescuento = FORMULAS_CON_DESCUENTO.has(formula)
+                const porLado = FORMULAS_POR_LADO.some((f) => f.value === formula)
                 const esFijo = formula === 'fijo'
+                const ladosDelEje = LADOS_DEL_EJE[formula]
+                const piezasPares = (watchedCortes[index]?.cantidad_piezas ?? 1) % 2 === 0
 
                 return (
                   <div key={field.id} className="rounded-lg border p-3 space-y-3">
@@ -286,9 +351,17 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {FORMULAS_CORTE.map(({ value, label }) => (
-                                  <SelectItem key={value} value={value}>{label}</SelectItem>
-                                ))}
+                                <SelectGroup>
+                                  {FORMULAS_CORTE.map(({ value, label }) => (
+                                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                                  ))}
+                                </SelectGroup>
+                                <SelectGroup>
+                                  <SelectLabel className="text-xs">Vano fuera de escuadra</SelectLabel>
+                                  {FORMULAS_POR_LADO.map(({ value, label }) => (
+                                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                                  ))}
+                                </SelectGroup>
                               </SelectContent>
                             </Select>
                           )}
@@ -304,6 +377,11 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
                           className="h-8 text-sm"
                           {...register(`cortes.${index}.cantidad_piezas`)}
                         />
+                        {porLado && (
+                          <p className="text-xs text-muted-foreground">
+                            Toma la medida de ese lado. Si el vano está a escuadra equivale a la medida única.
+                          </p>
+                        )}
                       </div>
 
                       {conDescuento && (
@@ -312,13 +390,38 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
                           <Input
                             type="number"
                             step="0.1"
-                            min="0"
                             placeholder="Ej: 1.3"
                             className="h-8 text-sm"
                             {...register(`cortes.${index}.margen_cm`)}
                           />
                           <p className="text-xs text-muted-foreground">
-                            Valor que se resta a la dimensión. Ej: si el alto es 215 cm y el descuento es 1.3, el corte será 213.7 cm.
+                            Valor que se resta a la dimensión. Ej: si el alto es 215 cm y el descuento es 1.3,
+                            el corte será 213.7 cm. Un valor negativo suma en vez de restar.
+                          </p>
+                        </div>
+                      )}
+
+                      {conDescuento && ladosDelEje && (
+                        <div className="col-span-2 space-y-2 rounded-md border border-dashed p-2.5">
+                          <Label className="text-xs font-semibold">Descuento por lado (opcional)</Label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {ladosDelEje.map(({ campo, label }) => (
+                              <div key={campo} className="space-y-1">
+                                <Label className="text-xs font-normal">{label}</Label>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  placeholder="Hereda"
+                                  className="h-8 text-sm"
+                                  {...register(`cortes.${index}.${campo}`)}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {piezasPares
+                              ? `En un vano fuera de escuadra esta fila se desdobla en ${(watchedCortes[index]?.cantidad_piezas ?? 2) / 2} pieza(s) por lado, cada una con la medida y el descuento de su lado. Vacío = usa el descuento de arriba.`
+                              : 'Con una cantidad impar de piezas no se puede repartir entre dos lados: se corta a la medida mayor y estos descuentos no se aplican. Usa una cantidad par, o las fórmulas "Alto izquierdo" / "Alto derecho" en filas separadas.'}
                           </p>
                         </div>
                       )}
