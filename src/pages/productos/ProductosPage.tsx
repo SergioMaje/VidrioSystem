@@ -11,7 +11,8 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { PlantillaFormDialog } from './PlantillaFormDialog'
 import { ReferenciaFormDialog } from './ReferenciaFormDialog'
 import { usePlantillas, useEliminarPlantilla } from '@/hooks/useProductos'
-import { useReferencias, useEliminarReferencia } from '@/hooks/useReferencias'
+import { useReferencias, useEliminarReferencia, useItemsLibres } from '@/hooks/useReferencias'
+import { formatCOP } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import type { PlantillaProducto, ReferenciaProducto } from '@/types/database'
@@ -30,6 +31,7 @@ export function ProductosPage() {
   const eliminarPlantilla = useEliminarPlantilla()
   const { data: referencias, isLoading: loadingReferencias } = useReferencias()
   const eliminarReferencia = useEliminarReferencia()
+  const { data: itemsLibres } = useItemsLibres()
   const { usuario } = useAuth()
   const esAdmin = usuario?.rol === 'admin'
   const { toast } = useToast()
@@ -220,6 +222,42 @@ export function ProductosPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Lo que más se cotiza a mano es lo que más urge modelar. La lista se
+                vacía sola a medida que se crean las referencias que faltan. */}
+            {!!itemsLibres?.length && (
+              <Card>
+                <CardContent className="p-0">
+                  <div className="border-b px-4 py-3">
+                    <p className="text-sm font-medium">Ítems cotizados a mano</p>
+                    <p className="text-xs text-muted-foreground">
+                      Cotizados sin referencia. Ordenados por frecuencia: crear la referencia de
+                      los primeros es lo que más trabajo manual ahorra.
+                    </p>
+                  </div>
+                  <div className="divide-y">
+                    {itemsLibres.slice(0, 10).map((item) => (
+                      <div key={item.descripcion} className="flex items-start justify-between gap-4 px-4 py-3">
+                        <p className="text-sm leading-snug">{item.descripcion}</p>
+                        <div className="shrink-0 text-right">
+                          <p className="text-sm font-medium">
+                            {item.veces} {item.veces === 1 ? 'vez' : 'veces'}
+                          </p>
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {formatCOP(item.monto_total)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {itemsLibres.length > 10 && (
+                    <p className="border-t px-4 py-2 text-xs text-muted-foreground">
+                      y {itemsLibres.length - 10} descripciones más
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         )}
       </Tabs>

@@ -2,14 +2,14 @@ import { useEffect } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { useCrearReferencia, useEditarReferencia } from '@/hooks/useReferencias'
+import { useCrearReferencia, useEditarReferencia, useUsosReferencia } from '@/hooks/useReferencias'
 import { usePlantillas, useTiposProducto } from '@/hooks/useProductos'
 import { useToast } from '@/hooks/useToast'
 import type { ReferenciaProducto } from '@/types/database'
@@ -55,6 +55,7 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
   const editarReferencia = useEditarReferencia()
   const { data: tipos } = useTiposProducto()
   const { data: todasPlantillas } = usePlantillas()
+  const { data: usos } = useUsosReferencia(open && referencia ? referencia.id : undefined)
   const { toast } = useToast()
 
   const { register, control, handleSubmit, watch, reset, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
@@ -139,6 +140,18 @@ export function ReferenciaFormDialog({ open, onOpenChange, referencia }: Referen
         <DialogHeader>
           <DialogTitle>{referencia ? 'Editar referencia' : 'Nueva referencia de producto'}</DialogTitle>
         </DialogHeader>
+
+        {referencia && !!usos && usos > 0 && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Esta referencia ya se usó en <strong>{usos}</strong> {usos === 1 ? 'ítem cotizado' : 'ítems cotizados'}.
+              Cambiar sus cortes también cambia el despiece que ven las órdenes de trabajo ya
+              emitidas. Si el producto cambió de verdad, desactiva esta referencia y crea una
+              versión nueva en vez de editarla.
+            </span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
           <div className="grid grid-cols-2 gap-3">
