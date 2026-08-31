@@ -5,7 +5,7 @@ import type {
   RolConfigurador,
   VidrioTipo,
 } from '@/types/database'
-import { cantidadPorFormula } from './produccion'
+import { cantidadPorFormula, type Medidas } from './produccion'
 
 export const ROL_LABELS: Record<RolConfigurador, string> = {
   vidrio: 'Vidrio',
@@ -141,8 +141,7 @@ export interface OpcionCalculada {
 
 export function calcularOpciones(
   opciones: OpcionCotizacion[] | undefined,
-  anchoCm: number,
-  altoCm: number,
+  medidas: Medidas,
   unidades = 1
 ): OpcionCalculada[] {
   return (opciones ?? []).map((opcion) => {
@@ -150,8 +149,7 @@ export function calcularOpciones(
       opcion.formula,
       opcion.cantidad_fija,
       opcion.desperdicio_pct,
-      anchoCm,
-      altoCm,
+      medidas,
       unidades
     )
     return { opcion, cantidad_calculada: cantidad, costo_total: cantidad * opcion.precio_costo }
@@ -191,11 +189,10 @@ export interface LineaMaterial {
 /** Las opciones expresadas como líneas de material, para las fichas de producción. */
 export function lineasDeOpciones(
   opciones: OpcionCotizacion[] | undefined,
-  anchoCm: number,
-  altoCm: number,
+  medidas: Medidas,
   unidades = 1
 ): LineaMaterial[] {
-  return calcularOpciones(opciones, anchoCm, altoCm, unidades).map(({ opcion, cantidad_calculada }) => ({
+  return calcularOpciones(opciones, medidas, unidades).map(({ opcion, cantidad_calculada }) => ({
     key: `opcion-${opcion.rol}-${opcion.item_id}`,
     nombre: etiquetaOpcion(opcion),
     simbolo: opcion.unidad_simbolo ?? '',

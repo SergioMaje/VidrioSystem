@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import type { CorteCalculado } from '@/lib/produccion'
+import { esRegular, nombrePiezaConLado, type CorteCalculado, type Medidas } from '@/lib/produccion'
 import type { FormulaCorte, LadoCorredizo } from '@/types/database'
 
 interface PreviewProductoProps {
@@ -19,6 +19,11 @@ interface PreviewProductoProps {
    * es exactamente el de siempre.
    */
   cortes?: CorteCalculado[]
+  /**
+   * Las cuatro medidas del vano. Solo cambian las cotas: la silueta se sigue dibujando
+   * sobre el rectángulo nominal (anchoCm × altoCm), que es el que contiene al vano.
+   */
+  medidas?: Medidas
 }
 
 const CANVAS_W = 280
@@ -40,10 +45,14 @@ function orientacion(formula: FormulaCorte): 'h' | 'v' | null {
     case 'ancho':
     case 'ancho_menos_margen':
     case 'mitad_ancho':
+    case 'ancho_superior':
+    case 'ancho_inferior':
       return 'h'
     case 'alto':
     case 'alto_menos_margen':
     case 'mitad_alto':
+    case 'alto_izquierdo':
+    case 'alto_derecho':
       return 'v'
     case 'fijo':
       return null
@@ -52,7 +61,7 @@ function orientacion(formula: FormulaCorte): 'h' | 'v' | null {
 
 function etiquetaCorte(c: CorteCalculado) {
   const veces = c.cantidad_piezas > 1 ? ` ×${c.cantidad_piezas}` : ''
-  return `${c.nombre_pieza} · ${c.valor_cm.toFixed(1)} cm${veces}`
+  return `${nombrePiezaConLado(c)} · ${c.valor_cm.toFixed(1)} cm${veces}`
 }
 
 export function PreviewProducto({
@@ -63,7 +72,16 @@ export function PreviewProducto({
   esCorrediza = false,
   ladoCorredizoVista = 'derecha',
   cortes,
+  medidas,
 }: PreviewProductoProps) {
+  const irregular = !!medidas && !esRegular(medidas)
+  const cotaAncho = irregular
+    ? `${medidas!.anchoSuperiorCm} sup / ${medidas!.anchoInferiorCm} inf cm`
+    : `${anchoCm} cm`
+  const cotaAlto = irregular
+    ? `${medidas!.altoIzquierdoCm} izq / ${medidas!.altoDerechoCm} der cm`
+    : `${altoCm} cm`
+
   // useId trae ':' , que rompería las referencias url(#id). Los ids deben ser únicos
   // porque la ficha de producción inlinea varios de estos SVG en un mismo documento:
   // con ids repetidos, todo url(#glass) resolvería contra el primer <defs> del papel.
@@ -173,36 +191,36 @@ export function PreviewProducto({
       {arriba.map((c, k) => {
         const cy = offY - LANE * k - LANE / 2
         return (
-          <g key={`t${c.id}`}>
-            {barra(c, `tb${c.id}`, offX + CANVAS_W / 2, cy + 3, false)}
-            {etiqueta(c, `tt${c.id}`, offX + CANVAS_W / 2, cy - 5, false)}
+          <g key={`t${c.key}`}>
+            {barra(c, `tb${c.key}`, offX + CANVAS_W / 2, cy + 3, false)}
+            {etiqueta(c, `tt${c.key}`, offX + CANVAS_W / 2, cy - 5, false)}
           </g>
         )
       })}
       {abajo.map((c, k) => {
         const cy = offY + CANVAS_H + LANE * k + LANE / 2
         return (
-          <g key={`b${c.id}`}>
-            {barra(c, `bb${c.id}`, offX + CANVAS_W / 2, cy - 5, false)}
-            {etiqueta(c, `bt${c.id}`, offX + CANVAS_W / 2, cy + 9, false)}
+          <g key={`b${c.key}`}>
+            {barra(c, `bb${c.key}`, offX + CANVAS_W / 2, cy - 5, false)}
+            {etiqueta(c, `bt${c.key}`, offX + CANVAS_W / 2, cy + 9, false)}
           </g>
         )
       })}
       {izquierda.map((c, k) => {
         const cx = offX - LANE * k - LANE / 2
         return (
-          <g key={`l${c.id}`}>
-            {barra(c, `lb${c.id}`, cx + 3, offY + CANVAS_H / 2, true)}
-            {etiqueta(c, `lt${c.id}`, cx - 6, offY + CANVAS_H / 2, true)}
+          <g key={`l${c.key}`}>
+            {barra(c, `lb${c.key}`, cx + 3, offY + CANVAS_H / 2, true)}
+            {etiqueta(c, `lt${c.key}`, cx - 6, offY + CANVAS_H / 2, true)}
           </g>
         )
       })}
       {derecha.map((c, k) => {
         const cx = offX + CANVAS_W + LANE * k + LANE / 2
         return (
-          <g key={`r${c.id}`}>
-            {barra(c, `rb${c.id}`, cx - 3, offY + CANVAS_H / 2, true)}
-            {etiqueta(c, `rt${c.id}`, cx + 8, offY + CANVAS_H / 2, true)}
+          <g key={`r${c.key}`}>
+            {barra(c, `rb${c.key}`, cx - 3, offY + CANVAS_H / 2, true)}
+            {etiqueta(c, `rt${c.key}`, cx + 8, offY + CANVAS_H / 2, true)}
           </g>
         )
       })}
@@ -321,8 +339,13 @@ export function PreviewProducto({
           </g>
         )}
 
-        <text x={CANVAS_W / 2} y={y - 6} textAnchor="middle" fontSize={10} fill="#6B7280">{anchoCm} cm</text>
-        <text x={x - 6} y={CANVAS_H / 2} textAnchor="middle" fontSize={10} fill="#6B7280" transform={`rotate(-90, ${x - 6}, ${CANVAS_H / 2})`}>{altoCm} cm</text>
+        <text x={CANVAS_W / 2} y={y - 6} textAnchor="middle" fontSize={irregular ? 8.5 : 10} fill={irregular ? '#B45309' : '#6B7280'}>{cotaAncho}</text>
+        <text x={x - 6} y={CANVAS_H / 2} textAnchor="middle" fontSize={irregular ? 8.5 : 10} fill={irregular ? '#B45309' : '#6B7280'} transform={`rotate(-90, ${x - 6}, ${CANVAS_H / 2})`}>{cotaAlto}</text>
+        {irregular && (
+          <text x={CANVAS_W / 2} y={y + h + 12} textAnchor="middle" fontSize={8} fill="#B45309">
+            Vano fuera de escuadra — silueta al rectángulo mayor
+          </text>
+        )}
 
         {/* Marco canónico del dibujo. Va dentro del <svg> porque la ficha impresa
             serializa solo el <svg>: fuera de él desaparecería de todo lo impreso. */}
@@ -334,7 +357,7 @@ export function PreviewProducto({
       {/* Piezas sin dimensión propia (fórmula fija) y las que no cupieron en los carriles. */}
       {pie.map((c, k) => (
         <text
-          key={`p${c.id}`}
+          key={`p${c.key}`}
           x={offX + CANVAS_W / 2}
           y={offY + CANVAS_H + abajo.length * LANE + 14 + k * 12}
           textAnchor="middle"

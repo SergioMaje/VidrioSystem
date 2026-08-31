@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { PlantillaProducto, TipoProducto } from '@/types/database'
+import type { PlantillaComponente, PlantillaProducto, TipoProducto } from '@/types/database'
+import { altoNominal, anchoNominal, calcularMateriales, type Medidas } from '@/lib/produccion'
 
 export function usePlantillas() {
   return useQuery({
@@ -33,9 +34,12 @@ export function useTiposProducto() {
   })
 }
 
-export function useCalcularMateriales(plantillaId: string | null, anchoCm: number, altoCm: number) {
+export function useCalcularMateriales(plantillaId: string | null, medidas: Medidas) {
+  const anchoCm = anchoNominal(medidas)
+  const altoCm = altoNominal(medidas)
+
   return useQuery({
-    queryKey: ['calcular_materiales', plantillaId, anchoCm, altoCm],
+    queryKey: ['calcular_materiales', plantillaId, medidas],
     queryFn: async () => {
       if (!plantillaId || !anchoCm || !altoCm) return []
       const { data, error } = await supabase
@@ -44,23 +48,9 @@ export function useCalcularMateriales(plantillaId: string | null, anchoCm: numbe
         .eq('plantilla_id', plantillaId)
       if (error) throw error
 
-      const anchoM = anchoCm / 100
-      const altoM = altoCm / 100
-      const area = anchoM * altoM
-      const perimetro = 2 * (anchoM + altoM)
-
-      return data.map((comp) => {
-        let cantidad = 0
-        switch (comp.formula) {
-          case 'area': cantidad = area; break
-          case 'perimetro': cantidad = perimetro; break
-          case 'ancho': cantidad = anchoM; break
-          case 'alto': cantidad = altoM; break
-          case 'fijo': cantidad = comp.cantidad_fija ?? 1; break
-        }
-        const factor = 1 + (comp.desperdicio_pct / 100)
-        return { ...comp, cantidad_calculada: cantidad * factor }
-      })
+      // La formula vive en lib/produccion: es la misma que usan el configurador y
+      // las fichas de produccion, y no debe divergir de ellas.
+      return calcularMateriales(data as PlantillaComponente[], medidas)
     },
     enabled: !!plantillaId && anchoCm > 0 && altoCm > 0,
   })

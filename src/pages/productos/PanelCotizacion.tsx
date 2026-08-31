@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { useClientes } from '@/hooks/useClientes'
 import { resumenOpciones } from '@/lib/opciones'
 import { formatCOP, cn } from '@/lib/utils'
-import { nombreColorPerfil } from '@/lib/produccion'
+import { detalleMedidasPorLado, medidasDeItem, nombreColorPerfil } from '@/lib/produccion'
 import { LADO_MEDICION_LABELS, textoLadoCorredizo } from '@/lib/lados'
 import type { CotizacionItem } from '@/types/database'
 
@@ -165,6 +165,9 @@ export function PanelCotizacion({
                           {item.area_m2 != null && ` (${item.area_m2.toFixed(2)} m²)`}
                         </span>
                       </div>
+                    )}
+                    {detalleMedidasPorLado(medidasDeItem(item)) && (
+                      <p className="text-amber-700">{detalleMedidasPorLado(medidasDeItem(item))}</p>
                     )}
                     {item.color_perfil && (
                       <div className="flex items-center justify-between">
