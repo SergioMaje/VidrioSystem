@@ -127,9 +127,16 @@ export function PanelCotizacion({
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium leading-snug">{item.descripcion}</p>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium leading-snug">{item.descripcion}</p>
+                      {!item.referencia_id && (
+                        <span className="inline-block rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          Manual — sin plantilla
+                        </span>
+                      )}
+                    </div>
                     <div className="flex shrink-0 gap-0.5">
-                      {item.referencia_id && onEditarItem && (
+                      {onEditarItem && (
                         <Button
                           variant="ghost"
                           size="icon"

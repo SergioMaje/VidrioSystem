@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ConfiguradorProducto, type EdicionItem } from '@/pages/productos/ConfiguradorProducto'
+import { ItemLibreForm } from '@/pages/productos/ItemLibreForm'
 import { PanelCotizacion, type ItemCotizacion } from '@/pages/productos/PanelCotizacion'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useCrearCotizacion, useCotizacion, useActualizarCotizacion } from '@/hooks/useCotizaciones'
+import { useReferencias } from '@/hooks/useReferencias'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { PageLoader } from '@/components/shared/LoadingSpinner'
+
+type ModoItem = 'referencia' | 'libre'
 
 const vencimientoPorDefecto = () => {
   const fecha = new Date()
@@ -21,6 +26,7 @@ export function CotizacionFormPage() {
   const modoEdicion = !!id
 
   const { data: cotizacionExistente, isLoading: cargandoCotizacion } = useCotizacion(id || '')
+  const { data: referencias, isLoading: cargandoReferencias } = useReferencias()
   const crearCotizacion = useCrearCotizacion()
   const actualizarCotizacion = useActualizarCotizacion()
 
@@ -31,6 +37,15 @@ export function CotizacionFormPage() {
   const [descuentoPct, setDescuentoPct] = useState(0)
   const [ivaPct, setIvaPct] = useState(19)
   const [edicionItem, setEdicionItem] = useState<EdicionItem | null>(null)
+  const [modo, setModo] = useState<ModoItem>('referencia')
+
+  // Sin referencias cargadas el configurador no puede producir ningún ítem, así que
+  // se abre directo en el modo libre. El día que se cree la primera referencia el
+  // default vuelve solo a 'referencia' y el modo manual pasa a ser la excepción.
+  useEffect(() => {
+    if (cargandoReferencias || !referencias) return
+    if (referencias.length === 0) setModo('libre')
+  }, [cargandoReferencias, referencias])
 
   useEffect(() => {
     if (modoEdicion && cotizacionExistente) {
@@ -66,17 +81,29 @@ export function CotizacionFormPage() {
   }
 
   const handleEditarItem = (idx: number) => {
+    // Cada ítem se edita en el formulario que lo puede reconstruir: el configurador
+    // necesita la referencia; el libre solo tiene texto y precio.
+    setModo(items[idx].referencia_id ? 'referencia' : 'libre')
     setEdicionItem({ idx, item: items[idx] })
   }
 
   const handleActualizarItem = (idx: number, nuevo: ItemCotizacion) => {
-    setItems((prev) => prev.map((it, i) => (
-      i === idx
-        ? { ...nuevo, cantidad: it.cantidad, precio_total: it.cantidad * nuevo.precio_unitario }
-        : it
-    )))
+    setItems((prev) => prev.map((it, i) => {
+      if (i !== idx) return it
+      // El configurador siempre devuelve cantidad 1 (la cantidad se ajusta en el panel),
+      // así que ahí se conserva la del ítem. El formulario libre sí la trae editada.
+      const cantidad = nuevo.referencia_id ? it.cantidad : nuevo.cantidad
+      return { ...nuevo, cantidad, precio_total: cantidad * nuevo.precio_unitario }
+    }))
     setEdicionItem(null)
     toast({ title: 'Ítem actualizado' })
+  }
+
+  // Cambiar de pestaña a mano abandona la edición en curso: el otro formulario no
+  // sabría reconstruir ese ítem.
+  const cambiarModo = (valor: string) => {
+    setModo(valor as ModoItem)
+    setEdicionItem(null)
   }
 
   const handleGuardar = async (estado: 'borrador' | 'enviada') => {
@@ -139,12 +166,28 @@ export function CotizacionFormPage() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-      <ConfiguradorProducto
-        onAgregarItem={handleAgregarItem}
-        edicion={edicionItem}
-        onActualizarItem={handleActualizarItem}
-        onCancelarEdicion={() => setEdicionItem(null)}
-      />
+      <Tabs value={modo} onValueChange={cambiarModo}>
+        <TabsList>
+          <TabsTrigger value="referencia">Con referencia</TabsTrigger>
+          <TabsTrigger value="libre">Ítem libre</TabsTrigger>
+        </TabsList>
+        <TabsContent value="referencia" className="mt-4">
+          <ConfiguradorProducto
+            onAgregarItem={handleAgregarItem}
+            edicion={edicionItem}
+            onActualizarItem={handleActualizarItem}
+            onCancelarEdicion={() => setEdicionItem(null)}
+          />
+        </TabsContent>
+        <TabsContent value="libre" className="mt-4">
+          <ItemLibreForm
+            onAgregarItem={handleAgregarItem}
+            edicion={edicionItem}
+            onActualizarItem={handleActualizarItem}
+            onCancelarEdicion={() => setEdicionItem(null)}
+          />
+        </TabsContent>
+      </Tabs>
       <PanelCotizacion
         clienteId={clienteId}
         onClienteChange={setClienteId}

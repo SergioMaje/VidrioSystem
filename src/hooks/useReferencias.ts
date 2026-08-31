@@ -134,3 +134,68 @@ export function useEliminarReferencia() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['referencias'] }),
   })
 }
+
+/**
+ * Cuántos ítems ya cotizados usan esta referencia.
+ *
+ * Importa porque OrdenDetalle calcula el despiece con un join vivo a
+ * referencia_cortes, y useEditarReferencia los borra y reinserta: editar los cortes
+ * de una referencia ya usada cambia retroactivamente las medidas de corte de esas
+ * órdenes. Con este dato el diálogo avisa antes de que ocurra.
+ */
+export function useUsosReferencia(referenciaId?: string) {
+  return useQuery({
+    queryKey: ['usos_referencia', referenciaId],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('cotizacion_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('referencia_id', referenciaId!)
+      if (error) throw error
+      return count ?? 0
+    },
+    enabled: !!referenciaId,
+  })
+}
+
+export interface ItemLibreAgrupado {
+  descripcion: string
+  veces: number
+  monto_total: number
+}
+
+/**
+ * Ítems cotizados a mano, agrupados por descripción.
+ *
+ * Es el backlog priorizado de referencias por crear: lo que más se cotiza sin
+ * plantilla es lo que más urge modelar. La lista se vacía sola a medida que el
+ * catálogo crece. Se agrupa en cliente porque durante la fase de carga el volumen
+ * de cotizacion_items es de cientos de filas, no de millones.
+ */
+export function useItemsLibres() {
+  return useQuery({
+    queryKey: ['items_libres'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cotizacion_items')
+        .select('descripcion, precio_total')
+        .is('referencia_id', null)
+      if (error) throw error
+
+      const porDescripcion = new Map<string, ItemLibreAgrupado>()
+      for (const item of data as { descripcion: string; precio_total: number }[]) {
+        const clave = item.descripcion.trim()
+        const acumulado = porDescripcion.get(clave)
+        if (acumulado) {
+          acumulado.veces += 1
+          acumulado.monto_total += item.precio_total
+        } else {
+          porDescripcion.set(clave, { descripcion: clave, veces: 1, monto_total: item.precio_total })
+        }
+      }
+      return [...porDescripcion.values()].sort(
+        (a, b) => b.veces - a.veces || b.monto_total - a.monto_total
+      )
+    },
+  })
+}
