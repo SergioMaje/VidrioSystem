@@ -25,9 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version fijada: ver la nota en ci.yml. Aqui importa mas, porque este job
+      # bloquea la publicacion del front.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.116.0
 
       # Se conecta con --db-url en vez de `supabase link`, que exigiria un access
       # token de cuenta: esos caducan a los 30 dias (el deploy se romperia solo) y

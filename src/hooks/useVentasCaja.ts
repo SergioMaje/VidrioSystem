@@ -204,6 +204,11 @@ function invalidarPagos(
  * salvo autorización de un admin), la cotización pasa directo a 'vendida' (sin
  * estado 'aprobada' intermedio) y se crea la orden de producción, que ya puede
  * arrancar. El saldo se cobra después en abonos, contra entrega.
+ *
+ * Todo eso ocurre dentro del RPC `registrar_anticipo_cotizacion`, en una sola
+ * transacción. Antes eran cuatro llamadas HTTP sueltas y la primera cobraba: si
+ * cualquiera de las siguientes fallaba, el pago quedaba registrado y la
+ * cotización sin aprobar ni producir. Ver la migración 20260831210000.
  */
 export function useRegistrarAnticipo() {
   const qc = useQueryClient()
@@ -213,7 +218,6 @@ export function useRegistrarAnticipo() {
       sessionId,
       metodoPago,
       monto,
-      usuarioId,
       fechaEntregaEstimada,
       autorizadoPor,
       motivoAutorizacion,
@@ -222,16 +226,12 @@ export function useRegistrarAnticipo() {
       sessionId: string | undefined
       metodoPago: Venta['metodo_pago']
       monto: number
-      usuarioId: string
       fechaEntregaEstimada?: string
       autorizadoPor?: string
       motivoAutorizacion?: string
     }) => {
       if (!sessionId) throw new Error('Debes abrir caja antes de registrar el anticipo')
       if (monto <= 0) throw new Error('El anticipo debe ser mayor a cero')
-      if (excedeSaldo(monto, cotizacion.total)) {
-        throw new Error(`El anticipo no puede superar el total (${formatCOP(cotizacion.total)})`)
-      }
       // El trigger en Postgres es la garantía; esto solo da un error legible antes.
       if (!cumpleAnticipoMinimo(monto, cotizacion.total) && !autorizadoPor) {
         throw new Error(
@@ -239,56 +239,22 @@ export function useRegistrarAnticipo() {
         )
       }
 
-      const { error: ventaError } = await supabase.from('ventas').insert({
-        cotizacion_id: cotizacion.id,
-        session_id: sessionId,
-        metodo_pago: metodoPago,
-        monto,
-        tipo: tipoDePago(0, monto, cotizacion.total),
-        autorizado_por: autorizadoPor ?? null,
-        motivo_autorizacion: motivoAutorizacion?.trim() || null,
-        usuario_id: usuarioId,
+      const { error } = await supabase.rpc('registrar_anticipo_cotizacion', {
+        p_cotizacion_id: cotizacion.id,
+        p_metodo_pago: metodoPago,
+        p_monto: monto,
+        p_fecha_entrega: fechaEntregaEstimada || null,
+        p_autorizado_por: autorizadoPor ?? null,
+        p_motivo_autorizacion: motivoAutorizacion?.trim() || null,
       })
-      if (ventaError) throw ventaError
-
-      const { error: cotizacionError } = await supabase
-        .from('cotizaciones')
-        .update({ estado: 'vendida', fecha_aprobacion: new Date().toISOString() })
-        .eq('id', cotizacion.id)
-      if (cotizacionError) throw cotizacionError
-
-      // Un flujo anterior creaba la orden al aprobar, antes de cobrar nada: esas
-      // cotizaciones llegan aquí con orden ya existente y no debe duplicarse.
-      const { data: ordenExistente, error: buscarError } = await supabase
-        .from('ordenes_trabajo')
-        .select('id')
-        .eq('cotizacion_id', cotizacion.id)
-        .maybeSingle()
-      if (buscarError) throw buscarError
-
-      if (ordenExistente) {
-        if (fechaEntregaEstimada) {
-          const { error: fechaError } = await supabase
-            .from('ordenes_trabajo')
-            .update({ fecha_entrega_estimada: fechaEntregaEstimada })
-            .eq('id', ordenExistente.id)
-          if (fechaError) throw fechaError
-        }
-        return
-      }
-
-      const numero = `OT-${Date.now()}`
-      const { error: ordenError } = await supabase.from('ordenes_trabajo').insert({
-        numero,
-        cotizacion_id: cotizacion.id,
-        cliente_id: cotizacion.cliente_id,
-        estado: 'pendiente',
-        fecha_entrega_estimada: fechaEntregaEstimada || null,
-        notas: cotizacion.notas ?? null,
-      })
-      if (ordenError) throw ordenError
+      if (error) throw error
     },
-    onSuccess: (_data, variables) => invalidarPagos(qc, variables.cotizacion.id, variables.sessionId),
+    // onSettled, no onSuccess: un fallo también puede haber cambiado el saldo
+    // (el RPC es atómico, pero la red puede cortarse tras el commit). Dejar la
+    // caché sin refrescar tras un error fue lo que hizo que la UI siguiera
+    // creyendo que no había pagos y ofreciera un anticipo ya cobrado.
+    onSettled: (_data, _err, variables) =>
+      invalidarPagos(qc, variables.cotizacion.id, variables.sessionId),
   })
 }
 
@@ -341,6 +307,7 @@ export function useRegistrarAbono() {
       })
       if (error) throw error
     },
-    onSuccess: (_data, variables) => invalidarPagos(qc, variables.cotizacionId, variables.sessionId),
+    onSettled: (_data, _err, variables) =>
+      invalidarPagos(qc, variables.cotizacionId, variables.sessionId),
   })
 }

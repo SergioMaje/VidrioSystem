@@ -71,10 +71,15 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
 
   const montoNum = Number(monto) || 0
   const bajoMinimo = esAnticipo && !cumpleAnticipoMinimo(montoNum, total)
-  const sobrepasa = excedeSaldo(montoNum, esAnticipo ? total : saldo)
+  // Siempre contra el saldo, nunca contra el total: si la cotización ya tiene
+  // abonos, el total es más de lo que se puede cobrar y el trigger rechazaría el
+  // pago con un saldo que la pantalla no estaba mostrando.
+  const sobrepasa = excedeSaldo(montoNum, saldo)
   const requiereAutorizacion = bajoMinimo && !(esAdmin && autorizar && motivo.trim().length > 0)
   const pendiente = registrarAnticipo.isPending || registrarAbono.isPending
-  const puedeConfirmar = montoNum > 0 && !sobrepasa && !requiereAutorizacion && !pendiente
+  // Sin el saldo cargado, `saldo` cae a `total` y se ofrecería cobrar de más.
+  const puedeConfirmar =
+    saldoListo && montoNum > 0 && !sobrepasa && !requiereAutorizacion && !pendiente
 
   const handleConfirmar = async () => {
     if (!usuario) return
@@ -85,7 +90,6 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
           sessionId: sesionCaja?.id,
           metodoPago,
           monto: montoNum,
-          usuarioId: usuario.id,
           fechaEntregaEstimada: fechaEntrega || undefined,
           autorizadoPor: bajoMinimo ? usuario.id : undefined,
           motivoAutorizacion: bajoMinimo ? motivo : undefined,
@@ -110,7 +114,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
     }
   }
 
-  const saldoResultante = Math.max(0, (esAnticipo ? total : saldo) - montoNum)
+  const saldoResultante = Math.max(0, saldo - montoNum)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -177,14 +181,14 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setMonto(String(Math.round(esAnticipo ? total : saldo)))}
+                  onClick={() => setMonto(String(Math.round(saldo)))}
                 >
                   {esAnticipo ? 'Total' : 'Saldo completo'}
                 </Button>
               </div>
               {sobrepasa ? (
                 <p className="text-xs text-destructive">
-                  El monto excede el saldo pendiente ({formatCOP(esAnticipo ? total : saldo)}).
+                  El monto excede el saldo pendiente ({formatCOP(saldo)}).
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">

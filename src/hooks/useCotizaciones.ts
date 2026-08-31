@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { TOLERANCIA } from '@/lib/pagos'
+import { formatCOP } from '@/lib/utils'
 import type { Cotizacion, CotizacionItem } from '@/types/database'
 
 /**
@@ -123,6 +125,24 @@ export function useActualizarCotizacion() {
       const base = subtotal - descuento
       const iva = base * (input.iva_pct / 100)
       const total = base + iva
+
+      // Editar recalcula el total desde los ítems, sin mirar lo ya cobrado: se
+      // podía dejar una cotización con un total por debajo de sus abonos, y a
+      // partir de ahí el saldo salía negativo y la vista de morosos mentía.
+      const { data: saldoActual, error: saldoError } = await supabase
+        .from('cotizaciones_saldo')
+        .select('total_abonado')
+        .eq('cotizacion_id', input.id)
+        .single()
+      if (saldoError) throw saldoError
+
+      const abonado = (saldoActual as { total_abonado: number }).total_abonado
+      if (abonado > 0 && total + TOLERANCIA < abonado) {
+        throw new Error(
+          `El nuevo total (${formatCOP(total)}) es menor que lo ya cobrado (${formatCOP(abonado)}). ` +
+            'Devuelve la diferencia antes de reducir la cotización.'
+        )
+      }
 
       const { error } = await supabase
         .from('cotizaciones')

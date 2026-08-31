@@ -29,9 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version fijada: con `latest` la accion consulta la API de GitHub para
+      # resolverla, y sin token esa consulta se topa con el rate limit. El
+      # 31/08/2026 ese fallo tumbo el job sin que nada del repo hubiera cambiado.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.116.0
 
       - name: Aplicar migraciones y seed en una base limpia
         run: supabase db start
