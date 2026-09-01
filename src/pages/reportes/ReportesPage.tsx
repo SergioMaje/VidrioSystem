@@ -617,6 +617,7 @@ export function ReportesPage() {
                         <th className="px-4 py-3 text-right">Duración</th>
                         <th className="px-4 py-3">Cerró</th>
                         <th className="px-4 py-3 text-right">Total cobrado</th>
+                        <th className="px-4 py-3 text-right">Gastos</th>
                         <th className="px-4 py-3 text-right">Diferencia</th>
                         <th className="px-4 py-3" />
                       </tr>
@@ -632,6 +633,11 @@ export function ReportesPage() {
                           </td>
                           <td className="px-4 py-3">{sesion.cerrada_por ? `${sesion.cerrada_por.nombre} ${sesion.cerrada_por.apellido}` : '—'}</td>
                           <td className="px-4 py-3 text-right font-semibold">{resumen ? formatCOP(resumen.total_cobrado) : '—'}</td>
+                          <td className="px-4 py-3 text-right font-mono">
+                            {resumen && resumen.total_gastos > 0 ? (
+                              <span className="text-destructive">−{formatCOP(resumen.total_gastos)}</span>
+                            ) : '—'}
+                          </td>
                           <td className="px-4 py-3 text-right font-mono">
                             {sesion.difference != null ? (
                               <span className={sesion.difference === 0 ? '' : sesion.difference > 0 ? 'text-emerald-600' : 'text-destructive'}>

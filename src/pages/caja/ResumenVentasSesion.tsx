@@ -1,7 +1,8 @@
 import { Separator } from '@/components/ui/separator'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useVentasSesion } from '@/hooks/useVentasCaja'
-import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, origenDeVenta } from '@/lib/pagos'
+import { useMovimientosSesion } from '@/hooks/useMovimientosCaja'
+import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, origenDeVenta, totalGastosEfectivo } from '@/lib/pagos'
 import { formatCOP } from '@/lib/utils'
 import type { MetodoPago } from '@/types/database'
 
@@ -27,13 +28,17 @@ export function ResumenVentasSesion({
   arqueo?: Arqueo
 }) {
   const { data: ventas, isLoading } = useVentasSesion(sessionId)
+  const { data: movimientos } = useMovimientosSesion(sessionId)
 
   if (isLoading) return <LoadingSpinner className="py-8" />
 
   const totales = { efectivo: 0, tarjeta: 0, transferencia: 0 } as Record<MetodoPago, number>
   for (const v of ventas ?? []) totales[v.metodo_pago] += v.monto
   const totalGeneral = totales.efectivo + totales.tarjeta + totales.transferencia
-  const efectivoEsperado = openingAmount + totales.efectivo
+  // Lo que los gastos sacaron del cajón. Con el turno cerrado no se recalcula
+  // nada: manda `arqueo`, que ya viene con esto descontado desde `cerrar_caja`.
+  const gastosEfectivo = totalGastosEfectivo(movimientos)
+  const efectivoEsperado = openingAmount + totales.efectivo - gastosEfectivo
 
   return (
     <div className="space-y-4">
@@ -87,6 +92,13 @@ export function ResumenVentasSesion({
         </div>
         <p className="pt-2 text-xs font-medium uppercase text-muted-foreground">Arqueo de efectivo</p>
         <div className="flex justify-between"><span className="text-muted-foreground">Fondo inicial</span><span className="font-mono">{formatCOP(openingAmount)}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Ventas en efectivo (+)</span><span className="font-mono">{formatCOP(totales.efectivo)}</span></div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Gastos en efectivo (−)</span>
+          <span className={`font-mono ${gastosEfectivo > 0 ? 'text-destructive' : ''}`}>
+            {formatCOP(gastosEfectivo)}
+          </span>
+        </div>
 
         {arqueo ? (
           <>

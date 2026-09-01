@@ -1,4 +1,4 @@
-import type { MetodoPago, TipoPago } from '@/types/database'
+import type { CategoriaGasto, MetodoPago, TipoPago } from '@/types/database'
 
 /** El cliente debe entregar al menos este porcentaje del total como anticipo. */
 export const ANTICIPO_MIN_PCT = 0.5
@@ -42,6 +42,34 @@ export const METODO_PAGO_LABEL: Record<MetodoPago, string> = {
   tarjeta: 'Tarjeta',
   transferencia: 'Transferencia',
 }
+
+/** El orden importa: es el que se usa para listar categorías en el select de gastos. */
+export const CATEGORIA_GASTO_LABEL: Record<CategoriaGasto, string> = {
+  domicilio: 'Domicilio',
+  transporte: 'Transporte',
+  papeleria: 'Papelería',
+  servicios: 'Servicios',
+  refrigerio: 'Refrigerio',
+  proveedor: 'Proveedor',
+  retiro: 'Retiro de efectivo',
+  otro: 'Otro',
+}
+
+/** Un gasto anulado no salió del cajón: no cuenta para el arqueo. */
+export const esGastoVivo = (m: { anulado_at: string | null }) => m.anulado_at === null
+
+/**
+ * Lo que los gastos del turno sacaron del cajón. Solo efectivo: un gasto pagado
+ * por transferencia se reporta, pero no toca el arqueo. Espejo en TS de lo que
+ * calcula `cerrar_caja` en Postgres.
+ */
+export const totalGastosEfectivo = (
+  movimientos: { anulado_at: string | null; metodo_pago: MetodoPago; monto: number }[] = []
+) =>
+  movimientos.reduce(
+    (suma, m) => (esGastoVivo(m) && m.metodo_pago === 'efectivo' ? suma + m.monto : suma),
+    0
+  )
 
 /** Un pago viene de una cotización o de una venta de mostrador, nunca de las dos. */
 type VentaConOrigen = {
