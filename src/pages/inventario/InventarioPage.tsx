@@ -10,6 +10,7 @@ import { StockBadge } from '@/components/shared/StockBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ItemFormDialog } from './ItemFormDialog'
+import { ExcelInventarioMenu } from './ExcelInventarioMenu'
 import { ItemDetalleDrawer } from './ItemDetalleDrawer'
 import { useItems, useCategorias } from '@/hooks/useInventario'
 import { formatCOP } from '@/lib/utils'
@@ -78,10 +79,15 @@ export function InventarioPage() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={() => { setEditItem(null); setFormOpen(true) }}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo item
-        </Button>
+        <div className="flex gap-2">
+          {/* Recibe todos los items, no los filtrados: la plantilla de stock es del
+              inventario completo y los códigos existentes también. */}
+          <ExcelInventarioMenu items={items ?? []} />
+          <Button onClick={() => { setEditItem(null); setFormOpen(true) }}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nuevo item
+          </Button>
+        </div>
       </div>
 
       {isError && (

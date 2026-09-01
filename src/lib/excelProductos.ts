@@ -1,5 +1,12 @@
-import ExcelJS from 'exceljs'
-import type { Categoria, UnidadMedida } from '@/types/database'
+import type { Categoria, Proveedor, UnidadMedida } from '@/types/database'
+import {
+  AZUL_CLARO, AZUL_ENCABEZADO, GRIS_EJEMPLO,
+  agregarFilaCebra, agregarHojaCatalogos, bordesCelda, descargarLibro, estilarEncabezado,
+  columnasFaltantes, leerHoja, normalizar, nuevoLibro, numeroValido, texto,
+  type ErrorImportacion,
+} from './excel'
+
+export type { ErrorImportacion }
 
 /** Encabezados exactos que debe tener la hoja "Productos" del Excel. */
 export const COLUMNAS_PLANTILLA = [
@@ -11,6 +18,13 @@ export const COLUMNAS_PLANTILLA = [
   'Precio venta',
 ] as const
 
+/**
+ * Columna extra de la plantilla global (la que se baja desde Inventario, sin un
+ * proveedor de contexto): ahí cada fila dice de quién es el producto. Desde la
+ * ficha de un proveedor la columna no existe porque el proveedor ya está fijo.
+ */
+export const COLUMNA_PROVEEDOR = 'Proveedor'
+
 export interface ProductoImportado {
   codigo: string
   nombre: string
@@ -18,11 +32,8 @@ export interface ProductoImportado {
   unidad_medida_id: string
   precio_costo: number
   precio_venta: number
-}
-
-export interface ErrorImportacion {
-  fila: number
-  motivo: string
+  /** Sólo lo llena la plantilla global; con proveedor fijo queda en null. */
+  proveedor_id: string | null
 }
 
 export interface ResultadoImportacion {
@@ -30,154 +41,92 @@ export interface ResultadoImportacion {
   errores: ErrorImportacion[]
 }
 
-const AZUL_ENCABEZADO = 'FF1E3A8A'
-const AZUL_CLARO = 'FFDCE6F7'
-const GRIS_EJEMPLO = 'FFF3F4F6'
-const VERDE_ENCABEZADO = 'FF166534'
-const VERDE_CLARO = 'FFDCFCE7'
-const BORDE_GRIS: Partial<ExcelJS.Border> = { style: 'thin', color: { argb: 'FFB0B0B0' } }
-
-function bordesCelda(): Partial<ExcelJS.Borders> {
-  return { top: BORDE_GRIS, left: BORDE_GRIS, bottom: BORDE_GRIS, right: BORDE_GRIS }
-}
-
-/** Genera y descarga la plantilla .xlsx con las columnas exigidas, estilo visual y los catálogos válidos de referencia. */
-export async function descargarPlantillaProductos(categorias: Categoria[], unidades: UnidadMedida[], nombreProveedor: string) {
-  const wb = new ExcelJS.Workbook()
-  wb.creator = 'Glazz'
+/**
+ * Genera y descarga la plantilla .xlsx con las columnas exigidas, estilo visual
+ * y los catálogos válidos de referencia.
+ *
+ * `proveedores` presente = plantilla global: se agrega la columna Proveedor y su
+ * catálogo. Ausente = plantilla de un proveedor concreto.
+ */
+export async function descargarPlantillaProductos(
+  categorias: Categoria[],
+  unidades: UnidadMedida[],
+  nombreArchivo: string,
+  proveedores?: Proveedor[]
+) {
+  const wb = nuevoLibro()
+  const columnas = proveedores ? [...COLUMNAS_PLANTILLA, COLUMNA_PROVEEDOR] : [...COLUMNAS_PLANTILLA]
 
   const hoja = wb.addWorksheet('Productos', { views: [{ state: 'frozen', ySplit: 1 }] })
-  hoja.columns = COLUMNAS_PLANTILLA.map((titulo) => ({ header: titulo, width: 22 }))
+  hoja.columns = columnas.map((titulo) => ({ header: titulo, width: 22 }))
+  estilarEncabezado(hoja, AZUL_ENCABEZADO)
 
-  const filaEncabezado = hoja.getRow(1)
-  filaEncabezado.eachCell((celda) => {
-    celda.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: AZUL_ENCABEZADO } }
-    celda.alignment = { vertical: 'middle', horizontal: 'center' }
-    celda.border = bordesCelda()
-  })
-  filaEncabezado.height = 22
+  const ejemplo: (string | number)[] = [
+    'ALU-001', 'Perfil de aluminio 3"', categorias[0]?.nombre ?? '', unidades[0]?.nombre ?? '', 25000, 35000,
+  ]
+  if (proveedores) ejemplo.push(proveedores[0]?.nombre ?? '')
 
-  const filaEjemplo = hoja.addRow(['ALU-001', 'Perfil de aluminio 3"', categorias[0]?.nombre ?? '', unidades[0]?.nombre ?? '', 25000, 35000])
+  const filaEjemplo = hoja.addRow(ejemplo)
   filaEjemplo.eachCell((celda) => {
     celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS_EJEMPLO } }
     celda.font = { italic: true, color: { argb: 'FF6B7280' } }
     celda.border = bordesCelda()
   })
 
-  for (let i = 0; i < 30; i++) {
-    const fila = hoja.addRow([])
-    fila.eachCell({ includeEmpty: true }, (celda) => {
-      celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFFFFF' : AZUL_CLARO } }
-      celda.border = bordesCelda()
-    })
-  }
+  for (let i = 0; i < 30; i++) agregarFilaCebra(hoja, [], i, AZUL_CLARO)
 
-  const hojaCatalogos = wb.addWorksheet('Catálogos')
-  hojaCatalogos.columns = [
-    { header: 'Categorías válidas', width: 30 },
-    { header: 'Unidades de medida válidas', width: 30 },
+  const catalogos = [
+    { titulo: 'Categorías válidas', valores: categorias.map((c) => c.nombre) },
+    { titulo: 'Unidades de medida válidas', valores: unidades.map((u) => u.nombre) },
   ]
-  hojaCatalogos.getRow(1).eachCell((celda) => {
-    celda.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VERDE_ENCABEZADO } }
-    celda.alignment = { vertical: 'middle', horizontal: 'center' }
-    celda.border = bordesCelda()
-  })
-  hojaCatalogos.getRow(1).height = 22
+  if (proveedores) catalogos.push({ titulo: 'Proveedores válidos', valores: proveedores.map((p) => p.nombre) })
+  agregarHojaCatalogos(wb, catalogos)
 
-  const filas = Math.max(categorias.length, unidades.length)
-  for (let i = 0; i < filas; i++) {
-    const fila = hojaCatalogos.addRow([categorias[i]?.nombre ?? '', unidades[i]?.nombre ?? ''])
-    fila.eachCell({ includeEmpty: true }, (celda) => {
-      celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFFFFF' : VERDE_CLARO } }
-      celda.border = bordesCelda()
-    })
-  }
-
-  const buffer = await wb.xlsx.writeBuffer()
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `plantilla-productos-${nombreProveedor.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.xlsx`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-function normalizar(texto: string) {
-  return texto.trim().toLowerCase()
-}
-
-function numeroValido(valor: unknown): number | null {
-  if (valor === undefined || valor === null || valor === '') return null
-  const n = typeof valor === 'number' ? valor : Number(String(valor).replace(/,/g, ''))
-  return Number.isFinite(n) && n >= 0 ? n : NaN
+  await descargarLibro(wb, `plantilla-productos-${nombreArchivo}`)
 }
 
 /**
- * Aplana el valor de una celda: ExcelJS no siempre entrega un primitivo, una celda
- * puede venir como fórmula, texto enriquecido, hipervínculo o error.
+ * Lee el archivo .xlsx y valida estrictamente cada fila contra los catálogos
+ * existentes. `proveedores` sólo se pasa para la plantilla global: con él la
+ * columna Proveedor pasa a ser obligatoria en cada fila.
  */
-function valorCelda(valor: ExcelJS.CellValue): string | number {
-  if (valor === null || valor === undefined) return ''
-  if (typeof valor === 'number' || typeof valor === 'string') return valor
-  if (typeof valor === 'boolean') return String(valor)
-  if (valor instanceof Date) return valor.toISOString()
-  if (typeof valor === 'object') {
-    if ('error' in valor) return ''
-    if ('result' in valor) return valorCelda(valor.result as ExcelJS.CellValue)
-    if ('richText' in valor) return valor.richText.map((t) => t.text).join('')
-    if ('text' in valor) return String(valor.text)
-  }
-  return String(valor)
-}
-
-/** Lee el archivo .xlsx y valida estrictamente cada fila contra los catálogos existentes. */
 export async function leerProductosExcel(
   file: File,
   categorias: Categoria[],
   unidades: UnidadMedida[],
-  codigosExistentes: Set<string>
+  codigosExistentes: Set<string>,
+  proveedores?: Proveedor[]
 ): Promise<ResultadoImportacion> {
-  const buffer = await file.arrayBuffer()
-  const wb = new ExcelJS.Workbook()
-  await wb.xlsx.load(buffer)
-  const hoja = wb.getWorksheet('Productos') ?? wb.worksheets[0]
+  const hoja = await leerHoja(file, 'Productos')
   if (!hoja) return { validos: [], errores: [{ fila: 0, motivo: 'No se encontró la hoja "Productos" en el archivo' }] }
 
-  // row.values es 1-indexado (la posición 0 va vacía), así que encabezados y valores
-  // se alinean por índice sin corrimientos.
-  const encabezados = (hoja.getRow(1).values as ExcelJS.CellValue[]).map((v) => String(valorCelda(v)).trim())
-
-  const filas: { numero: number; datos: Record<string, unknown> }[] = []
-  hoja.eachRow((fila, numero) => {
-    if (numero === 1) return
-    const valores = fila.values as ExcelJS.CellValue[]
-    const datos: Record<string, unknown> = {}
-    encabezados.forEach((titulo, i) => {
-      if (!titulo) return
-      datos[titulo] = valorCelda(valores[i])
-    })
-    filas.push({ numero, datos })
-  })
+  const requeridas = proveedores ? [...COLUMNAS_PLANTILLA, COLUMNA_PROVEEDOR] : COLUMNAS_PLANTILLA
+  const faltantes = columnasFaltantes(hoja.encabezados, requeridas)
+  if (faltantes.length > 0) {
+    return { validos: [], errores: [{ fila: 1, motivo: `Faltan columnas en la hoja: ${faltantes.join(', ')}. Vuelve a bajar la plantilla.` }] }
+  }
 
   const categoriasPorNombre = new Map(categorias.map((c) => [normalizar(c.nombre), c.id]))
   const unidadesPorNombre = new Map(unidades.map((u) => [normalizar(u.nombre), u.id]))
+  const proveedoresPorNombre = new Map((proveedores ?? []).map((p) => [normalizar(p.nombre), p.id]))
   const codigosVistos = new Set<string>()
 
   const validos: ProductoImportado[] = []
   const errores: ErrorImportacion[] = []
 
-  // numeroFila es el número real de la fila en Excel, así el error apunta a la fila
-  // que el usuario ve al abrir el archivo aunque haya filas vacías intermedias.
-  filas.forEach(({ numero: numeroFila, datos: fila }) => {
+  hoja.filas.forEach(({ numero: numeroFila, datos: fila }) => {
     const motivos: string[] = []
 
-    const codigo = String(fila['Código'] ?? '').trim()
-    const nombre = String(fila['Nombre'] ?? '').trim()
-    const categoriaTexto = String(fila['Categoría'] ?? '').trim()
-    const unidadTexto = String(fila['Unidad de medida'] ?? '').trim()
+    const codigo = texto(fila, 'Código')
+    const nombre = texto(fila, 'Nombre')
+    const categoriaTexto = texto(fila, 'Categoría')
+    const unidadTexto = texto(fila, 'Unidad de medida')
+    const proveedorTexto = texto(fila, COLUMNA_PROVEEDOR)
+
+    // Fila totalmente vacía (usuario dejó espacio de más al final): se ignora sin error.
+    const filaVacia = !codigo && !nombre && !categoriaTexto && !unidadTexto && !proveedorTexto
+      && fila['Precio costo'] === '' && fila['Precio venta'] === ''
+    if (filaVacia) return
 
     if (!codigo) motivos.push('Falta el código')
     else if (codigosVistos.has(normalizar(codigo))) motivos.push(`Código duplicado en el archivo: ${codigo}`)
@@ -193,6 +142,13 @@ export async function leerProductosExcel(
     if (!unidadTexto) motivos.push('Falta la unidad de medida')
     else if (!unidadId) motivos.push(`Unidad de medida no reconocida: "${unidadTexto}" (ver hoja Catálogos)`)
 
+    let proveedorId: string | null = null
+    if (proveedores) {
+      proveedorId = proveedoresPorNombre.get(normalizar(proveedorTexto)) ?? null
+      if (!proveedorTexto) motivos.push('Falta el proveedor')
+      else if (!proveedorId) motivos.push(`Proveedor no reconocido: "${proveedorTexto}" (ver hoja Catálogos)`)
+    }
+
     const precioCosto = numeroValido(fila['Precio costo'])
     if (precioCosto === null) motivos.push('Falta el precio de costo')
     else if (Number.isNaN(precioCosto)) motivos.push('Precio de costo inválido')
@@ -200,10 +156,6 @@ export async function leerProductosExcel(
     const precioVenta = numeroValido(fila['Precio venta'])
     if (precioVenta === null) motivos.push('Falta el precio de venta')
     else if (Number.isNaN(precioVenta)) motivos.push('Precio de venta inválido')
-
-    // Fila totalmente vacía (usuario dejó espacio de más al final): se ignora sin error.
-    const filaVacia = !codigo && !nombre && !categoriaTexto && !unidadTexto && fila['Precio costo'] === '' && fila['Precio venta'] === ''
-    if (filaVacia) return
 
     if (motivos.length > 0) {
       errores.push({ fila: numeroFila, motivo: motivos.join('; ') })
@@ -218,6 +170,7 @@ export async function leerProductosExcel(
       unidad_medida_id: unidadId!,
       precio_costo: precioCosto!,
       precio_venta: precioVenta!,
+      proveedor_id: proveedorId,
     })
   })
 
