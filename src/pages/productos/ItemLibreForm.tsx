@@ -83,6 +83,13 @@ export function ItemLibreForm({
     ancho_cm: ancho > 0 ? ancho : null,
     alto_cm: alto > 0 ? alto : null,
     area_m2: areaM2,
+    // Un ítem a mano no tiene despiece que calcular, así que no pide medidas por lado:
+    // si el vano es irregular, quien cotiza lo escribe en la descripción.
+    medidas_irregulares: false,
+    ancho_sup_cm: null,
+    ancho_inf_cm: null,
+    alto_izq_cm: null,
+    alto_der_cm: null,
     cantidad: unidades,
     precio_unitario: precio,
     precio_total: total,

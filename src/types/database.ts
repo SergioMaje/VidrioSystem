@@ -207,9 +207,17 @@ export interface CotizacionItem {
   plantilla_id: string | null
   referencia_id: string | null
   descripcion: string
+  /** Ancho nominal (bounding box): max(ancho_sup_cm, ancho_inf_cm). */
   ancho_cm: number | null
+  /** Alto nominal (bounding box): max(alto_izq_cm, alto_der_cm). */
   alto_cm: number | null
   area_m2: number | null
+  /** El vano esta fuera de escuadra y manda el detalle por lado. */
+  medidas_irregulares: boolean
+  alto_izq_cm: number | null
+  alto_der_cm: number | null
+  ancho_sup_cm: number | null
+  ancho_inf_cm: number | null
   cantidad: number
   precio_unitario: number
   precio_total: number
@@ -245,13 +253,25 @@ export type FormulaCorte =
   | 'mitad_ancho'
   | 'mitad_alto'
   | 'fijo'
+  // Medidas por lado, para vanos fuera de escuadra. margen_cm se resta siempre
+  // (default 0), por eso no tienen variante "_menos_margen".
+  | 'alto_izquierdo'
+  | 'alto_derecho'
+  | 'ancho_superior'
+  | 'ancho_inferior'
 
 export interface ReferenciaCorte {
   id: string
   referencia_id: string
   nombre_pieza: string
   formula: FormulaCorte
+  /** Descuento base. Un valor negativo suma en vez de restar. */
   margen_cm: number
+  /** Descuentos por lado. NULL = usa margen_cm. Solo aplican en vanos fuera de escuadra. */
+  margen_izq_cm: number | null
+  margen_der_cm: number | null
+  margen_sup_cm: number | null
+  margen_inf_cm: number | null
   cantidad_fija_cm: number | null
   cantidad_piezas: number
   orden: number

@@ -19,7 +19,21 @@ import { PreviewProducto } from './PreviewProducto'
 import { usePlantillas } from '@/hooks/useProductos'
 import { useReferencias } from '@/hooks/useReferencias'
 import { useItems } from '@/hooks/useInventario'
-import { calcularCortes, calcularMateriales, COLORES_PERFIL, TIPO_LABELS } from '@/lib/produccion'
+import {
+  altoNominal,
+  anchoNominal,
+  areaM2,
+  calcularCortes,
+  calcularMateriales,
+  esRegular,
+  detalleMedidasPorLado,
+  medidasDeItem,
+  medidasRegulares,
+  nombrePiezaConLado,
+  COLORES_PERFIL,
+  TIPO_LABELS,
+  type Medidas,
+} from '@/lib/produccion'
 import {
   calcularOpciones,
   catalogoOpciones,
@@ -69,6 +83,14 @@ function clavesUnicas(opciones: OpcionDisponible[], clave: (o: OpcionDisponible)
   return [...new Set(opciones.map(clave))]
 }
 
+/** Los cuatro campos de medida, en el orden en que se dibujan y se validan. */
+const LADOS_MEDIDA: { campo: keyof Medidas; label: string }[] = [
+  { campo: 'anchoSuperiorCm', label: 'Ancho superior (cm)' },
+  { campo: 'anchoInferiorCm', label: 'Ancho inferior (cm)' },
+  { campo: 'altoIzquierdoCm', label: 'Alto izquierdo (cm)' },
+  { campo: 'altoDerechoCm',   label: 'Alto derecho (cm)' },
+]
+
 export interface EdicionItem {
   idx: number
   item: ItemCotizacion
@@ -87,8 +109,18 @@ export function ConfiguradorProducto({
   onActualizarItem,
   onCancelarEdicion,
 }: ConfiguradorProductoProps) {
-  const [anchoCm, setAnchoCm] = useState(120)
-  const [altoCm, setAltoCm] = useState(150)
+  // Las cuatro medidas son la fuente de verdad; ancho y alto se derivan de ellas.
+  // Se piden siempre las cuatro: quien mide en obra las toma todas, y con dos inputs
+  // producción terminaba cortando a la medida nominal aunque el vano no lo fuera.
+  // El 0 es el centinela de "sin capturar"; ninguna medida real vale 0.
+  const [medidas, setMedidas] = useState<Medidas>(() => medidasRegulares(0, 0))
+  const anchoCm = anchoNominal(medidas)
+  const altoCm = altoNominal(medidas)
+  const medidasCompletas = LADOS_MEDIDA.every(({ campo }) => medidas[campo] > 0)
+
+  const setLado = (lado: keyof Medidas, v: number) =>
+    setMedidas((m) => ({ ...m, [lado]: v }))
+
   const [colorPerfil, setColorPerfil] = useState('#9CA3AF')
   const [referenciaId, setReferenciaId] = useState<string>('')
   const [especificaciones, setEspecificaciones] = useState('')
@@ -177,8 +209,7 @@ export function ConfiguradorProducto({
     if (!edicion) return
     const it = edicion.item
     setReferenciaId(it.referencia_id ?? '')
-    setAnchoCm(it.ancho_cm ?? 120)
-    setAltoCm(it.alto_cm ?? 150)
+    setMedidas(medidasDeItem(it))
     setColorPerfil(it.color_perfil ?? '#9CA3AF')
     if (it.lado_medicion) setLadoMedicion(it.lado_medicion)
     if (it.lado_corredizo) setLadoCorredizo(it.lado_corredizo)
@@ -188,7 +219,6 @@ export function ConfiguradorProducto({
     vidrioPendienteRef.current = {
       itemId: it.opciones?.find((o) => o.rol === 'vidrio')?.item_id ?? null,
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edicion])
 
   const vidriosPorTipo = catalogo.vidrios.filter((o) => claveTipo(o) === vidrioSel.tipo)
@@ -229,27 +259,27 @@ export function ConfiguradorProducto({
     const componentes = (plantillaSeleccionada?.componentes ?? []).filter(
       (c) => !(vidrioItem && esComponenteDeVidrio(c))
     )
-    return calcularMateriales(componentes, anchoCm, altoCm).map((comp) => ({
+    return calcularMateriales(componentes, medidas).map((comp) => ({
       ...comp,
       costo_total: comp.cantidad_calculada * (comp.item?.precio_costo ?? 0),
       stock_ok: (comp.item?.stock_actual ?? 0) >= comp.cantidad_calculada,
     }))
-  }, [plantillaSeleccionada, anchoCm, altoCm, vidrioItem])
+  }, [plantillaSeleccionada, medidas, vidrioItem])
 
   const opcionesCalculadas = useMemo(
     () =>
-      calcularOpciones(opciones, anchoCm, altoCm).map((calc) => ({
+      calcularOpciones(opciones, medidas).map((calc) => ({
         ...calc,
         stock_ok:
           (itemsPorId.get(calc.opcion.item_id)?.stock_actual ?? 0) >= calc.cantidad_calculada,
       })),
-    [opciones, anchoCm, altoCm, itemsPorId]
+    [opciones, medidas, itemsPorId]
   )
 
   const cortesCalculados = useMemo(() => {
     if (!referenciaSeleccionada?.cortes?.length) return []
-    return calcularCortes(referenciaSeleccionada.cortes, anchoCm, altoCm)
-  }, [referenciaSeleccionada, anchoCm, altoCm])
+    return calcularCortes(referenciaSeleccionada.cortes, medidas)
+  }, [referenciaSeleccionada, medidas])
 
   const costoTotal =
     materiales.reduce((s, m) => s + m.costo_total, 0) +
@@ -267,16 +297,28 @@ export function ConfiguradorProducto({
     ]
       .filter(Boolean)
       .join(', ')
-    const descripcion = `${referenciaSeleccionada.nombre} (${tipoLabel}) ${anchoCm}×${altoCm}cm — ${detalles}`
+    // Ya no es un modo que se elija: es el dato de si el vano quedó fuera de escuadra.
+    const irregular = !esRegular(medidas)
+    const sufijoMedidas = irregular ? ' (irregular)' : ''
+    const descripcion = `${referenciaSeleccionada.nombre} (${tipoLabel}) ${anchoCm}×${altoCm}cm${sufijoMedidas} — ${detalles}`
     const precioRedondeado = Math.round(precioSugerido)
 
     return {
       plantilla_id: referenciaSeleccionada.plantilla_id,
       referencia_id: referenciaSeleccionada.id,
       descripcion,
+      // ancho_cm y alto_cm son las medidas nominales: el rectángulo que contiene al
+      // vano. El detalle por lado va aparte y solo cuando de verdad difiere.
       ancho_cm: anchoCm,
       alto_cm: altoCm,
-      area_m2: (anchoCm / 100) * (altoCm / 100),
+      area_m2: areaM2(medidas),
+      medidas_irregulares: irregular,
+      // Las cuatro se guardan siempre, aunque el vano haya salido a escuadra: son las
+      // medidas que se tomaron en obra y las que producción necesita para cortar.
+      ancho_sup_cm: medidas.anchoSuperiorCm,
+      ancho_inf_cm: medidas.anchoInferiorCm,
+      alto_izq_cm: medidas.altoIzquierdoCm,
+      alto_der_cm: medidas.altoDerechoCm,
       cantidad: 1,
       precio_unitario: precioRedondeado,
       precio_total: precioRedondeado,
@@ -308,8 +350,11 @@ export function ConfiguradorProducto({
     const plantillaNombre = plantillaSeleccionada?.nombre ?? '—'
     const referenciaNombre = referenciaSeleccionada?.nombre ?? null
     const colorLabel = COLORES_PERFIL.find((c) => c.value === colorPerfil)?.label ?? colorPerfil
-    const areaM2 = ((anchoCm / 100) * (altoCm / 100)).toFixed(2)
-    const perimetroMl = (2 * (anchoCm / 100 + altoCm / 100)).toFixed(2)
+    const areaTexto = areaM2(medidas).toFixed(2)
+    const perimetroMl = (
+      (medidas.anchoSuperiorCm + medidas.anchoInferiorCm + medidas.altoIzquierdoCm + medidas.altoDerechoCm) / 100
+    ).toFixed(2)
+    const detalleLados = detalleMedidasPorLado(medidas)
     const fecha = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
     const filasMateriales = [
@@ -426,9 +471,15 @@ export function ConfiguradorProducto({
       <div class="kv"><span>Color perfil</span><strong>${colorLabel}</strong></div>
       <div class="kv"><span>Ancho</span><strong>${anchoCm} cm</strong></div>
       <div class="kv"><span>Alto</span><strong>${altoCm} cm</strong></div>
-      <div class="kv"><span>Área</span><strong>${areaM2} m²</strong></div>
+      <div class="kv"><span>Área</span><strong>${areaTexto} m²</strong></div>
       <div class="kv"><span>Perímetro</span><strong>${perimetroMl} ml</strong></div>
+      ${detalleLados ? `
+      <div class="kv"><span>Ancho superior</span><strong>${medidas.anchoSuperiorCm} cm</strong></div>
+      <div class="kv"><span>Ancho inferior</span><strong>${medidas.anchoInferiorCm} cm</strong></div>
+      <div class="kv"><span>Alto izquierdo</span><strong>${medidas.altoIzquierdoCm} cm</strong></div>
+      <div class="kv"><span>Alto derecho</span><strong>${medidas.altoDerechoCm} cm</strong></div>` : ''}
     </div>
+    ${detalleLados ? '<div class="sub">Vano fuera de escuadra: cada corte usa la medida de su lado.</div>' : ''}
   </div>
 
   ${opcionesHtml}
@@ -509,27 +560,37 @@ export function ConfiguradorProducto({
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Ancho (cm)</Label>
-                <Input
-                  type="number"
-                  min={10}
-                  max={500}
-                  value={anchoCm}
-                  onChange={(e) => setAnchoCm(Number(e.target.value))}
-                />
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                {LADOS_MEDIDA.map(({ campo, label }) => (
+                  <div key={campo} className="space-y-2">
+                    <Label>
+                      {label} <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      min={10}
+                      max={500}
+                      placeholder="—"
+                      value={medidas[campo] || ''}
+                      onChange={(e) => setLado(campo, Number(e.target.value))}
+                    />
+                  </div>
+                ))}
               </div>
-              <div className="space-y-2">
-                <Label>Alto (cm)</Label>
-                <Input
-                  type="number"
-                  min={10}
-                  max={500}
-                  value={altoCm}
-                  onChange={(e) => setAltoCm(Number(e.target.value))}
-                />
-              </div>
+
+              {medidasCompletas ? (
+                <p className="text-xs text-muted-foreground">
+                  El despiece usa la medida de cada lado. El material se calcula sobre el
+                  rectángulo mayor: {anchoCm} × {altoCm} cm.
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700">
+                  Escribe las cuatro medidas del vano: de ahí salen las medidas de corte
+                  para producción.
+                </p>
+              )}
+
             </div>
 
             <div className="space-y-2">
@@ -810,6 +871,7 @@ export function ConfiguradorProducto({
               esCorrediza={esCorrediza}
               ladoCorredizoVista={ladoVista ?? 'derecha'}
               cortes={cortesCalculados}
+              medidas={medidas}
             />
             <Separator />
             <div className="w-full space-y-1 text-sm">
@@ -817,13 +879,20 @@ export function ConfiguradorProducto({
                 <span className="text-muted-foreground">Dimensiones</span>
                 <span className="font-medium">{anchoCm} × {altoCm} cm</span>
               </div>
+              {detalleMedidasPorLado(medidas) && (
+                <p className="text-xs text-amber-700">{detalleMedidasPorLado(medidas)}</p>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Área</span>
-                <span className="font-medium">{((anchoCm / 100) * (altoCm / 100)).toFixed(2)} m²</span>
+                <span className="font-medium">{areaM2(medidas).toFixed(2)} m²</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Perímetro</span>
-                <span className="font-medium">{(2 * (anchoCm / 100 + altoCm / 100)).toFixed(2)} ml</span>
+                <span className="font-medium">
+                  {(
+                    (medidas.anchoSuperiorCm + medidas.anchoInferiorCm + medidas.altoIzquierdoCm + medidas.altoDerechoCm) / 100
+                  ).toFixed(2)} ml
+                </span>
               </div>
               {referenciaSeleccionada && (
                 <div className="flex justify-between">
@@ -851,13 +920,21 @@ export function ConfiguradorProducto({
                 <Button variant="outline" className="flex-1" onClick={onCancelarEdicion}>
                   Cancelar
                 </Button>
-                <Button className="flex-1" onClick={guardarItem} disabled={!referenciaSeleccionada}>
+                <Button
+                  className="flex-1"
+                  onClick={guardarItem}
+                  disabled={!referenciaSeleccionada || !medidasCompletas}
+                >
                   <Check className="mr-2 h-4 w-4" />
                   Guardar cambios
                 </Button>
               </div>
             ) : (
-              <Button className="w-full" onClick={guardarItem} disabled={!referenciaSeleccionada}>
+              <Button
+                className="w-full"
+                onClick={guardarItem}
+                disabled={!referenciaSeleccionada || !medidasCompletas}
+              >
                 <ShoppingCart className="mr-2 h-4 w-4" />
                 Agregar a cotización
               </Button>
@@ -927,9 +1004,9 @@ export function ConfiguradorProducto({
             <CardContent>
               <div className="space-y-2">
                 {cortesCalculados.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                  <div key={c.key} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                     <div className="flex-1">
-                      <p className="font-medium">{c.nombre_pieza}</p>
+                      <p className="font-medium">{nombrePiezaConLado(c)}</p>
                       <p className="text-xs text-muted-foreground">
                         {c.cantidad_piezas} {c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}
                       </p>

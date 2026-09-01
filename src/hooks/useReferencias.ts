@@ -29,9 +29,31 @@ export type ReferenciaCorteInput = {
   nombre_pieza: string
   formula: FormulaCorte
   margen_cm: number
+  /** Sobreescrituras por lado. undefined = usa margen_cm. */
+  margen_izq_cm?: number | null
+  margen_der_cm?: number | null
+  margen_sup_cm?: number | null
+  margen_inf_cm?: number | null
   cantidad_fija_cm?: number
   cantidad_piezas: number
   orden: number
+}
+
+/** Fila lista para insertar en referencia_cortes. La usan crear y editar por igual. */
+function filaCorte(referenciaId: string, c: ReferenciaCorteInput) {
+  return {
+    referencia_id: referenciaId,
+    nombre_pieza: c.nombre_pieza,
+    formula: c.formula,
+    margen_cm: c.margen_cm,
+    margen_izq_cm: c.margen_izq_cm ?? null,
+    margen_der_cm: c.margen_der_cm ?? null,
+    margen_sup_cm: c.margen_sup_cm ?? null,
+    margen_inf_cm: c.margen_inf_cm ?? null,
+    cantidad_fija_cm: c.formula === 'fijo' ? (c.cantidad_fija_cm ?? 0) : null,
+    cantidad_piezas: c.cantidad_piezas,
+    orden: c.orden,
+  }
 }
 
 export type ReferenciaInput = {
@@ -64,17 +86,7 @@ export function useCrearReferencia() {
       if (input.cortes.length > 0) {
         const { error: cortesError } = await supabase
           .from('referencia_cortes')
-          .insert(
-            input.cortes.map((c) => ({
-              referencia_id: referencia.id,
-              nombre_pieza: c.nombre_pieza,
-              formula: c.formula,
-              margen_cm: c.margen_cm,
-              cantidad_fija_cm: c.formula === 'fijo' ? (c.cantidad_fija_cm ?? 0) : null,
-              cantidad_piezas: c.cantidad_piezas,
-              orden: c.orden,
-            }))
-          )
+          .insert(input.cortes.map((c) => filaCorte(referencia.id, c)))
         if (cortesError) throw cortesError
       }
     },
@@ -103,17 +115,7 @@ export function useEditarReferencia() {
       if (input.cortes.length > 0) {
         const { error: cortesError } = await supabase
           .from('referencia_cortes')
-          .insert(
-            input.cortes.map((c) => ({
-              referencia_id: id,
-              nombre_pieza: c.nombre_pieza,
-              formula: c.formula,
-              margen_cm: c.margen_cm,
-              cantidad_fija_cm: c.formula === 'fijo' ? (c.cantidad_fija_cm ?? 0) : null,
-              cantidad_piezas: c.cantidad_piezas,
-              orden: c.orden,
-            }))
-          )
+          .insert(input.cortes.map((c) => filaCorte(id, c)))
         if (cortesError) throw cortesError
       }
     },
