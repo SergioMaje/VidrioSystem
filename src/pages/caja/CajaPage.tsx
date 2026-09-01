@@ -10,6 +10,7 @@ import { useCajaActual } from '@/hooks/useCajaSesiones'
 import { formatCOP } from '@/lib/utils'
 import { AbrirCajaCard } from './AbrirCajaCard'
 import { CerrarCajaDialog } from './CerrarCajaDialog'
+import { MovimientosTab } from './MovimientosTab'
 import { ResumenVentasSesion } from './ResumenVentasSesion'
 import { VenderTab } from './VenderTab'
 
@@ -51,11 +52,16 @@ export function CajaPage() {
       <Tabs defaultValue="vender">
         <TabsList>
           <TabsTrigger value="vender">Vender</TabsTrigger>
+          <TabsTrigger value="movimientos">Movimientos</TabsTrigger>
           <TabsTrigger value="turno">Turno</TabsTrigger>
         </TabsList>
 
         <TabsContent value="vender" className="mt-4">
           <VenderTab />
+        </TabsContent>
+
+        <TabsContent value="movimientos" className="mt-4">
+          <MovimientosTab sesion={sesion} />
         </TabsContent>
 
         <TabsContent value="turno" className="mt-4 space-y-4">
