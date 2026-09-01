@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react'
-import { FileSpreadsheet, Download, Upload, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { FileSpreadsheet, Download, Upload, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { ResultadoImportacionDialog } from '@/components/shared/ResultadoImportacionDialog'
 import { useCategorias, useUnidadesMedida, useCrearItemsMasivo } from '@/hooks/useInventario'
 import { useToast } from '@/hooks/useToast'
 import { descargarPlantillaProductos, leerProductosExcel, type ResultadoImportacion } from '@/lib/excelProductos'
@@ -15,6 +15,11 @@ interface ImportarProductosExcelProps {
   itemsExistentes: ItemInventario[]
 }
 
+/**
+ * Importación de productos con el proveedor ya fijo: la plantilla no lleva
+ * columna Proveedor porque todas las filas son de éste. La versión global, con
+ * esa columna y con la carga de stock, vive en ExcelInventarioMenu.
+ */
 export function ImportarProductosExcel({ proveedor, itemsExistentes }: ImportarProductosExcelProps) {
   const { data: categorias } = useCategorias()
   const { data: unidades } = useUnidadesMedida()
@@ -61,6 +66,7 @@ export function ImportarProductosExcel({ proveedor, itemsExistentes }: ImportarP
           descripcion: null,
           stock_actual: 0,
           stock_minimo: 0,
+          // Pisa el proveedor_id null que trae la plantilla sin columna Proveedor.
           proveedor_id: proveedor.id,
           activo: true,
           rol_configurador: null,
@@ -107,85 +113,42 @@ export function ImportarProductosExcel({ proveedor, itemsExistentes }: ImportarP
         onChange={handleArchivoElegido}
       />
 
-      <Dialog open={!!resultado} onOpenChange={(open) => { if (!open) setResultado(null) }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Resultado de la importación</DialogTitle>
-          </DialogHeader>
-
-          {resultado && (
-            <div className="max-h-[60vh] space-y-4 overflow-y-auto">
-              <div className="flex items-center gap-2 text-sm">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                <span>{resultado.validos.length} producto(s) listos para importar</span>
-              </div>
-
-              {resultado.errores.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <span>{resultado.errores.length} fila(s) con errores (no se importarán)</span>
-                  </div>
-                  <div className="rounded-md border">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b bg-muted/50 text-left">
-                          <th className="px-3 py-2">Fila</th>
-                          <th className="px-3 py-2">Motivo</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {resultado.errores.map((err) => (
-                          <tr key={err.fila} className="border-b last:border-0">
-                            <td className="px-3 py-2">{err.fila}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{err.motivo}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {resultado.validos.length > 0 && (
-                <div className="rounded-md border">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b bg-muted/50 text-left">
-                        <th className="px-3 py-2">Código</th>
-                        <th className="px-3 py-2">Nombre</th>
-                        <th className="px-3 py-2 text-right">Costo</th>
-                        <th className="px-3 py-2 text-right">Venta</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {resultado.validos.map((p) => (
-                        <tr key={p.codigo} className="border-b last:border-0">
-                          <td className="px-3 py-2 font-mono">{p.codigo}</td>
-                          <td className="px-3 py-2">{p.nombre}</td>
-                          <td className="px-3 py-2 text-right">{p.precio_costo}</td>
-                          <td className="px-3 py-2 text-right">{p.precio_venta}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResultado(null)}>Cerrar</Button>
-            <Button
-              onClick={handleConfirmarImportacion}
-              disabled={!resultado || resultado.validos.length === 0 || importando}
-            >
-              {importando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Importar {resultado?.validos.length ?? 0} producto(s)
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ResultadoImportacionDialog
+        open={!!resultado}
+        onClose={() => setResultado(null)}
+        titulo="Resultado de la importación"
+        resumen={`${resultado?.validos.length ?? 0} producto(s) listos para importar`}
+        errores={resultado?.errores ?? []}
+        textoConfirmar={`Importar ${resultado?.validos.length ?? 0} producto(s)`}
+        puedeConfirmar={(resultado?.validos.length ?? 0) > 0}
+        confirmando={importando}
+        onConfirmar={handleConfirmarImportacion}
+      >
+        {resultado && resultado.validos.length > 0 && (
+          <div className="rounded-md border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-muted/50 text-left">
+                  <th className="px-3 py-2">Código</th>
+                  <th className="px-3 py-2">Nombre</th>
+                  <th className="px-3 py-2 text-right">Costo</th>
+                  <th className="px-3 py-2 text-right">Venta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultado.validos.map((p) => (
+                  <tr key={p.codigo} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-mono">{p.codigo}</td>
+                    <td className="px-3 py-2">{p.nombre}</td>
+                    <td className="px-3 py-2 text-right">{p.precio_costo}</td>
+                    <td className="px-3 py-2 text-right">{p.precio_venta}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ResultadoImportacionDialog>
     </>
   )
 }

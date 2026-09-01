@@ -271,6 +271,12 @@ interface MovimientoInput {
   usuario_id: string
 }
 
+export interface EntradaMasivaInput {
+  item_id: string
+  cantidad: number
+  motivo?: string | null
+}
+
 export function useRegistrarMovimiento() {
   const qc = useQueryClient()
   return useMutation({
@@ -288,6 +294,10 @@ export function useRegistrarMovimiento() {
       else if (input.tipo === 'salida' || input.tipo === 'produccion') posterior = anterior - input.cantidad
       else posterior = input.cantidad
 
+      // Sólo se inserta el movimiento: stock_actual lo pone trg_actualizar_stock a
+      // partir de cantidad_posterior. Escribirlo también desde aquí era una
+      // segunda escritura del mismo dato que podía quedar fuera de sincronía si
+      // el UPDATE fallaba después del INSERT.
       const { error: movError } = await supabase.from('movimientos_inventario').insert({
         item_id: input.item_id,
         tipo: input.tipo,
@@ -299,16 +309,37 @@ export function useRegistrarMovimiento() {
         usuario_id: input.usuario_id,
       })
       if (movError) throw movError
-
-      const { error: updateError } = await supabase
-        .from('items_inventario')
-        .update({ stock_actual: posterior })
-        .eq('id', input.item_id)
-      if (updateError) throw updateError
     },
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['items'] })
       qc.invalidateQueries({ queryKey: ['movimientos', variables.item_id] })
+    },
+  })
+}
+
+/**
+ * Carga masiva de stock: el equivalente de useRegistrarMovimiento para muchas
+ * filas a la vez, con tipo 'entrada'. Va por RPC y no por N inserts porque una
+ * carga a medias deja el inventario en un estado que nadie puede reconstruir;
+ * dentro de la función entra todo o no entra nada. El usuario lo resuelve el
+ * servidor con auth.uid(), así que aquí no se manda.
+ */
+export function useRegistrarEntradasMasivas() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ entradas, referencia }: { entradas: EntradaMasivaInput[]; referencia?: string }) => {
+      const { data, error } = await supabase.rpc('registrar_entradas_inventario', {
+        p_entradas: entradas,
+        p_referencia: referencia ?? null,
+      })
+      if (error) throw error
+      return data as number
+    },
+    // Se invalida en onSettled: si la red se cae después del commit el stock ya
+    // se movió, y la tabla tiene que reflejarlo igual.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['items'] })
+      qc.invalidateQueries({ queryKey: ['movimientos'] })
     },
   })
 }
