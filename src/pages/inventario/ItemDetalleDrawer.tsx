@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Pencil, Trash2, Loader2, Scissors } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,10 +11,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { StockBadge } from '@/components/shared/StockBadge'
+import { ClaseBadge } from '@/components/shared/ClaseBadge'
+import { RegistrarRecorteDialog } from './RegistrarRecorteDialog'
 import { useMovimientos, useEliminarItem, useRegistrarMovimiento } from '@/hooks/useInventario'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { formatCOP, formatFecha } from '@/lib/utils'
+import { medidasFisicas, m2DeMedidas } from '@/lib/materiales'
 import type { ItemInventario } from '@/types/database'
 
 const movSchema = z.object({
@@ -33,6 +36,13 @@ interface ItemDetalleDrawerProps {
 
 export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDetalleDrawerProps) {
   const [confirmEliminar, setConfirmEliminar] = useState(false)
+  const [recorteOpen, setRecorteOpen] = useState(false)
+  const [numLaminas, setNumLaminas] = useState('')
+  // Solo hay conversión láminas → m² si el item declara su medida estándar.
+  const m2PorLamina =
+    item.unidad_medida?.tipo === 'area' && item.ancho_cm != null && item.alto_cm != null
+      ? m2DeMedidas(item.ancho_cm, item.alto_cm)
+      : null
   const { data: movimientos } = useMovimientos(item.id)
   const eliminarItem = useEliminarItem()
   const registrarMovimiento = useRegistrarMovimiento()
@@ -98,6 +108,22 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
                 <span className="text-sm">{item.categoria?.nombre ?? '—'}</span>
               </div>
               <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Clase</span>
+                <ClaseBadge clase={item.clase_inventario} />
+              </div>
+              {medidasFisicas(item) && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Medidas</span>
+                  <span className="text-sm">{medidasFisicas(item)}</span>
+                </div>
+              )}
+              {item.item_origen && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Sale de</span>
+                  <span className="text-sm">{item.item_origen.codigo} — {item.item_origen.nombre}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Unidad</span>
                 <span className="text-sm">{item.unidad_medida?.simbolo ?? '—'}</span>
               </div>
@@ -105,7 +131,11 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
                 <span className="text-sm text-muted-foreground">Stock actual</span>
                 <div className="flex items-center gap-2">
                   <span className="font-bold">{item.stock_actual}</span>
-                  <StockBadge stockActual={item.stock_actual} stockMinimo={item.stock_minimo} />
+                  <StockBadge
+                    stockActual={item.stock_actual}
+                    stockMinimo={item.stock_minimo}
+                    clase={item.clase_inventario}
+                  />
                 </div>
               </div>
               <div className="flex items-center justify-between">
@@ -128,6 +158,14 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
               </Button>
             </div>
 
+            {(item.unidad_medida?.tipo === 'area' || item.unidad_medida?.tipo === 'longitud') &&
+              item.clase_inventario !== 'sobre_pedido' && (
+                <Button variant="outline" size="sm" className="w-full" onClick={() => setRecorteOpen(true)}>
+                  <Scissors className="mr-2 h-4 w-4" />
+                  Registrar recorte
+                </Button>
+            )}
+
             <Separator />
 
             <div>
@@ -148,11 +186,40 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Cantidad</Label>
+                    <Label className="text-xs">Cantidad ({item.unidad_medida?.simbolo ?? 'und'})</Label>
                     <Input type="number" step="0.01" className="h-9" {...register('cantidad')} />
                     {errors.cantidad && <p className="text-xs text-destructive">{errors.cantidad.message}</p>}
                   </div>
                 </div>
+                {/* El stock vive en m², pero la compra llega en láminas. Esto solo
+                    rellena el campo de cantidad; lo que se guarda sigue siendo m². */}
+                {m2PorLamina && (
+                  <div className="flex items-end gap-2 rounded-md border bg-muted/30 p-2">
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">N.º de láminas de {medidasFisicas(item)}</Label>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="1"
+                        className="h-8"
+                        value={numLaminas}
+                        onChange={(e) => setNumLaminas(e.target.value)}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!(parseFloat(numLaminas) > 0)}
+                      onClick={() => {
+                        const n = parseFloat(numLaminas)
+                        if (n > 0) setValue('cantidad', Number((n * m2PorLamina).toFixed(3)))
+                      }}
+                    >
+                      = {((parseFloat(numLaminas) || 0) * m2PorLamina).toFixed(2)} m²
+                    </Button>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label className="text-xs">Motivo (opcional)</Label>
                   <Input placeholder="Ej: Compra proveedor..." className="h-9" {...register('motivo')} />
@@ -200,6 +267,8 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
         onConfirm={handleEliminar}
         loading={eliminarItem.isPending}
       />
+
+      <RegistrarRecorteDialog item={item} open={recorteOpen} onOpenChange={setRecorteOpen} />
     </>
   )
 }

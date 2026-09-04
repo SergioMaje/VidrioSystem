@@ -80,6 +80,8 @@ export function catalogoOpciones(items: ItemInventario[] | undefined): CatalogoO
   const catalogo: CatalogoOpciones = { vidrios: [], chapas: [], peliculas: [] }
 
   for (const item of items ?? []) {
+    // Un recorte se elige al producir (prioridad de materiales), no al cotizar.
+    if (item.clase_inventario === 'desperdicio') continue
     const rol = rolDeItem(item)
     if (!rol) continue
     const disponible: OpcionDisponible = { item, rol, vidrio: atributosVidrio(item) }
