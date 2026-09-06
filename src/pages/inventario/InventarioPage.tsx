@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { StockBadge } from '@/components/shared/StockBadge'
+import { ClaseBadge } from '@/components/shared/ClaseBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ItemFormDialog } from './ItemFormDialog'
@@ -14,6 +15,7 @@ import { ExcelInventarioMenu } from './ExcelInventarioMenu'
 import { ItemDetalleDrawer } from './ItemDetalleDrawer'
 import { useItems, useCategorias } from '@/hooks/useInventario'
 import { formatCOP } from '@/lib/utils'
+import { medidasFisicas } from '@/lib/materiales'
 import type { ItemInventario } from '@/types/database'
 
 export function InventarioPage() {
@@ -23,6 +25,7 @@ export function InventarioPage() {
   const [busqueda, setBusqueda] = useState(searchParams.get('q') ?? '')
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
   const [stockFiltro, setStockFiltro] = useState(searchParams.get('stock') ?? 'todos')
+  const [claseFiltro, setClaseFiltro] = useState('todas')
   const [itemSeleccionado, setItemSeleccionado] = useState<ItemInventario | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [editItem, setEditItem] = useState<ItemInventario | null>(null)
@@ -40,7 +43,8 @@ export function InventarioPage() {
       stockFiltro === 'todos' ||
       (stockFiltro === 'bajo' && item.stock_actual <= item.stock_minimo) ||
       (stockFiltro === 'sin_stock' && item.stock_actual === 0)
-    return coincideBusqueda && coincideCategoria && coincideStock
+    const coincideClase = claseFiltro === 'todas' || item.clase_inventario === claseFiltro
+    return coincideBusqueda && coincideCategoria && coincideStock && coincideClase
   }) ?? []
 
   return (
@@ -76,6 +80,17 @@ export function InventarioPage() {
               <SelectItem value="todos">Todo el stock</SelectItem>
               <SelectItem value="bajo">Stock bajo</SelectItem>
               <SelectItem value="sin_stock">Sin stock</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={claseFiltro} onValueChange={setClaseFiltro}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Clase" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las clases</SelectItem>
+              <SelectItem value="stock_normal">Stock</SelectItem>
+              <SelectItem value="desperdicio">Recortes</SelectItem>
+              <SelectItem value="sobre_pedido">Sobre pedido</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -115,6 +130,7 @@ export function InventarioPage() {
                     <th className="px-4 py-3">Código</th>
                     <th className="px-4 py-3">Nombre</th>
                     <th className="px-4 py-3">Categoría</th>
+                    <th className="px-4 py-3">Clase</th>
                     <th className="px-4 py-3 text-right">Stock</th>
                     <th className="px-4 py-3 text-right">Mínimo</th>
                     <th className="px-4 py-3">Unidad</th>
@@ -131,15 +147,27 @@ export function InventarioPage() {
                       onClick={() => setItemSeleccionado(item)}
                     >
                       <td className="px-4 py-3 font-mono text-xs">{item.codigo}</td>
-                      <td className="px-4 py-3 font-medium">{item.nombre}</td>
+                      <td className="px-4 py-3 font-medium">
+                        {item.nombre}
+                        {medidasFisicas(item) && (
+                          <div className="text-xs font-normal text-muted-foreground">{medidasFisicas(item)}</div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground">{item.categoria?.nombre ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        <ClaseBadge clase={item.clase_inventario} />
+                      </td>
                       <td className="px-4 py-3 text-right font-mono">{item.stock_actual}</td>
                       <td className="px-4 py-3 text-right font-mono text-muted-foreground">{item.stock_minimo}</td>
                       <td className="px-4 py-3">{item.unidad_medida?.simbolo ?? '—'}</td>
                       <td className="px-4 py-3 text-right">{formatCOP(item.precio_costo)}</td>
                       <td className="px-4 py-3 text-right">{formatCOP(item.precio_venta)}</td>
                       <td className="px-4 py-3">
-                        <StockBadge stockActual={item.stock_actual} stockMinimo={item.stock_minimo} />
+                        <StockBadge
+                          stockActual={item.stock_actual}
+                          stockMinimo={item.stock_minimo}
+                          clase={item.clase_inventario}
+                        />
                       </td>
                     </tr>
                   ))}
