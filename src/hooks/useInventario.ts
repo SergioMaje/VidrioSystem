@@ -12,10 +12,12 @@ export function useItems() {
         // de la constraint: en una relación auto-referencial PostgREST resuelve el
         // nombre de tabla hacia los hijos (una lista de recortes) y solo la columna
         // apunta al padre, que es lo que aquí interesa.
-        .select(
-          '*, categoria:categorias(*), unidad_medida:unidades_medida(*), proveedor:proveedores(*), ' +
-          'item_origen:item_origen_id(*)'
-        )
+        //
+        // El select va en un solo literal a propósito: partido con `+` TypeScript lo
+        // ve como `string` y no como literal, el parser de tipos de supabase-js no
+        // puede analizarlo y devuelve GenericStringError[], que no se deja convertir
+        // al tipo de la fila.
+        .select('*, categoria:categorias(*), unidad_medida:unidades_medida(*), proveedor:proveedores(*), item_origen:item_origen_id(*)')
         .eq('activo', true)
         .order('nombre')
       if (error) throw error
