@@ -8,11 +8,12 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useCotizacion } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion } from '@/hooks/useVentasCaja'
+import { useOrdenMateriales, useCerrarProduccion } from '@/hooks/useOrdenMateriales'
 import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
+import { MaterialesOrdenPanel } from './MaterialesOrdenPanel'
 import { anticipoMinimo, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
 import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import {
@@ -23,7 +24,8 @@ import {
   nombreColorPerfil,
   nombrePiezaConLado,
 } from '@/lib/produccion'
-import { calcularOpciones, esComponenteDeVidrio, lineasDeOpciones, type LineaMaterial } from '@/lib/opciones'
+import { lineasDeOpciones, type LineaMaterial } from '@/lib/opciones'
+import { componentesEstructurales, materialesDeOrden } from '@/lib/materiales'
 import { ESTADOS_ACTIVOS, ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
 import { ladoCorredizoExterior, textoLadoCorredizo } from '@/lib/lados'
 import { PreviewProducto } from '@/pages/productos/PreviewProducto'
@@ -34,18 +36,6 @@ const SELECT_ITEMS_PRODUCCION = `
   referencia:referencias_producto(*, tipo_producto:tipos_producto(*), cortes:referencia_cortes(*)),
   plantilla:plantillas_producto(*, componentes:plantilla_componentes(*, item:items_inventario(*, categoria:categorias(*), unidad_medida:unidades_medida(*))))
 `
-
-/**
- * Componentes estructurales de la plantilla. Si el ítem guardó un vidrio como opción,
- * el componente de vidrio del BOM se excluye para no contarlo dos veces (los ítems
- * cotizados antes de las opciones adicionales lo conservan).
- */
-function componentesEstructurales(item: CotizacionItem) {
-  const tieneVidrioElegido = (item.opciones ?? []).some((o) => o.rol === 'vidrio')
-  return (item.plantilla?.componentes ?? []).filter(
-    (c) => !(tieneVidrioElegido && esComponenteDeVidrio(c))
-  )
-}
 
 function detalleProduccion(item: CotizacionItem) {
   const anchoCm = item.ancho_cm ?? 0
@@ -76,7 +66,6 @@ export function OrdenDetalle() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { usuario } = useAuth()
   const qc = useQueryClient()
 
   const { data: orden, isLoading } = useQuery({
@@ -123,6 +112,14 @@ export function OrdenDetalle() {
   const bloqueadaPorSaldo = conCotizacion && (!saldoInfo || !estaLiquidada(saldoInfo.saldo))
   const enCurso = orden ? ESTADOS_ACTIVOS.includes(orden.estado) : false
 
+  const { data: materiales } = useOrdenMateriales(orden?.estado === 'en_produccion' ? id : undefined)
+  const costosPendientes = (materiales ?? []).filter(
+    (m) => m.origen === 'sobre_pedido' && m.costo_unitario_real == null && m.estado !== 'consumido'
+  )
+  const cerrarProduccion = useCerrarProduccion()
+
+  // Solo mueve el estado (y arranca el reloj de fechas); el consumo de
+  // inventario pasa por cerrarProduccion al llegar a 'lista', nunca aquí.
   const cambiarEstado = useMutation({
     mutationFn: async (nuevoEstado: OrdenTrabajo['estado']) => {
       const updates: Partial<OrdenTrabajo> = { estado: nuevoEstado }
@@ -132,60 +129,16 @@ export function OrdenDetalle() {
       const { error } = await supabase.from('ordenes_trabajo').update(updates).eq('id', id!)
       if (error) throw error
 
-      if (nuevoEstado === 'entregada' && orden?.cotizacion_id && usuario) {
-        const { data: cotItems } = await supabase
-          .from('cotizacion_items')
-          .select(
-            '*, plantilla:plantillas_producto(componentes:plantilla_componentes(*, item:items_inventario(*, categoria:categorias(*))))'
-          )
-          .eq('cotizacion_id', orden.cotizacion_id)
-
-        for (const cotItem of (cotItems ?? []) as unknown as CotizacionItem[]) {
-          if (!cotItem.ancho_cm || !cotItem.alto_cm) continue
-
-          const medidasItem = medidasDeItem(cotItem)
-          const consumos = [
-            ...calcularMateriales(
-              componentesEstructurales(cotItem),
-              medidasItem,
-              cotItem.cantidad
-            ).map((m) => ({ item_id: m.item_id, cantidad: m.cantidad_calculada })),
-            ...calcularOpciones(
-              cotItem.opciones,
-              medidasItem,
-              cotItem.cantidad
-            ).map((o) => ({ item_id: o.opcion.item_id, cantidad: o.cantidad_calculada })),
-          ]
-
-          for (const consumo of consumos) {
-            if (consumo.cantidad <= 0) continue
-
-            const { data: inv } = await supabase
-              .from('items_inventario')
-              .select('stock_actual')
-              .eq('id', consumo.item_id)
-              .single()
-            if (!inv) continue
-
-            const anterior = inv.stock_actual
-            const posterior = Math.max(0, anterior - consumo.cantidad)
-
-            await supabase.from('movimientos_inventario').insert({
-              item_id:           consumo.item_id,
-              tipo:              'produccion',
-              cantidad:          consumo.cantidad,
-              cantidad_anterior: anterior,
-              cantidad_posterior: posterior,
-              motivo:            `Orden ${orden.numero}`,
-              referencia:        id,
-              usuario_id:        usuario.id,
-            })
-
-            await supabase
-              .from('items_inventario')
-              .update({ stock_actual: posterior })
-              .eq('id', consumo.item_id)
-          }
+      // Al arrancar producción se congela la lista de materiales desde el BOM.
+      // Sin esto no hay nada que elegir ni que cerrar más adelante.
+      if (nuevoEstado === 'en_produccion') {
+        const requeridos = materialesDeOrden(itemsCotizacion ?? [])
+        if (requeridos.length > 0) {
+          const { error: matError } = await supabase.rpc('registrar_materiales_orden', {
+            p_orden_id: id,
+            p_materiales: requeridos,
+          })
+          if (matError) throw matError
         }
       }
     },
@@ -194,18 +147,24 @@ export function OrdenDetalle() {
       qc.invalidateQueries({ queryKey: ['ordenes'] })
       qc.invalidateQueries({ queryKey: ['dashboard_pipeline'] })
       qc.invalidateQueries({ queryKey: ['dashboard_entregas'] })
-      if (nuevoEstado === 'entregada') {
-        qc.invalidateQueries({ queryKey: ['items'] })
-        qc.invalidateQueries({ queryKey: ['movimientos'] })
-        qc.invalidateQueries({ queryKey: ['dashboard_stock_bajo'] })
-        qc.invalidateQueries({ queryKey: ['dashboard_total_items'] })
+      if (nuevoEstado === 'en_produccion') {
+        qc.invalidateQueries({ queryKey: ['orden_materiales', id] })
       }
-      toast({ title: nuevoEstado === 'entregada' ? 'Orden entregada — stock descontado' : 'Estado actualizado', variant: 'success' })
+      toast({ title: 'Estado actualizado', variant: 'success' })
     },
     // Los triggers de avance explican por qué se rechazó el cambio (falta el
     // anticipo, queda saldo); ese motivo es más útil que un error genérico.
     onError: (err) => toast({ title: mensajeError(err, 'Error al actualizar'), variant: 'destructive' }),
   })
+
+  const onCerrarProduccion = async () => {
+    try {
+      await cerrarProduccion.mutateAsync(id!)
+      toast({ title: 'Producción cerrada — stock descontado', variant: 'success' })
+    } catch (err) {
+      toast({ title: mensajeError(err, 'Error al cerrar la producción'), variant: 'destructive' })
+    }
+  }
 
   const imprimirFichaProduccion = () => {
     if (!orden || !itemsCotizacion?.length) return
@@ -519,6 +478,8 @@ export function OrdenDetalle() {
         </div>
       )}
 
+      {orden.estado === 'en_produccion' && <MaterialesOrdenPanel ordenId={orden.id} estado={orden.estado} />}
+
       {orden.notas && (
         <Card>
           <CardHeader><CardTitle className="text-base">Notas</CardTitle></CardHeader>
@@ -580,9 +541,9 @@ export function OrdenDetalle() {
           </Button>
         )}
         {orden.estado === 'en_produccion' && (
-          <Button onClick={() => cambiarEstado.mutate('lista')} disabled={cambiarEstado.isPending}>
-            {cambiarEstado.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckSquare className="mr-2 h-4 w-4" />}
-            Marcar como lista
+          <Button onClick={onCerrarProduccion} disabled={cerrarProduccion.isPending || costosPendientes.length > 0}>
+            {cerrarProduccion.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckSquare className="mr-2 h-4 w-4" />}
+            Cerrar producción
           </Button>
         )}
         {orden.estado === 'lista' && (
@@ -603,6 +564,18 @@ export function OrdenDetalle() {
             No se puede iniciar producción: falta cobrar el anticipo
             (mínimo <strong className="font-mono">{formatCOP(anticipoMinimo(total))}</strong>).
             Con el anticipo registrado el taller ya puede arrancar.
+          </div>
+        </div>
+      )}
+
+      {/* Espejo del bloqueo real: el trigger de la base es la garantía, esto solo
+          evita el viaje al servidor para descubrir el mismo mensaje. */}
+      {orden.estado === 'en_produccion' && costosPendientes.length > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            No se puede cerrar la producción: falta registrar el costo de{' '}
+            <strong>{costosPendientes.map((m) => m.item?.nombre ?? '—').join(', ')}</strong>.
           </div>
         </div>
       )}

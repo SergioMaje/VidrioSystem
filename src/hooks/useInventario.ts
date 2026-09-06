@@ -8,7 +8,16 @@ export function useItems() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('items_inventario')
-        .select('*, categoria:categorias(*), unidad_medida:unidades_medida(*), proveedor:proveedores(*)')
+        // El origen del recorte se embebe por el nombre de la COLUMNA FK, no por el
+        // de la constraint: en una relación auto-referencial PostgREST resuelve el
+        // nombre de tabla hacia los hijos (una lista de recortes) y solo la columna
+        // apunta al padre, que es lo que aquí interesa.
+        //
+        // El select va en un solo literal a propósito: partido con `+` TypeScript lo
+        // ve como `string` y no como literal, el parser de tipos de supabase-js no
+        // puede analizarlo y devuelve GenericStringError[], que no se deja convertir
+        // al tipo de la fila.
+        .select('*, categoria:categorias(*), unidad_medida:unidades_medida(*), proveedor:proveedores(*), item_origen:item_origen_id(*)')
         .eq('activo', true)
         .order('nombre')
       if (error) throw error
@@ -216,7 +225,21 @@ export function useEliminarCuentaPago() {
   })
 }
 
-type ItemInput = Omit<ItemInventario, 'id' | 'created_at' | 'updated_at' | 'categoria' | 'unidad_medida' | 'proveedor'>
+type ItemInput = Omit<
+  ItemInventario,
+  | 'id'
+  | 'created_at'
+  | 'updated_at'
+  | 'categoria'
+  | 'unidad_medida'
+  | 'proveedor'
+  | 'item_origen'
+  | 'clase_inventario'
+  | 'item_origen_id'
+  | 'ancho_cm'
+  | 'alto_cm'
+> &
+  Partial<Pick<ItemInventario, 'clase_inventario' | 'item_origen_id' | 'ancho_cm' | 'alto_cm'>>
 
 export function useCrearItem() {
   const qc = useQueryClient()
@@ -337,6 +360,41 @@ export function useRegistrarEntradasMasivas() {
     },
     // Se invalida en onSettled: si la red se cae después del commit el stock ya
     // se movió, y la tabla tiene que reflejarlo igual.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['items'] })
+      qc.invalidateQueries({ queryKey: ['movimientos'] })
+    },
+  })
+}
+
+interface RegistrarRecorteInput {
+  itemOrigenId: string
+  anchoCm: number
+  altoCm: number
+  cantidad?: number
+  referencia?: string
+  notas?: string
+}
+
+/**
+ * Registra un recorte como item hijo del origen. No descuenta el origen: ese
+ * material ya se dio de baja en el movimiento de producción que dejó el retal.
+ */
+export function useRegistrarRecorte() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: RegistrarRecorteInput) => {
+      const { data, error } = await supabase.rpc('registrar_recorte', {
+        p_item_origen_id: input.itemOrigenId,
+        p_ancho_cm: input.anchoCm,
+        p_alto_cm: input.altoCm,
+        p_cantidad: input.cantidad ?? null,
+        p_referencia: input.referencia ?? null,
+        p_notas: input.notas ?? null,
+      })
+      if (error) throw error
+      return data as ItemInventario
+    },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['items'] })
       qc.invalidateQueries({ queryKey: ['movimientos'] })

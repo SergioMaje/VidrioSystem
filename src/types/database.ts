@@ -70,6 +70,9 @@ export type RolConfigurador = 'vidrio' | 'chapa' | 'pelicula'
 
 export type VidrioTipo = 'crudo' | 'templado' | 'laminado'
 
+/** De dónde sale el material: bodega, retal recuperado, o se compra sobre pedido. */
+export type ClaseInventario = 'stock_normal' | 'desperdicio' | 'sobre_pedido'
+
 export interface ItemInventario {
   id: string
   codigo: string
@@ -88,11 +91,18 @@ export interface ItemInventario {
   vidrio_tipo: VidrioTipo | null
   vidrio_calibre_mm: number | null
   vidrio_acabado: string | null
+  clase_inventario: ClaseInventario
+  /** Lámina/item raíz del que salió este recorte. Nunca apunta a otro recorte. */
+  item_origen_id: string | null
+  /** Medidas del recorte. Null en cualquier item que no sea 'desperdicio'. */
+  ancho_cm: number | null
+  alto_cm: number | null
   created_at: string
   updated_at: string
   categoria?: Categoria
   unidad_medida?: UnidadMedida
   proveedor?: Proveedor
+  item_origen?: ItemInventario
 }
 
 export interface MovimientoInventario {
@@ -243,6 +253,49 @@ export interface OrdenTrabajo {
   created_at: string
   updated_at: string
   cliente?: Cliente
+}
+
+export type OrigenMaterial = 'desperdicio' | 'stock_normal' | 'sobre_pedido'
+export type EstadoMaterialOrden = 'pendiente' | 'asignado' | 'consumido'
+
+/**
+ * Una línea de material de la orden. `item_requerido_id` es lo que pidió el BOM y
+ * `item_id` lo que se usó de verdad; difieren cuando un recorte cubrió la necesidad.
+ * `costo_unitario_real` en null es lo que bloquea el paso a 'lista' cuando el
+ * origen es 'sobre_pedido'.
+ */
+export interface OrdenMaterial {
+  id: string
+  orden_id: string
+  item_id: string
+  item_requerido_id: string | null
+  origen: OrigenMaterial
+  cantidad_requerida: number
+  cantidad_asignada: number
+  costo_unitario_real: number | null
+  proveedor_id: string | null
+  estado: EstadoMaterialOrden
+  movimiento_id: string | null
+  notas: string | null
+  created_at: string
+  updated_at: string
+  item?: ItemInventario
+  item_requerido?: ItemInventario
+  proveedor?: Proveedor
+}
+
+/** Fila de la función `sugerir_materiales`, ya ordenada por prioridad por la base. */
+export interface SugerenciaMaterial {
+  item_id: string
+  codigo: string
+  nombre: string
+  origen: OrigenMaterial
+  clase: ClaseInventario
+  stock_actual: number
+  ancho_cm: number | null
+  alto_cm: number | null
+  cubre: boolean
+  prioridad: number
 }
 
 export type FormulaCorte =
