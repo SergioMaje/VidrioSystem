@@ -6,6 +6,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ResultadoImportacionDialog } from '@/components/shared/ResultadoImportacionDialog'
+import { ClaseBadge } from '@/components/shared/ClaseBadge'
 import {
   useCategorias, useUnidadesMedida, useProveedores,
   useCrearItemsMasivo, useRegistrarEntradasMasivas,
@@ -13,6 +14,7 @@ import {
 import { useToast } from '@/hooks/useToast'
 import { descargarPlantillaProductos, leerProductosExcel, type ResultadoImportacion } from '@/lib/excelProductos'
 import { descargarPlantillaStock, leerStockExcel, type ResultadoCargaStock } from '@/lib/excelStock'
+import { medidasFisicas } from '@/lib/materiales'
 import { formatCOP } from '@/lib/utils'
 import type { ItemInventario } from '@/types/database'
 
@@ -114,11 +116,9 @@ export function ExcelInventarioMenu({ items }: ExcelInventarioMenuProps) {
       await crearItemsMasivo.mutateAsync(
         resultadoProductos.validos.map((p) => ({
           ...p,
-          descripcion: null,
           // Los items nacen en cero: el stock entra después por la plantilla de
           // stock, que sí deja rastro en movimientos_inventario.
           stock_actual: 0,
-          stock_minimo: 0,
           activo: true,
           rol_configurador: null,
           vidrio_tipo: null,
@@ -219,6 +219,8 @@ export function ExcelInventarioMenu({ items }: ExcelInventarioMenuProps) {
                 <tr className="border-b bg-muted/50 text-left">
                   <th className="px-3 py-2">Código</th>
                   <th className="px-3 py-2">Nombre</th>
+                  <th className="px-3 py-2">Clase</th>
+                  <th className="px-3 py-2">Lámina</th>
                   <th className="px-3 py-2 text-right">Costo</th>
                   <th className="px-3 py-2 text-right">Venta</th>
                 </tr>
@@ -228,6 +230,8 @@ export function ExcelInventarioMenu({ items }: ExcelInventarioMenuProps) {
                   <tr key={p.codigo} className="border-b last:border-0">
                     <td className="px-3 py-2 font-mono">{p.codigo}</td>
                     <td className="px-3 py-2">{p.nombre}</td>
+                    <td className="px-3 py-2"><ClaseBadge clase={p.clase_inventario} /></td>
+                    <td className="px-3 py-2 text-muted-foreground">{medidasFisicas(p) ?? '—'}</td>
                     <td className="px-3 py-2 text-right">{formatCOP(p.precio_costo)}</td>
                     <td className="px-3 py-2 text-right">{formatCOP(p.precio_venta)}</td>
                   </tr>
