@@ -170,219 +170,224 @@ export function ItemFormDialog({ open, onOpenChange, item }: ItemFormDialogProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      {/* El diálogo se acota a la pantalla y solo el cuerpo se desplaza: con vidrio
+          aparecen dos bloques extra y el formulario supera el alto del viewport,
+          que antes dejaba el botón de guardar fuera de alcance. */}
+      <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 p-0">
+        <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>{item ? 'Editar item' : 'Nuevo item de inventario'}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Código</Label>
-              <Input placeholder="VID-001" {...register('codigo')} />
-              {errors.codigo && <p className="text-xs text-destructive">{errors.codigo.message}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label>Nombre</Label>
-              <Input placeholder="Vidrio templado 6mm" {...register('nombre')} />
-              {errors.nombre && <p className="text-xs text-destructive">{errors.nombre.message}</p>}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Descripción (opcional)</Label>
-            <Input placeholder="Descripción del producto" {...register('descripcion')} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Categoría</Label>
-              <Select onValueChange={(v) => setValue('categoria_id', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {categorias?.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>{cat.nombre}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.categoria_id && <p className="text-xs text-destructive">{errors.categoria_id.message}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label>Unidad de medida</Label>
-              <Select onValueChange={(v) => setValue('unidad_medida_id', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {unidades?.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>{u.nombre} ({u.simbolo})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.unidad_medida_id && <p className="text-xs text-destructive">{errors.unidad_medida_id.message}</p>}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Clase de inventario</Label>
-            <Select
-              value={claseSeleccionada}
-              onValueChange={(v) => setValue('clase_inventario', v as FormData['clase_inventario'])}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona..." />
-              </SelectTrigger>
-              <SelectContent>
-                {CLASES.map(({ value, label }) => (
-                  <SelectItem key={value} value={value}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.clase_inventario && <p className="text-xs text-destructive">{errors.clase_inventario.message}</p>}
-          </div>
-
-          {/* Solo para lo que se almacena por área: la lámina se compra por pieza
-              pero el stock y el precio viven en m², así que la medida estándar es
-              lo que permite traducir entre las dos vistas. */}
-          {esPorArea && (
-            <div className="space-y-2 rounded-md border p-3">
-              <Label>Medida estándar de la lámina (opcional)</Label>
-              <p className="text-xs text-muted-foreground">
-                Con la medida, el sistema calcula los m² por lámina, valida que un recorte
-                quepa en ella y te muestra a cuánto equivale el precio por lámina.
-              </p>
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div className="space-y-1">
-                  <Label className="text-xs">Ancho (cm)</Label>
-                  <Input className="h-8 text-sm" placeholder="240" {...register('ancho_cm')} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Alto (cm)</Label>
-                  <Input className="h-8 text-sm" placeholder="180" {...register('alto_cm')} />
-                </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Código</Label>
+                <Input placeholder="VID-001" {...register('codigo')} />
+                {errors.codigo && <p className="text-xs text-destructive">{errors.codigo.message}</p>}
               </div>
-              {m2PorLamina && (
-                <p className="pt-1 text-sm">
-                  <span className="font-medium">{m2PorLamina.toFixed(2)} m²</span>{' '}
-                  <span className="text-muted-foreground">por lámina</span>
-                </p>
-              )}
+              <div className="space-y-2">
+                <Label>Nombre</Label>
+                <Input placeholder="Vidrio templado 6mm" {...register('nombre')} />
+                {errors.nombre && <p className="text-xs text-destructive">{errors.nombre.message}</p>}
+              </div>
             </div>
-          )}
 
-          <div className="space-y-2">
-            <Label>Proveedor (opcional)</Label>
-            <Select onValueChange={(v) => setValue('proveedor_id', v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sin proveedor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ninguno">Sin proveedor</SelectItem>
-                {proveedores?.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Stock inicial</Label>
-              <Input
-                type="number"
-                step="0.01"
-                disabled={claseSeleccionada === 'sobre_pedido'}
-                {...register('stock_actual')}
-              />
-              {claseSeleccionada === 'sobre_pedido' && (
+              <Label>Descripción (opcional)</Label>
+              <Input placeholder="Descripción del producto" {...register('descripcion')} />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Categoría</Label>
+                <Select onValueChange={(v) => setValue('categoria_id', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categorias?.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>{cat.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.categoria_id && <p className="text-xs text-destructive">{errors.categoria_id.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label>Unidad de medida</Label>
+                <Select onValueChange={(v) => setValue('unidad_medida_id', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unidades?.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>{u.nombre} ({u.simbolo})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.unidad_medida_id && <p className="text-xs text-destructive">{errors.unidad_medida_id.message}</p>}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Clase de inventario</Label>
+              <Select
+                value={claseSeleccionada}
+                onValueChange={(v) => setValue('clase_inventario', v as FormData['clase_inventario'])}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLASES.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.clase_inventario && <p className="text-xs text-destructive">{errors.clase_inventario.message}</p>}
+            </div>
+
+            {/* Solo para lo que se almacena por área: la lámina se compra por pieza
+                pero el stock y el precio viven en m², así que la medida estándar es
+                lo que permite traducir entre las dos vistas. */}
+            {esPorArea && (
+              <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                <Label>Medida estándar de la lámina (opcional)</Label>
                 <p className="text-xs text-muted-foreground">
-                  La cantidad real se define al elegirlo en una orden de producción.
+                  Con la medida, el sistema calcula los m² por lámina, valida que un recorte
+                  quepa en ella y te muestra a cuánto equivale el precio por lámina.
                 </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Stock mínimo</Label>
-              <Input type="number" step="0.01" {...register('stock_minimo')} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Precio costo (COP{esPorArea ? ' por m²' : ''})</Label>
-              <Input type="number" step="1" {...register('precio_costo')} />
-              {/* El precio se almacena por unidad de medida — para el vidrio, por m² —
-                  porque así lo multiplica el configurador. Este renglón traduce a la
-                  vista con que se compra, para poder contrastarlo con la factura. */}
-              {m2PorLamina && precioCostoActual > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  ≈ {formatCOP(precioPorPieza(precioCostoActual, m2PorLamina) ?? 0)} por lámina
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Precio venta (COP{esPorArea ? ' por m²' : ''})</Label>
-              <Input type="number" step="1" {...register('precio_venta')} />
-              {m2PorLamina && precioVentaActual > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  ≈ {formatCOP(precioPorPieza(precioVentaActual, m2PorLamina) ?? 0)} por lámina
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-2 rounded-md border p-3">
-            <Label>Opción del configurador</Label>
-            <p className="text-xs text-muted-foreground">
-              Si se deja sin definir, el rol se deduce de la categoría y del nombre del item.
-            </p>
-            <Select
-              value={rolSeleccionado}
-              onValueChange={(v) => setValue('rol_configurador', v as FormData['rol_configurador'])}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="No es una opción del configurador" />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map(({ value, label }) => (
-                  <SelectItem key={value} value={value}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {rolSeleccionado === 'vidrio' && (
-              <div className="grid grid-cols-3 gap-3 pt-1">
-                <div className="space-y-1">
-                  <Label className="text-xs">Tipo</Label>
-                  <Select
-                    value={vidrioTipo}
-                    onValueChange={(v) => setValue('vidrio_tipo', v as FormData['vidrio_tipo'])}
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="Sin especificar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NINGUNO}>Sin especificar</SelectItem>
-                      <SelectItem value="crudo">Crudo</SelectItem>
-                      <SelectItem value="templado">Templado</SelectItem>
-                      <SelectItem value="laminado">Laminado</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Ancho (cm)</Label>
+                    <Input className="h-8 text-sm" placeholder="240" {...register('ancho_cm')} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Alto (cm)</Label>
+                    <Input className="h-8 text-sm" placeholder="180" {...register('alto_cm')} />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Calibre (mm)</Label>
-                  <Input className="h-8 text-sm" placeholder="6" {...register('vidrio_calibre_mm')} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Color / acabado</Label>
-                  <Input className="h-8 text-sm" placeholder="claro" {...register('vidrio_acabado')} />
-                </div>
+                {m2PorLamina && (
+                  <p className="pt-1 text-sm">
+                    <span className="font-medium">{m2PorLamina.toFixed(2)} m²</span>{' '}
+                    <span className="text-muted-foreground">por lámina</span>
+                  </p>
+                )}
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label>Proveedor (opcional)</Label>
+              <Select onValueChange={(v) => setValue('proveedor_id', v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sin proveedor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ninguno">Sin proveedor</SelectItem>
+                  {proveedores?.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Stock inicial</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  disabled={claseSeleccionada === 'sobre_pedido'}
+                  {...register('stock_actual')}
+                />
+                {claseSeleccionada === 'sobre_pedido' && (
+                  <p className="text-xs text-muted-foreground">
+                    La cantidad real se define al elegirlo en una orden de producción.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Stock mínimo</Label>
+                <Input type="number" step="0.01" {...register('stock_minimo')} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Precio costo (COP{esPorArea ? ' por m²' : ''})</Label>
+                <Input type="number" step="1" {...register('precio_costo')} />
+                {/* El precio se almacena por unidad de medida — para el vidrio, por m² —
+                    porque así lo multiplica el configurador. Este renglón traduce a la
+                    vista con que se compra, para poder contrastarlo con la factura. */}
+                {m2PorLamina && precioCostoActual > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    ≈ {formatCOP(precioPorPieza(precioCostoActual, m2PorLamina) ?? 0)} por lámina
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Precio venta (COP{esPorArea ? ' por m²' : ''})</Label>
+                <Input type="number" step="1" {...register('precio_venta')} />
+                {m2PorLamina && precioVentaActual > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    ≈ {formatCOP(precioPorPieza(precioVentaActual, m2PorLamina) ?? 0)} por lámina
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+              <Label>Opción del configurador</Label>
+              <p className="text-xs text-muted-foreground">
+                Si se deja sin definir, el rol se deduce de la categoría y del nombre del item.
+              </p>
+              <Select
+                value={rolSeleccionado}
+                onValueChange={(v) => setValue('rol_configurador', v as FormData['rol_configurador'])}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="No es una opción del configurador" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLES.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {rolSeleccionado === 'vidrio' && (
+                <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tipo</Label>
+                    <Select
+                      value={vidrioTipo}
+                      onValueChange={(v) => setValue('vidrio_tipo', v as FormData['vidrio_tipo'])}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Sin especificar" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NINGUNO}>Sin especificar</SelectItem>
+                        <SelectItem value="crudo">Crudo</SelectItem>
+                        <SelectItem value="templado">Templado</SelectItem>
+                        <SelectItem value="laminado">Laminado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Calibre (mm)</Label>
+                    <Input className="h-8 text-sm" placeholder="6" {...register('vidrio_calibre_mm')} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Color / acabado</Label>
+                    <Input className="h-8 text-sm" placeholder="claro" {...register('vidrio_acabado')} />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t px-6 py-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>

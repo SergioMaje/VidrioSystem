@@ -12,11 +12,29 @@ export type { ErrorImportacion }
 export const COLUMNAS_PLANTILLA = [
   'Código',
   'Nombre',
+  'Descripción',
   'Categoría',
   'Unidad de medida',
+  'Clase de inventario',
   'Precio costo',
   'Precio venta',
+  'Stock mínimo',
+  'Ancho lámina (cm)',
+  'Alto lámina (cm)',
 ] as const
+
+/**
+ * Clases que la plantilla acepta. 'desperdicio' no está: un recorte solo nace de
+ * "Registrar recorte" sobre una lámina existente, igual que en el formulario.
+ */
+const CLASES_VALIDAS: { etiqueta: string; alias: string[]; valor: ClaseImportada }[] = [
+  // El alias es la etiqueta corta del badge (CLASE_INVENTARIO_LABELS), para que
+  // quien copie lo que ve en el inventario también acierte.
+  { etiqueta: 'Stock normal', alias: ['Stock'], valor: 'stock_normal' },
+  { etiqueta: 'Sobre pedido', alias: [], valor: 'sobre_pedido' },
+]
+
+type ClaseImportada = 'stock_normal' | 'sobre_pedido'
 
 /**
  * Columna extra de la plantilla global (la que se baja desde Inventario, sin un
@@ -28,10 +46,16 @@ export const COLUMNA_PROVEEDOR = 'Proveedor'
 export interface ProductoImportado {
   codigo: string
   nombre: string
+  descripcion: string | null
   categoria_id: string
   unidad_medida_id: string
+  clase_inventario: ClaseImportada
   precio_costo: number
   precio_venta: number
+  stock_minimo: number
+  /** Medida estándar de la lámina. Las dos o ninguna: media medida no sirve. */
+  ancho_cm: number | null
+  alto_cm: number | null
   /** Sólo lo llena la plantilla global; con proveedor fijo queda en null. */
   proveedor_id: string | null
 }
@@ -61,23 +85,40 @@ export async function descargarPlantillaProductos(
   hoja.columns = columnas.map((titulo) => ({ header: titulo, width: 22 }))
   estilarEncabezado(hoja, AZUL_ENCABEZADO)
 
-  const ejemplo: (string | number)[] = [
-    'ALU-001', 'Perfil de aluminio 3"', categorias[0]?.nombre ?? '', unidades[0]?.nombre ?? '', 25000, 35000,
+  // Dos ejemplos en vez de uno: la segunda fila es la que enseña, sin instrucciones,
+  // que un material por m² lleva la medida de la lámina y uno por unidad no.
+  const unidadArea = unidades.find((u) => u.tipo === 'area')
+  const categoriaVidrio = categorias.find((c) => normalizar(c.nombre).includes('vidrio')) ?? categorias[0]
+  const categoriaOtra = categorias.find((c) => c.id !== categoriaVidrio?.id) ?? categorias[0]
+  const ejemplos: (string | number)[][] = [
+    [
+      'ALU-001', 'Perfil de aluminio 3"', 'Perfil estructural natural',
+      categoriaOtra?.nombre ?? '', unidades[0]?.nombre ?? '', 'Stock normal',
+      25000, 35000, 10, '', '',
+    ],
+    [
+      'VID-001', 'Vidrio templado 6mm claro', 'Lámina estándar',
+      categoriaVidrio?.nombre ?? '', unidadArea?.nombre ?? unidades[0]?.nombre ?? '', 'Stock normal',
+      90000, 130000, 5, 240, 180,
+    ],
   ]
-  if (proveedores) ejemplo.push(proveedores[0]?.nombre ?? '')
+  if (proveedores) ejemplos.forEach((e) => e.push(proveedores[0]?.nombre ?? ''))
 
-  const filaEjemplo = hoja.addRow(ejemplo)
-  filaEjemplo.eachCell((celda) => {
-    celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS_EJEMPLO } }
-    celda.font = { italic: true, color: { argb: 'FF6B7280' } }
-    celda.border = bordesCelda()
-  })
+  for (const ejemplo of ejemplos) {
+    const filaEjemplo = hoja.addRow(ejemplo)
+    filaEjemplo.eachCell({ includeEmpty: true }, (celda) => {
+      celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS_EJEMPLO } }
+      celda.font = { italic: true, color: { argb: 'FF6B7280' } }
+      celda.border = bordesCelda()
+    })
+  }
 
   for (let i = 0; i < 30; i++) agregarFilaCebra(hoja, [], i, AZUL_CLARO)
 
   const catalogos = [
     { titulo: 'Categorías válidas', valores: categorias.map((c) => c.nombre) },
     { titulo: 'Unidades de medida válidas', valores: unidades.map((u) => u.nombre) },
+    { titulo: 'Clases de inventario válidas', valores: CLASES_VALIDAS.map((c) => c.etiqueta) },
   ]
   if (proveedores) catalogos.push({ titulo: 'Proveedores válidos', valores: proveedores.map((p) => p.nombre) })
   agregarHojaCatalogos(wb, catalogos)
@@ -107,7 +148,12 @@ export async function leerProductosExcel(
   }
 
   const categoriasPorNombre = new Map(categorias.map((c) => [normalizar(c.nombre), c.id]))
-  const unidadesPorNombre = new Map(unidades.map((u) => [normalizar(u.nombre), u.id]))
+  // Se guarda la unidad completa, no sólo el id: el tipo decide si la fila debe
+  // traer la medida de la lámina.
+  const unidadesPorNombre = new Map(unidades.map((u) => [normalizar(u.nombre), u]))
+  const clasesPorEtiqueta = new Map(
+    CLASES_VALIDAS.flatMap((c) => [c.etiqueta, ...c.alias].map((t) => [normalizar(t), c.valor] as const))
+  )
   const proveedoresPorNombre = new Map((proveedores ?? []).map((p) => [normalizar(p.nombre), p.id]))
   const codigosVistos = new Set<string>()
 
@@ -119,13 +165,17 @@ export async function leerProductosExcel(
 
     const codigo = texto(fila, 'Código')
     const nombre = texto(fila, 'Nombre')
+    const descripcion = texto(fila, 'Descripción')
     const categoriaTexto = texto(fila, 'Categoría')
     const unidadTexto = texto(fila, 'Unidad de medida')
+    const claseTexto = texto(fila, 'Clase de inventario')
     const proveedorTexto = texto(fila, COLUMNA_PROVEEDOR)
 
     // Fila totalmente vacía (usuario dejó espacio de más al final): se ignora sin error.
-    const filaVacia = !codigo && !nombre && !categoriaTexto && !unidadTexto && !proveedorTexto
+    const filaVacia = !codigo && !nombre && !descripcion && !categoriaTexto && !unidadTexto
+      && !claseTexto && !proveedorTexto
       && fila['Precio costo'] === '' && fila['Precio venta'] === ''
+      && fila['Stock mínimo'] === '' && fila['Ancho lámina (cm)'] === '' && fila['Alto lámina (cm)'] === ''
     if (filaVacia) return
 
     if (!codigo) motivos.push('Falta el código')
@@ -138,9 +188,17 @@ export async function leerProductosExcel(
     if (!categoriaTexto) motivos.push('Falta la categoría')
     else if (!categoriaId) motivos.push(`Categoría no reconocida: "${categoriaTexto}" (ver hoja Catálogos)`)
 
-    const unidadId = unidadesPorNombre.get(normalizar(unidadTexto))
+    const unidad = unidadesPorNombre.get(normalizar(unidadTexto))
     if (!unidadTexto) motivos.push('Falta la unidad de medida')
-    else if (!unidadId) motivos.push(`Unidad de medida no reconocida: "${unidadTexto}" (ver hoja Catálogos)`)
+    else if (!unidad) motivos.push(`Unidad de medida no reconocida: "${unidadTexto}" (ver hoja Catálogos)`)
+
+    // Vacío = stock normal: es lo que era antes de que la columna existiera.
+    const clase = claseTexto ? clasesPorEtiqueta.get(normalizar(claseTexto)) : 'stock_normal'
+    if (claseTexto && !clase) {
+      motivos.push(
+        `Clase de inventario no reconocida: "${claseTexto}". Valores válidos: ${CLASES_VALIDAS.map((c) => c.etiqueta).join(' o ')}`
+      )
+    }
 
     let proveedorId: string | null = null
     if (proveedores) {
@@ -157,6 +215,27 @@ export async function leerProductosExcel(
     if (precioVenta === null) motivos.push('Falta el precio de venta')
     else if (Number.isNaN(precioVenta)) motivos.push('Precio de venta inválido')
 
+    // Vacío = 0, que es como nacían los items antes de existir la columna.
+    const stockMinimo = numeroValido(fila['Stock mínimo'])
+    if (stockMinimo !== null && Number.isNaN(stockMinimo)) motivos.push('Stock mínimo inválido')
+
+    const ancho = numeroValido(fila['Ancho lámina (cm)'])
+    const alto = numeroValido(fila['Alto lámina (cm)'])
+    if (ancho !== null && (Number.isNaN(ancho) || ancho <= 0)) motivos.push('Ancho de lámina inválido: debe ser un número mayor a cero')
+    if (alto !== null && (Number.isNaN(alto) || alto <= 0)) motivos.push('Alto de lámina inválido: debe ser un número mayor a cero')
+
+    // Media medida no sirve para nada: ni se muestra ni valida que un recorte
+    // quepa, porque las dos comprobaciones exigen los dos lados.
+    if ((ancho === null) !== (alto === null)) {
+      motivos.push('La medida de la lámina va completa: ancho y alto, o ninguno de los dos')
+    }
+
+    // Un material que se almacena por m² y vive en bodega sin su medida deja
+    // apagada, en silencio, la validación de que un recorte quepa en su lámina.
+    if (unidad?.tipo === 'area' && clase === 'stock_normal' && ancho === null && alto === null) {
+      motivos.push('Falta la medida de la lámina (ancho y alto): es obligatoria en un material por área que se guarda en bodega')
+    }
+
     if (motivos.length > 0) {
       errores.push({ fila: numeroFila, motivo: motivos.join('; ') })
       return
@@ -166,10 +245,15 @@ export async function leerProductosExcel(
     validos.push({
       codigo,
       nombre,
+      descripcion: descripcion || null,
       categoria_id: categoriaId!,
-      unidad_medida_id: unidadId!,
+      unidad_medida_id: unidad!.id,
+      clase_inventario: clase!,
       precio_costo: precioCosto!,
       precio_venta: precioVenta!,
+      stock_minimo: stockMinimo ?? 0,
+      ancho_cm: ancho,
+      alto_cm: alto,
       proveedor_id: proveedorId,
     })
   })

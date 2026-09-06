@@ -5,9 +5,11 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ResultadoImportacionDialog } from '@/components/shared/ResultadoImportacionDialog'
+import { ClaseBadge } from '@/components/shared/ClaseBadge'
 import { useCategorias, useUnidadesMedida, useCrearItemsMasivo } from '@/hooks/useInventario'
 import { useToast } from '@/hooks/useToast'
 import { descargarPlantillaProductos, leerProductosExcel, type ResultadoImportacion } from '@/lib/excelProductos'
+import { medidasFisicas } from '@/lib/materiales'
 import type { ItemInventario, Proveedor } from '@/types/database'
 
 interface ImportarProductosExcelProps {
@@ -63,9 +65,7 @@ export function ImportarProductosExcel({ proveedor, itemsExistentes }: ImportarP
       await crearItemsMasivo.mutateAsync(
         resultado.validos.map((p) => ({
           ...p,
-          descripcion: null,
           stock_actual: 0,
-          stock_minimo: 0,
           // Pisa el proveedor_id null que trae la plantilla sin columna Proveedor.
           proveedor_id: proveedor.id,
           activo: true,
@@ -131,6 +131,8 @@ export function ImportarProductosExcel({ proveedor, itemsExistentes }: ImportarP
                 <tr className="border-b bg-muted/50 text-left">
                   <th className="px-3 py-2">Código</th>
                   <th className="px-3 py-2">Nombre</th>
+                  <th className="px-3 py-2">Clase</th>
+                  <th className="px-3 py-2">Lámina</th>
                   <th className="px-3 py-2 text-right">Costo</th>
                   <th className="px-3 py-2 text-right">Venta</th>
                 </tr>
@@ -140,6 +142,8 @@ export function ImportarProductosExcel({ proveedor, itemsExistentes }: ImportarP
                   <tr key={p.codigo} className="border-b last:border-0">
                     <td className="px-3 py-2 font-mono">{p.codigo}</td>
                     <td className="px-3 py-2">{p.nombre}</td>
+                    <td className="px-3 py-2"><ClaseBadge clase={p.clase_inventario} /></td>
+                    <td className="px-3 py-2 text-muted-foreground">{medidasFisicas(p) ?? '—'}</td>
                     <td className="px-3 py-2 text-right">{p.precio_costo}</td>
                     <td className="px-3 py-2 text-right">{p.precio_venta}</td>
                   </tr>
