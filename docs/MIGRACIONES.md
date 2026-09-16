@@ -61,17 +61,27 @@ entonces git es la fuente de verdad del esquema, no una aproximación.**
 Eso es todo para el trabajo diario. **No necesitas vincular el repo con el proyecto de la
 nube**, y es mejor que no lo hagas: así no hay forma de tocar producción por accidente.
 
-## Vincular con el proyecto remoto (solo quien aplica migraciones)
+## Vincular con el proyecto remoto (casi nunca hace falta)
 
-Únicamente hace falta para `db push`, `db pull` y `migration list`:
+El despliegue no lo necesita: las migraciones las aplica el workflow con una cadena de
+conexión, no con tu sesión. Vincular solo sirve para **inspeccionar** producción con
+`db pull` o `migration list`:
 
 ```bash
 npx supabase login
 npx supabase link --project-ref <ref>
 ```
 
-`db push` y `db pull` piden además la contraseña de la base de datos (Settings → Database).
-No se puede consultar: si nadie la tiene, hay que restablecerla.
+`db pull` pide además la contraseña de la base de datos (Settings → Database). No se puede
+consultar: si nadie la tiene, hay que restablecerla.
+
+Dos avisos, por experiencia:
+
+- `supabase login` guarda un token, pero si la variable de entorno `SUPABASE_ACCESS_TOKEN`
+  está definida en tu máquina, esa **gana** — volver a loguearte no arregla un token caducado,
+  hay que reemplazar la variable.
+- Esos tokens son de **cuenta completa**: permiten crear y borrar cualquier proyecto. No los
+  pegues en `.env.local` ni en el repo.
 
 ## Crear una migración nueva
 
@@ -102,26 +112,40 @@ etc.):
 
 ## Aplicar la migración al proyecto remoto compartido
 
-Las migraciones se aplican al remoto **solo cuando el PR ya fue aprobado y mergeado a
-`main`**, nunca antes — así se evita que alguien pruebe algo a medias contra la base
-de datos que usan ambos.
+**No se corre `db push` a mano.** Al mergear el PR a `main`, el workflow
+[deploy.yml](../.github/workflows/deploy.yml) aplica solo las migraciones pendientes. Tu
+trabajo termina en el merge.
 
-```bash
-git checkout main
-git pull
-npx supabase db push
+El workflow tiene tres jobs encadenados:
+
+```
+migrations  ──▶  build  ──▶  deploy
 ```
 
-Quien mergea el PR es quien corre `db push`. Avisar en el chat del equipo antes de
-correrlo, para que no coincida con el otro desarrollador aplicando otra migración al
-mismo tiempo.
+`build` declara `needs: migrations`, así que **si una migración falla, el frontend no se
+publica**. Ese orden no es decorativo: el 31/08/2026 se publicó un build que escribía
+`cotizaciones.fecha_aprobacion` contra una base que todavía no tenía la columna, y como
+`useRegistrarAnticipo` son cuatro llamadas sin transacción, el pago quedó cobrado y la
+cotización nunca pasó a 'vendida' ni generó orden.
+
+Lo único que hay que hacer después de mergear es **mirar que el workflow pase** (pestaña
+Actions del repo, o `gh run list --workflow=deploy.yml`). Si el job `migrations` falla, la
+migración no entró y el frontend sigue con la versión anterior: se corrige con una migración
+nueva y otro PR, nunca editando la que ya se mergeó.
+
+El job se conecta con `db push --db-url` usando el secreto `SUPABASE_DB_URL`, no con
+`supabase link`. Es deliberado: un access token de cuenta caduca a los 30 días —el deploy se
+rompería solo— y da acceso a todos los proyectos de la cuenta, mientras que la cadena de
+conexión no caduca y solo alcanza esta base. Va por el pooler en modo sesión (puerto 5432)
+porque la conexión directa `db.<ref>.supabase.co` es IPv6 y los runners de GitHub solo
+tienen IPv4.
 
 ## Si ambos crean una migración en paralelo
 
 El nombre del archivo empieza con un timestamp (`YYYYMMDDHHMMSS_...`), así que Supabase
 las aplica en orden cronológico. Si ambos crearon migraciones en ramas distintas:
 
-1. El primero en mergear a `main` hace su `db push` normalmente.
+1. El primero en mergear no hace nada especial: su workflow aplica su migración.
 2. El segundo, antes de mergear, hace `git pull origin main` en su rama para traer la
    migración del otro, corre `supabase db reset` localmente para confirmar que las dos
    migraciones (la ya mergeada + la suya) conviven sin conflicto, y luego mergea.
@@ -142,6 +166,9 @@ las aplica en orden cronológico. Si ambos crearon migraciones en ramas distinta
   equipo.
 - **`supabase/seed.sql` nunca llega al remoto.** `db push` solo envía migraciones. El seed
   es exclusivo de las bases locales, por eso puede traer un usuario con contraseña conocida.
-- Referencia rápida: `npx supabase migration new`, `npx supabase db reset` (local),
-  `npx supabase db push` (aplicar local → remoto), `npx supabase migration list` (comparar
-  local contra remoto, solo lectura).
+- **`db reset` vacía tu base local sin backup.** Reaplica migraciones + seed desde cero, así
+  que todo lo que hayas cargado a mano se pierde. Si quieres datos de prueba que sobrevivan,
+  el lugar es `supabase/seed.sql`.
+- Referencia rápida: `npx supabase migration new`, `npx supabase db reset` (local, destructivo),
+  `npx supabase migration list` (comparar local contra remoto, solo lectura). El `db push` al
+  remoto lo hace el workflow, no tú.
