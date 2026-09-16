@@ -383,7 +383,66 @@ export interface CashRegisterSession {
 
 export type TipoPago = 'anticipo' | 'abono' | 'saldo_final' | 'contado'
 
-export type MetodoPago = 'efectivo' | 'tarjeta' | 'transferencia'
+/**
+ * `financiera`: crédito de Addi, Sistecrédito u otra. El cliente queda pagado,
+ * pero el dinero llega después y con comisión descontada (ver `FinancieraDesembolso`).
+ */
+export type MetodoPago = 'efectivo' | 'tarjeta' | 'transferencia' | 'financiera'
+
+/** Entidad que le da crédito al cliente y le desembolsa la venta a la vidriería. */
+export interface Financiera {
+  id: string
+  nombre: string
+  /** Estimado para proyectar; el real sale de cada desembolso. */
+  comision_pct: number
+  /** Plazo pactado; una venta pendiente más vieja que esto está vencida. */
+  dias_desembolso: number
+  activa: boolean
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Dinero que llegó al banco de parte de una financiera. Puede cubrir varias
+ * ventas; las cifras de esas ventas quedan congeladas aquí al registrarlo.
+ */
+export interface FinancieraDesembolso {
+  id: string
+  financiera_id: string
+  fecha: string
+  monto_recibido: number
+  total_ventas: number
+  comision_estimada: number
+  /** total_ventas − monto_recibido, calculada en Postgres. */
+  comision_real: number
+  num_ventas: number
+  cuenta_pago_empresa_id: string | null
+  referencia: string | null
+  notas: string | null
+  usuario_id: string
+  created_at: string
+  anulado_at: string | null
+  anulado_por: string | null
+  motivo_anulacion: string | null
+}
+
+/** Vista `financieras_por_cobrar`: una venta a crédito que aún no se desembolsa. */
+export interface VentaPorDesembolsar {
+  venta_id: string
+  financiera_id: string
+  financiera: string
+  monto: number
+  comision_estimada: number
+  referencia_financiera: string | null
+  created_at: string
+  cotizacion_id: string | null
+  venta_mostrador_id: string | null
+  documento: string | null
+  cliente: string | null
+  dias_desembolso: number
+  dias: number
+  vencida: boolean
+}
 
 /**
  * Un pago. La tabla se sigue llamando `ventas`, pero es un libro de cobros:
@@ -403,6 +462,13 @@ export interface Venta {
   /** Admin que autorizó un anticipo menor al 50%. */
   autorizado_por: string | null
   motivo_autorizacion: string | null
+  /** Solo en `metodo_pago = 'financiera'` (check `ventas_financiera_coherente`). */
+  financiera_id: string | null
+  referencia_financiera: string | null
+  /** Congelada al vender con el % vigente de la financiera. */
+  comision_estimada: number | null
+  /** Null mientras la financiera no haya desembolsado. */
+  desembolso_id: string | null
   usuario_id: string
   created_at: string
   cotizacion?: Cotizacion

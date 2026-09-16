@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { CuentaEmpresaFormDialog } from './CuentaEmpresaFormDialog'
 import { DatosEmpresaCard } from './DatosEmpresaCard'
+import { FinancierasCard } from './FinancierasCard'
 import { useCuentasPagoEmpresa, useEliminarCuentaPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
@@ -123,6 +124,8 @@ export function ConfiguracionPage() {
           )}
         </CardContent>
       </Card>
+
+      <FinancierasCard esAdmin={esAdmin} />
 
       <CuentaEmpresaFormDialog open={formOpen} onOpenChange={setFormOpen} cuenta={editCuenta} />
 

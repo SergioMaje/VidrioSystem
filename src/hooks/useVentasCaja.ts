@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { anticipoMinimo, cumpleAnticipoMinimo, estaLiquidada, excedeSaldo, tipoDePago } from '@/lib/pagos'
+import { TOLERANCIA, anticipoMinimo, cumpleAnticipoMinimo, estaLiquidada, excedeSaldo, tipoDePago } from '@/lib/pagos'
 import { finDeDia, formatCOP } from '@/lib/utils'
 import type { Cotizacion, CotizacionSaldo, Usuario, Venta } from '@/types/database'
 
@@ -197,6 +197,7 @@ function invalidarPagos(
   qc.invalidateQueries({ queryKey: ['saldos'] })
   qc.invalidateQueries({ queryKey: ['cotizaciones-morosas'] })
   qc.invalidateQueries({ queryKey: ['ordenes'] })
+  qc.invalidateQueries({ queryKey: ['ventas-por-desembolsar'] })
 }
 
 /**
@@ -221,6 +222,8 @@ export function useRegistrarAnticipo() {
       fechaEntregaEstimada,
       autorizadoPor,
       motivoAutorizacion,
+      financieraId,
+      referenciaFinanciera,
     }: {
       cotizacion: Cotizacion
       sessionId: string | undefined
@@ -229,9 +232,18 @@ export function useRegistrarAnticipo() {
       fechaEntregaEstimada?: string
       autorizadoPor?: string
       motivoAutorizacion?: string
+      /** Obligatoria con metodoPago 'financiera'; el crédito cubre el total. */
+      financieraId?: string
+      referenciaFinanciera?: string
     }) => {
       if (!sessionId) throw new Error('Debes abrir caja antes de registrar el anticipo')
       if (monto <= 0) throw new Error('El anticipo debe ser mayor a cero')
+      if (metodoPago === 'financiera') {
+        if (!financieraId) throw new Error('Selecciona la financiera que otorgó el crédito')
+        if (monto + TOLERANCIA < cotizacion.total) {
+          throw new Error(`El crédito con financiera debe cubrir el total (${formatCOP(cotizacion.total)})`)
+        }
+      }
       // El trigger en Postgres es la garantía; esto solo da un error legible antes.
       if (!cumpleAnticipoMinimo(monto, cotizacion.total) && !autorizadoPor) {
         throw new Error(
@@ -246,6 +258,8 @@ export function useRegistrarAnticipo() {
         p_fecha_entrega: fechaEntregaEstimada || null,
         p_autorizado_por: autorizadoPor ?? null,
         p_motivo_autorizacion: motivoAutorizacion?.trim() || null,
+        p_financiera_id: metodoPago === 'financiera' ? financieraId : null,
+        p_referencia_financiera: metodoPago === 'financiera' ? referenciaFinanciera?.trim() || null : null,
       })
       if (error) throw error
     },
@@ -282,6 +296,10 @@ export function useRegistrarAbono() {
     }) => {
       if (!sessionId) throw new Error('Debes abrir caja antes de registrar un abono')
       if (monto <= 0) throw new Error('El abono debe ser mayor a cero')
+      // El trigger también lo rechaza; aquí solo se adelanta el mensaje.
+      if (metodoPago === 'financiera') {
+        throw new Error('El crédito con financiera cubre el total de la venta: no se usa para abonos')
+      }
 
       // Se relee el saldo en vez de confiar en el de la pantalla: otro usuario
       // pudo abonar mientras el diálogo estaba abierto.

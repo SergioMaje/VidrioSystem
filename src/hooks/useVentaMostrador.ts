@@ -22,15 +22,25 @@ export function useRegistrarVentaMostrador() {
       clienteId,
       metodoPago,
       items,
+      financieraId,
+      referenciaFinanciera,
     }: {
       clienteId: string | null
       metodoPago: MetodoPago
       items: LineaVenta[]
+      /** Obligatoria con metodoPago 'financiera'. */
+      financieraId?: string
+      referenciaFinanciera?: string
     }) => {
+      if (metodoPago === 'financiera' && !financieraId) {
+        throw new Error('Selecciona la financiera que otorgó el crédito')
+      }
       const { data, error } = await supabase.rpc('registrar_venta_mostrador', {
         p_cliente_id: clienteId,
         p_metodo_pago: metodoPago,
         p_items: items,
+        p_financiera_id: metodoPago === 'financiera' ? financieraId : null,
+        p_referencia_financiera: metodoPago === 'financiera' ? referenciaFinanciera?.trim() || null : null,
       })
       if (error) throw error
       return data as unknown as VentaMostrador
@@ -45,6 +55,7 @@ export function useRegistrarVentaMostrador() {
       qc.invalidateQueries({ queryKey: ['ventas-mostrador'] })
       qc.invalidateQueries({ queryKey: ['items'] })
       qc.invalidateQueries({ queryKey: ['movimientos'] })
+      qc.invalidateQueries({ queryKey: ['ventas-por-desembolsar'] })
     },
   })
 }

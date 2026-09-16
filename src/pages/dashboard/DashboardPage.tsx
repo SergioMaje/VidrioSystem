@@ -1,13 +1,14 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Package, AlertTriangle, FileText, TrendingUp, Users, Factory, Truck, Wallet, ChevronRight } from 'lucide-react'
+import { Package, AlertTriangle, FileText, TrendingUp, Users, Factory, Truck, Wallet, ChevronRight, HandCoins } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/hooks/useAuth'
 import { expirarCotizacionesVencidas } from '@/hooks/useCotizaciones'
 import { useCotizacionesMorosas } from '@/hooks/useVentasCaja'
+import { useVentasPorDesembolsar } from '@/hooks/useFinancieras'
 import { supabase } from '@/lib/supabase'
 import { getSaludo, formatFecha, formatCOP, diasHasta } from '@/lib/utils'
 import { ESTADOS_ORDEN_CONFIG, ESTADOS_ACTIVOS } from '@/lib/estadosOrden'
@@ -174,6 +175,14 @@ export function DashboardPage() {
     [morosas]
   )
 
+  // Separado de la cartera de clientes: estas ventas ya están pagadas por el
+  // cliente, lo que falta es que la financiera desembolse.
+  const { data: porDesembolsar } = useVentasPorDesembolsar()
+  const totalPorDesembolsar = useMemo(
+    () => (porDesembolsar ?? []).reduce((suma, v) => suma + v.monto, 0),
+    [porDesembolsar]
+  )
+
   const saludo = usuario ? getSaludo(usuario.nombre) : 'Bienvenido'
 
   // `to` deja cada métrica en su listado con el filtro ya aplicado, para que el
@@ -183,6 +192,7 @@ export function DashboardPage() {
     { label: 'Items con stock bajo', value: stockBajo?.total ?? 0, icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-50', to: '/inventario?stock=bajo' },
     { label: 'Cotizaciones pendientes', value: cotizacionesPendientes ?? 0, icon: FileText, color: 'text-purple-600', bg: 'bg-purple-50', to: '/cotizaciones?estado=pendientes' },
     { label: 'Cotizaciones por cobrar', value: morosas?.length ?? 0, icon: Wallet, color: 'text-red-600', bg: 'bg-red-50', to: '/cotizaciones?estado=por_cobrar' },
+    { label: 'Por desembolsar (financieras)', value: formatCOP(totalPorDesembolsar), icon: HandCoins, color: 'text-violet-600', bg: 'bg-violet-50', to: '/reportes?tab=financieras' },
   ]
 
   return (
@@ -192,7 +202,7 @@ export function DashboardPage() {
         <p className="text-muted-foreground">Aquí tienes el resumen de hoy</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {metricas.map(({ label, value, icon: Icon, color, bg, to }) => (
           <Card key={label} className="transition-shadow hover:shadow-md">
             <button
