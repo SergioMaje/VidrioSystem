@@ -41,6 +41,27 @@ export const METODO_PAGO_LABEL: Record<MetodoPago, string> = {
   efectivo: 'Efectivo',
   tarjeta: 'Tarjeta',
   transferencia: 'Transferencia',
+  financiera: 'Crédito financiera',
+}
+
+/** Un gasto sale de la caja o del banco, nunca del crédito de un cliente. */
+export const METODOS_GASTO: MetodoPago[] = ['efectivo', 'tarjeta', 'transferencia']
+
+/**
+ * Venta a crédito de financiera: el cliente queda pagado, pero el dinero aún no
+ * llega. Cubre el total y no se combina con otros medios; la garantía vive en el
+ * trigger `validar_pago_cotizacion` (migración 20260916090100).
+ */
+export const esPagoFinanciera = (v: { metodo_pago: MetodoPago }) => v.metodo_pago === 'financiera'
+
+/** Espejo del cálculo que hace el trigger al vender: round(monto × % / 100). */
+export const comisionEstimada = (monto: number, pct: number) => Math.round((monto * pct) / 100)
+
+/** A dónde va el dinero de un pago, para reportes y exportaciones. */
+export const destinoDePago = (v: { metodo_pago: MetodoPago; desembolso_id: string | null }) => {
+  if (v.metodo_pago === 'efectivo') return 'Caja'
+  if (v.metodo_pago === 'financiera') return v.desembolso_id ? 'Desembolsado' : 'Por desembolsar'
+  return 'Cuentas'
 }
 
 /** El orden importa: es el que se usa para listar categorías en el select de gastos. */

@@ -11,6 +11,8 @@ import { useToast } from '@/hooks/useToast'
 import { useItems } from '@/hooks/useInventario'
 import { useClientes } from '@/hooks/useClientes'
 import { useRegistrarVentaMostrador } from '@/hooks/useVentaMostrador'
+import { useFinancieras } from '@/hooks/useFinancieras'
+import { CamposFinanciera } from '@/components/shared/CamposFinanciera'
 import { METODO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP, mensajeError } from '@/lib/utils'
 import type { ItemInventario, MetodoPago } from '@/types/database'
@@ -39,6 +41,21 @@ export function VenderTab() {
   const [lineas, setLineas] = useState<Linea[]>([])
   const [clienteId, setClienteId] = useState<string>(SIN_CLIENTE)
   const [metodoPago, setMetodoPago] = useState<MetodoPago>('efectivo')
+  const [financieraId, setFinancieraId] = useState('')
+  const [referencia, setReferencia] = useState('')
+
+  const { data: financieras } = useFinancieras(true)
+  const metodosDisponibles = (Object.keys(METODO_PAGO_LABEL) as MetodoPago[]).filter(
+    (m) => m !== 'financiera' || (financieras?.length ?? 0) > 0
+  )
+  const esFinanciera = metodoPago === 'financiera'
+
+  const cambiarMetodo = (metodo: MetodoPago) => {
+    setMetodoPago(metodo)
+    if (metodo === 'financiera' && !financieraId && financieras?.length === 1) {
+      setFinancieraId(financieras[0].id)
+    }
+  }
 
   const enCarrito = new Set(lineas.map((l) => l.item.id))
   const resultados = busqueda.trim()
@@ -65,7 +82,11 @@ export function VenderTab() {
   const total = lineas.reduce((acc, l) => acc + l.cantidad * l.precioUnitario, 0)
   const sinStock = lineas.filter((l) => l.cantidad > l.item.stock_actual)
   const sinPrecio = lineas.filter((l) => l.precioUnitario <= 0)
-  const puedeCobrar = lineas.length > 0 && sinStock.length === 0 && sinPrecio.length === 0
+  const puedeCobrar =
+    lineas.length > 0 &&
+    sinStock.length === 0 &&
+    sinPrecio.length === 0 &&
+    (!esFinanciera || !!financieraId)
 
   const cobrar = async () => {
     if (!puedeCobrar) return
@@ -78,12 +99,22 @@ export function VenderTab() {
           cantidad: l.cantidad,
           precio_unitario: l.precioUnitario,
         })),
+        financieraId: esFinanciera ? financieraId : undefined,
+        referenciaFinanciera: esFinanciera ? referencia : undefined,
       })
-      toast({ title: `Venta ${venta.numero} registrada`, description: formatCOP(venta.total), variant: 'success' })
+      toast({
+        title: `Venta ${venta.numero} registrada`,
+        description: esFinanciera
+          ? `${formatCOP(venta.total)} a crédito — pendiente de desembolso`
+          : formatCOP(venta.total),
+        variant: 'success',
+      })
       // Se queda en Vender: lo normal es atender al siguiente cliente.
       setLineas([])
       setClienteId(SIN_CLIENTE)
       setMetodoPago('efectivo')
+      setFinancieraId('')
+      setReferencia('')
     } catch (err) {
       toast({ title: mensajeError(err, 'No se pudo registrar la venta'), variant: 'destructive' })
     }
@@ -262,12 +293,12 @@ export function VenderTab() {
 
           <div className="space-y-1">
             <Label className="text-xs">Método de pago</Label>
-            <Select value={metodoPago} onValueChange={(v) => setMetodoPago(v as MetodoPago)}>
+            <Select value={metodoPago} onValueChange={(v) => cambiarMetodo(v as MetodoPago)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(Object.keys(METODO_PAGO_LABEL) as MetodoPago[]).map((metodo) => (
+                {metodosDisponibles.map((metodo) => (
                   <SelectItem key={metodo} value={metodo}>
                     {METODO_PAGO_LABEL[metodo]}
                   </SelectItem>
@@ -275,6 +306,18 @@ export function VenderTab() {
               </SelectContent>
             </Select>
           </div>
+
+          {esFinanciera && (
+            <CamposFinanciera
+              financieras={financieras ?? []}
+              financieraId={financieraId}
+              onFinanciera={setFinancieraId}
+              referencia={referencia}
+              onReferencia={setReferencia}
+              monto={total}
+              financiera={financieras?.find((f) => f.id === financieraId)}
+            />
+          )}
 
           <Separator />
 

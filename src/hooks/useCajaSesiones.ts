@@ -89,6 +89,8 @@ export type ResumenSesion = {
   total_efectivo: number
   total_transferencia: number
   total_tarjeta: number
+  /** Vendido a crédito de financiera: no entra al cajón ni ha llegado al banco. */
+  total_financiera: number
   total_cobrado: number
   num_pagos: number
   /** Gastos vivos del turno; solo los de efectivo bajan el arqueo. */

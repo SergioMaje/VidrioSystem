@@ -9,10 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useCajaActual } from '@/hooks/useCajaSesiones'
 import { useRegistrarAnticipo, useRegistrarAbono, useSaldoCotizacion } from '@/hooks/useVentasCaja'
 import { useAuth } from '@/hooks/useAuth'
+import { useFinancieras } from '@/hooks/useFinancieras'
 import { useToast } from '@/hooks/useToast'
-import { anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo } from '@/lib/pagos'
+import { CamposFinanciera } from '@/components/shared/CamposFinanciera'
+import { METODO_PAGO_LABEL, anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo } from '@/lib/pagos'
 import { formatCOP, formatMiles, mensajeError, soloDigitos } from '@/lib/utils'
-import type { Cotizacion, Venta } from '@/types/database'
+import type { Cotizacion, MetodoPago, Venta } from '@/types/database'
 
 type Props = {
   cotizacion: Cotizacion
@@ -49,7 +51,17 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
   const [fechaEntrega, setFechaEntrega] = useState('')
   const [autorizar, setAutorizar] = useState(false)
   const [motivo, setMotivo] = useState('')
+  const [financieraId, setFinancieraId] = useState('')
+  const [referencia, setReferencia] = useState('')
   const [inicializado, setInicializado] = useState(false)
+
+  const { data: financieras } = useFinancieras(true)
+  // El crédito cubre el total y no se combina: solo se ofrece como primer pago.
+  const metodosDisponibles = (Object.keys(METODO_PAGO_LABEL) as MetodoPago[]).filter(
+    (m) => m !== 'financiera' || (esAnticipo && (financieras?.length ?? 0) > 0)
+  )
+  const esFinanciera = metodoPago === 'financiera'
+  const financiera = financieras?.find((f) => f.id === financieraId)
 
   // Al abrir se precarga el monto habitual: el mínimo en el anticipo, el saldo
   // completo cuando se viene a liquidar. Se espera a conocer lo abonado —de eso
@@ -66,11 +78,25 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
     setFechaEntrega('')
     setAutorizar(false)
     setMotivo('')
+    setFinancieraId('')
+    setReferencia('')
     setInicializado(true)
   }, [open, inicializado, esAnticipo, minimo, saldo, saldoListo])
 
+  const cambiarMetodo = (metodo: MetodoPago) => {
+    setMetodoPago(metodo)
+    if (metodo === 'financiera') {
+      // El monto deja de ser editable: la financiera paga la venta completa.
+      setMonto(String(Math.round(total)))
+      setAutorizar(false)
+      if (!financieraId && financieras?.length === 1) setFinancieraId(financieras[0].id)
+    } else if (esFinanciera) {
+      setMonto(String(esAnticipo ? minimo : Math.round(saldo)))
+    }
+  }
+
   const montoNum = Number(monto) || 0
-  const bajoMinimo = esAnticipo && !cumpleAnticipoMinimo(montoNum, total)
+  const bajoMinimo = !esFinanciera && esAnticipo && !cumpleAnticipoMinimo(montoNum, total)
   // Siempre contra el saldo, nunca contra el total: si la cotización ya tiene
   // abonos, el total es más de lo que se puede cobrar y el trigger rechazaría el
   // pago con un saldo que la pantalla no estaba mostrando.
@@ -79,7 +105,12 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
   const pendiente = registrarAnticipo.isPending || registrarAbono.isPending
   // Sin el saldo cargado, `saldo` cae a `total` y se ofrecería cobrar de más.
   const puedeConfirmar =
-    saldoListo && montoNum > 0 && !sobrepasa && !requiereAutorizacion && !pendiente
+    saldoListo &&
+    montoNum > 0 &&
+    !sobrepasa &&
+    !requiereAutorizacion &&
+    !pendiente &&
+    (!esFinanciera || (esAnticipo && !!financieraId))
 
   const handleConfirmar = async () => {
     if (!usuario) return
@@ -93,8 +124,15 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
           fechaEntregaEstimada: fechaEntrega || undefined,
           autorizadoPor: bajoMinimo ? usuario.id : undefined,
           motivoAutorizacion: bajoMinimo ? motivo : undefined,
+          financieraId: esFinanciera ? financieraId : undefined,
+          referenciaFinanciera: esFinanciera ? referencia : undefined,
         })
-        toast({ title: 'Anticipo registrado — la producción ya puede iniciar', variant: 'success' })
+        toast({
+          title: esFinanciera
+            ? 'Venta a crédito registrada — la producción ya puede iniciar'
+            : 'Anticipo registrado — la producción ya puede iniciar',
+          variant: 'success',
+        })
       } else {
         await registrarAbono.mutateAsync({
           cotizacionId: cotizacion.id,
@@ -120,7 +158,9 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>{esAnticipo ? 'Registrar anticipo' : 'Registrar abono'}</DialogTitle>
+          <DialogTitle>
+            {esFinanciera ? 'Venta a crédito de financiera' : esAnticipo ? 'Registrar anticipo' : 'Registrar abono'}
+          </DialogTitle>
         </DialogHeader>
 
         {!sesionCaja ? (
@@ -168,10 +208,11 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
                   placeholder="0"
                   value={monto === '' ? '' : formatMiles(Number(monto))}
                   onChange={(e) => setMonto(soloDigitos(e.target.value))}
+                  disabled={esFinanciera}
                   className="pl-7 text-right font-mono text-base"
                 />
               </div>
-              <div className="flex gap-2 pt-0.5">
+              <div className={`flex gap-2 pt-0.5 ${esFinanciera ? 'hidden' : ''}`}>
                 {esAnticipo && (
                   <Button type="button" variant="outline" size="sm" onClick={() => setMonto(String(minimo))}>
                     50% ({formatCOP(minimo)})
@@ -233,15 +274,27 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
 
             <div className="space-y-1.5">
               <Label>Método de pago</Label>
-              <Select value={metodoPago} onValueChange={(v) => setMetodoPago(v as Venta['metodo_pago'])}>
+              <Select value={metodoPago} onValueChange={(v) => cambiarMetodo(v as MetodoPago)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="efectivo">Efectivo</SelectItem>
-                  <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                  <SelectItem value="transferencia">Transferencia</SelectItem>
+                  {metodosDisponibles.map((m) => (
+                    <SelectItem key={m} value={m}>{METODO_PAGO_LABEL[m]}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {esFinanciera && (
+              <CamposFinanciera
+                financieras={financieras ?? []}
+                financieraId={financieraId}
+                onFinanciera={setFinancieraId}
+                referencia={referencia}
+                onReferencia={setReferencia}
+                monto={montoNum}
+                financiera={financiera}
+              />
+            )}
 
             {esAnticipo && (
               <div className="space-y-1.5">
@@ -254,7 +307,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button onClick={handleConfirmar} disabled={!puedeConfirmar}>
                 {pendiente && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {esAnticipo ? 'Confirmar anticipo' : 'Confirmar abono'}
+                {esFinanciera ? 'Confirmar venta a crédito' : esAnticipo ? 'Confirmar anticipo' : 'Confirmar abono'}
               </Button>
             </DialogFooter>
           </div>

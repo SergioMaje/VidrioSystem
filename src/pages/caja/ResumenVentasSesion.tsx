@@ -32,9 +32,9 @@ export function ResumenVentasSesion({
 
   if (isLoading) return <LoadingSpinner className="py-8" />
 
-  const totales = { efectivo: 0, tarjeta: 0, transferencia: 0 } as Record<MetodoPago, number>
+  const totales: Record<MetodoPago, number> = { efectivo: 0, tarjeta: 0, transferencia: 0, financiera: 0 }
   for (const v of ventas ?? []) totales[v.metodo_pago] += v.monto
-  const totalGeneral = totales.efectivo + totales.tarjeta + totales.transferencia
+  const totalGeneral = Object.values(totales).reduce((suma, t) => suma + t, 0)
   // Lo que los gastos sacaron del cajón. Con el turno cerrado no se recalcula
   // nada: manda `arqueo`, que ya viene con esto descontado desde `cerrar_caja`.
   const gastosEfectivo = totalGastosEfectivo(movimientos)
@@ -42,7 +42,7 @@ export function ResumenVentasSesion({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2 text-sm">
+      <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
         {(Object.keys(METODO_PAGO_LABEL) as MetodoPago[]).map((metodo) => (
           <div key={metodo} className="rounded-md border p-2 text-center">
             <p className="text-xs text-muted-foreground">{METODO_PAGO_LABEL[metodo]}</p>
@@ -90,6 +90,12 @@ export function ResumenVentasSesion({
           <span className="text-muted-foreground">Total cobrado ({ventas?.length ?? 0} pagos)</span>
           <span className="font-mono font-semibold">{formatCOP(totalGeneral)}</span>
         </div>
+        {totales.financiera > 0 && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">de ello, a crédito de financiera (por desembolsar)</span>
+            <span className="font-mono">{formatCOP(totales.financiera)}</span>
+          </div>
+        )}
         <p className="pt-2 text-xs font-medium uppercase text-muted-foreground">Arqueo de efectivo</p>
         <div className="flex justify-between"><span className="text-muted-foreground">Fondo inicial</span><span className="font-mono">{formatCOP(openingAmount)}</span></div>
         <div className="flex justify-between"><span className="text-muted-foreground">Ventas en efectivo (+)</span><span className="font-mono">{formatCOP(totales.efectivo)}</span></div>
@@ -127,7 +133,8 @@ export function ResumenVentasSesion({
         )}
 
         <p className="pt-1 text-xs text-muted-foreground">
-          El arqueo cubre solo el efectivo: transferencias y tarjetas no pasan por el cajón.
+          El arqueo cubre solo el efectivo: transferencias, tarjetas y créditos de financiera no pasan
+          por el cajón.
         </p>
       </div>
     </div>

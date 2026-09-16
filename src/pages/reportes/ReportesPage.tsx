@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Banknote, Download, FileSpreadsheet, Landmark, TrendingUp } from 'lucide-react'
+import { Banknote, Download, FileSpreadsheet, HandCoins, Landmark, TrendingUp } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,8 +15,10 @@ import { fechaISOLocal, finDeDia, formatCOP, formatDuracion, formatFecha, format
 import { useHistorialCaja, useResumenSesiones } from '@/hooks/useCajaSesiones'
 import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
+import { useDesembolsos } from '@/hooks/useFinancieras'
 import { ResumenVentasSesion } from '@/pages/caja/ResumenVentasSesion'
-import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, origenDeVenta } from '@/lib/pagos'
+import { FinancierasTab } from './FinancierasTab'
+import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, destinoDePago, esPagoFinanciera, origenDeVenta } from '@/lib/pagos'
 import type { Venta } from '@/types/database'
 
 type ItemValorizado = {
@@ -51,19 +54,28 @@ const ESTADO_VARIANTS: Record<string, 'default' | 'secondary' | 'destructive' | 
 
 type MetodoPago = Venta['metodo_pago']
 
-const METODO_VARIANTS: Record<MetodoPago, 'default' | 'secondary' | 'success'> = {
+const METODO_VARIANTS: Record<MetodoPago, 'default' | 'secondary' | 'success' | 'outline'> = {
   efectivo: 'success',
   transferencia: 'default',
   tarjeta: 'secondary',
+  financiera: 'outline',
 }
 
+/**
+ * Dinero que entró cada día. Lo vendido a crédito de financiera va aparte
+ * (`credito`) y no suma al total: ese dinero entra el día del desembolso.
+ */
 type ResumenDia = {
   fecha: string
   efectivo: number
   transferencia: number
   tarjeta: number
+  desembolsos: number
   total: number
+  credito: number
 }
+
+const TABS = ['inventario', 'ventas', 'ingresos', 'financieras', 'caja'] as const
 
 function exportarCSV(filas: string[][], nombreArchivo: string) {
   const contenido = filas.map((fila) => fila.map((celda) => `"${String(celda).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -84,6 +96,12 @@ export function ReportesPage() {
   const [desde, setDesde] = useState(hace30)
   const [hasta, setHasta] = useState(hoy)
   const [sesionDetalle, setSesionDetalle] = useState<SesionCajaHistorial | null>(null)
+
+  // La pestaña va en la URL para que el dashboard pueda enlazar directo a Financieras.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const tab = (TABS as readonly string[]).includes(tabParam ?? '') ? (tabParam as string) : 'inventario'
+  const cambiarTab = (valor: string) => setSearchParams({ tab: valor }, { replace: true })
 
   const { data: historialCaja, isLoading: loadingCaja } = useHistorialCaja()
   const { data: resumenSesiones } = useResumenSesiones()
@@ -140,22 +158,51 @@ export function ReportesPage() {
   })
 
   const { data: ingresos, isLoading: loadingIngresos } = useVentasPeriodo(desde, hasta)
+  const { data: desembolsos } = useDesembolsos(desde, hasta)
+  const desembolsosVivos = (desembolsos ?? []).filter((d) => !d.anulado_at)
 
-  // Ingresos separados por destino del dinero: efectivo = cajón físico, bancario = cuentas
-  const totalesMetodo: Record<MetodoPago, number> = { efectivo: 0, tarjeta: 0, transferencia: 0 }
-  for (const v of ingresos ?? []) totalesMetodo[v.metodo_pago] += v.monto
-  const totalBancario = totalesMetodo.transferencia + totalesMetodo.tarjeta
+  // Ingresos separados por destino del dinero: efectivo = cajón físico, bancario =
+  // cuentas. Lo vendido a crédito de financiera no es ingreso el día de la venta:
+  // entra al banco el día del desembolso, por lo que llegó (ya sin comisión).
+  const totalesMetodo: Record<MetodoPago, number> = { efectivo: 0, tarjeta: 0, transferencia: 0, financiera: 0 }
+  let creditoPendiente = 0
+  let comisionPendiente = 0
+  for (const v of ingresos ?? []) {
+    totalesMetodo[v.metodo_pago] += v.monto
+    if (esPagoFinanciera(v) && !v.desembolso_id) {
+      creditoPendiente += v.monto
+      comisionPendiente += v.comision_estimada ?? 0
+    }
+  }
+  const totalDesembolsos = desembolsosVivos.reduce((s, d) => s + d.monto_recibido, 0)
+  const comisionReal = desembolsosVivos.reduce((s, d) => s + d.comision_real, 0)
+  const totalBancario = totalesMetodo.transferencia + totalesMetodo.tarjeta + totalDesembolsos
   const totalIngresos = totalesMetodo.efectivo + totalBancario
+  const totalPagosClientes = (ingresos ?? []).reduce((s, v) => s + v.monto, 0)
 
   const resumenPorDia: ResumenDia[] = (() => {
     const mapa = new Map<string, ResumenDia>()
+    const vacio = (fecha: string): ResumenDia => ({
+      fecha, efectivo: 0, transferencia: 0, tarjeta: 0, desembolsos: 0, total: 0, credito: 0,
+    })
     for (const v of ingresos ?? []) {
       // Fecha local (no UTC): una venta de la tarde no debe contarse en el día siguiente
       const fecha = fechaISOLocal(v.created_at)
-      const dia = mapa.get(fecha) ?? { fecha, efectivo: 0, transferencia: 0, tarjeta: 0, total: 0 }
-      dia[v.metodo_pago] += v.monto
-      dia.total += v.monto
+      const dia = mapa.get(fecha) ?? vacio(fecha)
+      if (v.metodo_pago === 'financiera') {
+        dia.credito += v.monto
+      } else {
+        dia[v.metodo_pago] += v.monto
+        dia.total += v.monto
+      }
       mapa.set(fecha, dia)
+    }
+    for (const d of desembolsosVivos) {
+      // `fecha` ya es un date local: no pasa por fechaISOLocal.
+      const dia = mapa.get(d.fecha) ?? vacio(d.fecha)
+      dia.desembolsos += d.monto_recibido
+      dia.total += d.monto_recibido
+      mapa.set(d.fecha, dia)
     }
     return Array.from(mapa.values()).sort((a, b) => b.fecha.localeCompare(a.fecha))
   })()
@@ -195,21 +242,32 @@ export function ReportesPage() {
 
   const exportarResumenIngresos = () => {
     if (!resumenPorDia.length) return
-    const encabezado = ['Fecha', 'Efectivo COP', 'Transferencia COP', 'Tarjeta COP', 'Total COP']
+    const encabezado = [
+      'Fecha', 'Efectivo COP', 'Transferencia COP', 'Tarjeta COP', 'Desembolsos financieras COP',
+      'Total recibido COP', 'Vendido a crédito COP (no suma)',
+    ]
     const filas = resumenPorDia.map((d) => [
       d.fecha,
       String(d.efectivo),
       String(d.transferencia),
       String(d.tarjeta),
+      String(d.desembolsos),
       String(d.total),
+      String(d.credito),
     ])
-    const totales = ['TOTAL', String(totalesMetodo.efectivo), String(totalesMetodo.transferencia), String(totalesMetodo.tarjeta), String(totalIngresos)]
+    const totales = [
+      'TOTAL', String(totalesMetodo.efectivo), String(totalesMetodo.transferencia), String(totalesMetodo.tarjeta),
+      String(totalDesembolsos), String(totalIngresos), String(totalesMetodo.financiera),
+    ]
     exportarCSV([encabezado, ...filas, totales], `ingresos-resumen-${desde}_${hasta}.csv`)
   }
 
   const exportarDetalleIngresos = () => {
     if (!ingresos?.length) return
-    const encabezado = ['Fecha y hora', 'N° Documento', 'Cliente', 'Tipo', 'Método', 'Destino', 'Vendedor', 'Monto COP']
+    const encabezado = [
+      'Fecha y hora', 'N° Documento', 'Cliente', 'Tipo', 'Método', 'Destino', 'Vendedor', 'Monto COP',
+      'Comisión estimada COP',
+    ]
     const filas = ingresos.map((v) => {
       const origen = origenDeVenta(v)
       return [
@@ -218,9 +276,10 @@ export function ReportesPage() {
         origen.cliente,
         TIPO_PAGO_LABEL[v.tipo],
         METODO_PAGO_LABEL[v.metodo_pago],
-        v.metodo_pago === 'efectivo' ? 'Caja' : 'Cuentas',
+        destinoDePago(v),
         v.usuario ? `${v.usuario.nombre} ${v.usuario.apellido}` : '—',
         String(v.monto),
+        v.comision_estimada != null ? String(v.comision_estimada) : '',
       ]
     })
     exportarCSV([encabezado, ...filas], `ingresos-detalle-${desde}_${hasta}.csv`)
@@ -228,11 +287,12 @@ export function ReportesPage() {
 
   return (
     <div className="space-y-4">
-      <Tabs defaultValue="inventario">
-        <TabsList>
+      <Tabs value={tab} onValueChange={cambiarTab}>
+        <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="inventario">Inventario valorizado</TabsTrigger>
           <TabsTrigger value="ventas">Ventas por período</TabsTrigger>
           <TabsTrigger value="ingresos">Ingresos</TabsTrigger>
+          <TabsTrigger value="financieras">Financieras</TabsTrigger>
           <TabsTrigger value="caja">Caja</TabsTrigger>
         </TabsList>
 
@@ -433,7 +493,7 @@ export function ReportesPage() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Card>
               <CardContent className="flex items-start gap-4 p-5">
                 <Banknote className="h-8 w-8 shrink-0 text-emerald-600" />
@@ -460,6 +520,36 @@ export function ReportesPage() {
                       <span className="text-muted-foreground">Tarjeta</span>
                       <span className="font-mono">{formatCOP(totalesMetodo.tarjeta)}</span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Desembolsos de financieras</span>
+                      <span className="font-mono">{formatCOP(totalDesembolsos)}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-start gap-4 p-5">
+                <HandCoins className="h-8 w-8 shrink-0 text-violet-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Vendido a crédito — Financieras</p>
+                  <p className="text-3xl font-bold">{formatCOP(totalesMetodo.financiera)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    No es ingreso todavía: entra al banco cuando la financiera desembolse
+                  </p>
+                  <div className="mt-2 space-y-0.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Aún por desembolsar</span>
+                      <span className="font-mono">{formatCOP(creditoPendiente)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Comisión estimada pendiente</span>
+                      <span className="font-mono">{formatCOP(comisionPendiente)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Comisión real (desembolsos del período)</span>
+                      <span className="font-mono">{formatCOP(comisionReal)}</span>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -467,10 +557,11 @@ export function ReportesPage() {
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Total de ingresos del período:{' '}
+            Total recibido en el período:{' '}
             <span className="font-semibold text-foreground">{formatCOP(totalIngresos)}</span>
             {' · '}
-            {ingresos?.length ?? 0} ventas
+            {ingresos?.length ?? 0} pagos de clientes
+            {desembolsosVivos.length > 0 && ` · ${desembolsosVivos.length} desembolsos`}
           </p>
 
           <div className="flex items-center justify-between">
@@ -498,7 +589,11 @@ export function ReportesPage() {
                         <th className="px-4 py-3 text-right">Efectivo</th>
                         <th className="px-4 py-3 text-right">Transferencia</th>
                         <th className="px-4 py-3 text-right">Tarjeta</th>
-                        <th className="px-4 py-3 text-right">Total</th>
+                        <th className="px-4 py-3 text-right">Desembolsos</th>
+                        <th className="px-4 py-3 text-right">Total recibido</th>
+                        <th className="px-4 py-3 text-right" title="Vendido a crédito de financiera: no suma al total del día">
+                          A crédito
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -509,7 +604,9 @@ export function ReportesPage() {
                           <td className="px-4 py-3 text-right font-mono">{formatCOP(dia.efectivo)}</td>
                           <td className="px-4 py-3 text-right font-mono">{formatCOP(dia.transferencia)}</td>
                           <td className="px-4 py-3 text-right font-mono">{formatCOP(dia.tarjeta)}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatCOP(dia.desembolsos)}</td>
                           <td className="px-4 py-3 text-right font-semibold">{formatCOP(dia.total)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-muted-foreground">{formatCOP(dia.credito)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -519,7 +616,9 @@ export function ReportesPage() {
                         <td className="px-4 py-3 text-right font-bold">{formatCOP(totalesMetodo.efectivo)}</td>
                         <td className="px-4 py-3 text-right font-bold">{formatCOP(totalesMetodo.transferencia)}</td>
                         <td className="px-4 py-3 text-right font-bold">{formatCOP(totalesMetodo.tarjeta)}</td>
+                        <td className="px-4 py-3 text-right font-bold">{formatCOP(totalDesembolsos)}</td>
                         <td className="px-4 py-3 text-right font-bold">{formatCOP(totalIngresos)}</td>
+                        <td className="px-4 py-3 text-right font-bold text-muted-foreground">{formatCOP(totalesMetodo.financiera)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -529,7 +628,7 @@ export function ReportesPage() {
           </Card>
 
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Detalle de ingresos</h3>
+            <h3 className="text-sm font-semibold">Detalle de pagos de clientes</h3>
             <Button variant="outline" onClick={exportarDetalleIngresos} disabled={!ingresos || ingresos.length === 0}>
               <Download className="mr-2 h-4 w-4" />
               Exportar CSV
@@ -569,6 +668,9 @@ export function ReportesPage() {
                           <td className="px-4 py-3 text-muted-foreground">{TIPO_PAGO_LABEL[v.tipo]}</td>
                           <td className="px-4 py-3 text-center">
                             <Badge variant={METODO_VARIANTS[v.metodo_pago]}>{METODO_PAGO_LABEL[v.metodo_pago]}</Badge>
+                            {esPagoFinanciera(v) && (
+                              <p className="mt-1 text-xs text-muted-foreground">{destinoDePago(v)}</p>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-muted-foreground">
                             {v.usuario ? `${v.usuario.nombre} ${v.usuario.apellido}` : '—'}
@@ -581,9 +683,9 @@ export function ReportesPage() {
                     <tfoot>
                       <tr className="border-t bg-muted/50">
                         <td colSpan={6} className="px-4 py-3 text-right text-xs font-semibold uppercase text-muted-foreground">
-                          Total ingresos
+                          Total pagos (incluye crédito de financiera)
                         </td>
-                        <td className="px-4 py-3 text-right font-bold">{formatCOP(totalIngresos)}</td>
+                        <td className="px-4 py-3 text-right font-bold">{formatCOP(totalPagosClientes)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -591,6 +693,31 @@ export function ReportesPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Tab Financieras ───────────────────────────────────── */}
+        <TabsContent value="financieras" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Período de desembolsos</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Filtra el historial por fecha de llegada al banco. Lo pendiente se muestra completo, sin importar la fecha.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Desde</Label>
+                  <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="w-40" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Hasta</Label>
+                  <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="w-40" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <FinancierasTab desde={desde} hasta={hasta} />
         </TabsContent>
 
         {/* ── Tab Caja ──────────────────────────────────────────── */}

@@ -78,6 +78,9 @@ La app queda disponible en `http://localhost:5180` (puerto fijo, para no chocar 
 Para correr la app tal como se despliega (imagen Docker con nginx), ver
 [docs/DOCKER.md](docs/DOCKER.md).
 
+Para el flujo de ventas a crédito con Addi o Sistecrédito, ver
+[docs/FINANCIERAS.md](docs/FINANCIERAS.md).
+
 ---
 
 ## 🗂️ Estructura del proyecto
