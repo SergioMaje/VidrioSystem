@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/useToast'
 import { useCotizacion } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion } from '@/hooks/useVentasCaja'
 import { useOrdenMateriales, useCerrarProduccion } from '@/hooks/useOrdenMateriales'
+import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
+import { escapar } from '@/lib/documentos'
 import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
 import { MaterialesOrdenPanel } from './MaterialesOrdenPanel'
 import { anticipoMinimo, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
@@ -117,6 +119,9 @@ export function OrdenDetalle() {
     (m) => m.origen === 'sobre_pedido' && m.costo_unitario_real == null && m.estado !== 'consumido'
   )
   const cerrarProduccion = useCerrarProduccion()
+  // Igual que el saldo: se cargan en el render porque imprimir() es sincrono.
+  const { data: empresa } = useConfiguracionEmpresa()
+  const { data: logoEmpresa } = useLogoEmpresaDataUri()
 
   // Solo mueve el estado (y arranca el reloj de fechas); el consumo de
   // inventario pasa por cerrarProduccion al llegar a 'lista', nunca aquí.
@@ -255,6 +260,8 @@ export function OrdenDetalle() {
        color del perfil, sin los degradados del vidrio y sin el azul de la corredera. */
     body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;padding:1.5cm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     h1{font-size:20px;font-weight:700;margin-bottom:2px}
+    /* Alto fijo: la ficha no cambia de composicion segun las proporciones del logo. */
+    .logo-ficha{display:block;max-height:44px;max-width:170px;object-fit:contain;margin-bottom:8px}
     .sub{color:#666;font-size:12px;margin-bottom:20px}
     .head-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin-bottom:20px}
     .kv{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f3f4f6}
@@ -278,8 +285,9 @@ export function OrdenDetalle() {
   </style>
 </head>
 <body>
+  ${logoEmpresa ? `<img class="logo-ficha" src="${logoEmpresa}" alt=""/>` : ''}
   <h1>Ficha de Producción — ${orden.numero}</h1>
-  <div class="sub">Generada el ${fecha} · VidrioSystem</div>
+  <div class="sub">Generada el ${fecha}${empresa ? ` · ${escapar(empresa.nombre)}` : ''}</div>
   <div class="head-grid">
     <div class="kv"><span>Cliente</span><strong>${cli ? `${cli.nombre} ${cli.apellido}` : '—'}</strong></div>
     <div class="kv"><span>Teléfono</span><strong>${cli?.telefono ?? '—'}</strong></div>

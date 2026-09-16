@@ -19,6 +19,8 @@ import { PreviewProducto } from './PreviewProducto'
 import { usePlantillas } from '@/hooks/useProductos'
 import { useReferencias } from '@/hooks/useReferencias'
 import { useItems } from '@/hooks/useInventario'
+import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
+import { escapar } from '@/lib/documentos'
 import {
   altoNominal,
   anchoNominal,
@@ -135,6 +137,9 @@ export function ConfiguradorProducto({
   const [peliculaItemId, setPeliculaItemId] = useState(NINGUNO)
 
   const [imagenFicha, setImagenFicha] = useState<string | null>(null)
+  // En el render y no en imprimirFicha(), que es sincrona y no puede esperar la query.
+  const { data: empresa } = useConfiguracionEmpresa()
+  const { data: logoEmpresa } = useLogoEmpresaDataUri()
   const imagenInputRef = useRef<HTMLInputElement>(null)
 
   const previewRef = useRef<HTMLDivElement>(null)
@@ -430,6 +435,7 @@ export function ConfiguradorProducto({
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;padding:2cm}
     h1{font-size:20px;font-weight:700;margin-bottom:2px}
+    .logo-ficha{display:block;max-height:44px;max-width:170px;object-fit:contain;margin-bottom:8px}
     .sub{color:#666;font-size:12px;margin-bottom:24px}
     .section{margin-bottom:22px}
     h2{font-size:11px;text-transform:uppercase;color:#888;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;padding-bottom:4px;margin-bottom:10px}
@@ -455,8 +461,9 @@ export function ConfiguradorProducto({
   </style>
 </head>
 <body>
+  ${logoEmpresa ? `<img class="logo-ficha" src="${logoEmpresa}" alt=""/>` : ''}
   <h1>Ficha de Producto — ${tipoLabel}</h1>
-  <div class="sub">Generada el ${fecha} · VidrioSystem</div>
+  <div class="sub">Generada el ${fecha}${empresa ? ` · ${escapar(empresa.nombre)}` : ''}</div>
 
   <div class="section">
     <h2>Datos generales</h2>

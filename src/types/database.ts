@@ -65,6 +65,25 @@ export interface CuentaPagoEmpresa {
   updated_at: string
 }
 
+/**
+ * Identidad de la vidrieria para el membrete de los documentos. Es una fila unica: la
+ * tabla tiene un indice que impide que exista una segunda.
+ */
+export interface ConfiguracionEmpresa {
+  id: string
+  nombre: string
+  eslogan: string | null
+  nit: string | null
+  direccion: string | null
+  ciudad: string | null
+  telefono: string | null
+  email: string | null
+  /** Ruta dentro del bucket `empresa`, no la URL publica. */
+  logo_path: string | null
+  created_at: string
+  updated_at: string
+}
+
 /** Rol de un item de inventario dentro de las opciones adicionales del configurador. */
 export type RolConfigurador = 'vidrio' | 'chapa' | 'pelicula'
 
