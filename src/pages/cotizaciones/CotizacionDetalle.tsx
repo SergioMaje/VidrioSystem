@@ -10,7 +10,9 @@ import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { useCotizacion, useCambiarEstadoCotizacion } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
+import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
+import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { estaLiquidada, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
@@ -25,9 +27,6 @@ const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'defa
   vendida: { label: 'Vendida', variant: 'outline' },
 }
 
-const escapar = (texto: string) =>
-  texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
 /** Una empresa se identifica con NIT; una persona natural, con cédula. */
 const etiquetaDocumento = (tipo?: Cliente['tipo']) => (tipo === 'juridico' ? 'NIT' : 'C.C.')
 
@@ -40,6 +39,8 @@ export function CotizacionDetalle() {
   const { data: pagos } = usePagosCotizacion(id)
   // Se cargan aqui y no dentro de imprimir(), que es sincrono y no puede esperar la query.
   const { data: cuentasPago } = useCuentasPagoEmpresa(true)
+  const { data: empresa } = useConfiguracionEmpresa()
+  const { data: logoEmpresa } = useLogoEmpresaDataUri()
   const cambiarEstado = useCambiarEstadoCotizacion()
 
   const [pagoOpen, setPagoOpen] = useState(false)
@@ -112,15 +113,11 @@ export function CotizacionDetalle() {
   <title>Cotización ${cotizacion.numero}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.35;color:#000;padding:1.4cm}
-    .membrete{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;
-      padding-bottom:8px;border-bottom:1.5px solid #000;margin-bottom:12px}
-    .marca{font-size:17px;font-weight:700;letter-spacing:-.01em}
-    .marca span{display:block;font-size:10px;font-weight:400;color:#555;letter-spacing:0}
-    .doc{text-align:right}
-    .doc h1{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#555}
-    .doc .numero{font-size:17px;font-weight:700}
-    .doc .fecha{font-size:10px;color:#555}
+    /* print-color-adjust: sin esto el navegador descarta los fondos al imprimir y un logo
+       con color de fondo sale descolorido. */
+    body{font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.35;color:#000;padding:1.4cm;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact}
+${membreteCss}
     /* Dos bloques independientes: los datos del cliente no se mezclan con los del documento. */
     .bloques{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;margin-bottom:12px}
     .bloque h2{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
@@ -163,14 +160,11 @@ export function CotizacionDetalle() {
   </style>
 </head>
 <body>
-  <div class="membrete">
-    <div class="marca">VidrioSystem<span>Vidriería y aluminio</span></div>
-    <div class="doc">
-      <h1>Cotización</h1>
-      <div class="numero">${cotizacion.numero}</div>
-      <div class="fecha">Emitida el ${formatFecha(cotizacion.fecha_emision)}</div>
-    </div>
-  </div>
+  ${membreteHtml(empresa, logoEmpresa, {
+    titulo: 'Cotización',
+    numero: cotizacion.numero,
+    fecha: `Emitida el ${formatFecha(cotizacion.fecha_emision)}`,
+  })}
 
   <div class="bloques">
     <div class="bloque">

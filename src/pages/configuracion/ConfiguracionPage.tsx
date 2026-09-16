@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { CuentaEmpresaFormDialog } from './CuentaEmpresaFormDialog'
+import { DatosEmpresaCard } from './DatosEmpresaCard'
 import { useCuentasPagoEmpresa, useEliminarCuentaPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
@@ -40,6 +41,8 @@ export function ConfiguracionPage() {
         <h2 className="text-xl font-bold">Configuración</h2>
         <p className="text-sm text-muted-foreground">Datos de la vidriería que aparecen en los documentos</p>
       </div>
+
+      <DatosEmpresaCard esAdmin={esAdmin} />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">

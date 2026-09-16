@@ -19,6 +19,13 @@ major_version = 17
 enabled = true
 port = 54423
 
+# El bucket `empresa` (logo de la vidrieria) lo crea la migracion, no este archivo; aqui
+# solo se deja explicito que el servicio de Storage se levanta en local, porque sin el
+# `supabase start` no expone el endpoint y la subida del logo falla al probarla.
+[storage]
+enabled = true
+file_size_limit = "5MiB"
+
 [auth]
 enabled = true
 site_url = "http://localhost:5180"
