@@ -8,7 +8,6 @@ interface AuthContextType {
   usuario: Usuario | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, nombre: string, apellido: string) => Promise<'ok' | 'confirmar_email'>
   signOut: () => Promise<void>
 }
 
@@ -64,23 +63,11 @@ export function useAuthState() {
     if (error) throw new Error(traducirError(error.message))
   }
 
-  const signUp = async (email: string, password: string, nombre: string, apellido: string): Promise<'ok' | 'confirmar_email'> => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { nombre, apellido } },
-    })
-    if (error) throw new Error(traducirError(error.message))
-    // Si confirmación de email está activa, session es null hasta que confirmen
-    if (data.session === null) return 'confirmar_email'
-    return 'ok'
-  }
-
   const signOut = async () => {
     await supabase.auth.signOut()
   }
 
-  return { user, usuario, loading, signIn, signUp, signOut }
+  return { user, usuario, loading, signIn, signOut }
 }
 
 function traducirError(msg: string): string {

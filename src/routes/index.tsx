@@ -5,7 +5,6 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { PageLoader } from '@/components/shared/LoadingSpinner'
 
 import { LoginPage } from '@/pages/auth/LoginPage'
-import { RegistroPage } from '@/pages/auth/RegistroPage'
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
 import { InventarioPage } from '@/pages/inventario/InventarioPage'
 import { ProductosPage } from '@/pages/productos/ProductosPage'
@@ -32,7 +31,6 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/registro" element={<RegistroPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>
