@@ -3,10 +3,9 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
-  // GitHub Pages sirve la app bajo /VidrioSystem/, pero el contenedor la sirve en la
-  // raiz. Se mantiene el valor de Pages como default para no tocar ese despliegue;
-  // el Dockerfile construye con VITE_BASE_PATH=/.
-  base: process.env.VITE_BASE_PATH ?? '/VidrioSystem/',
+  // GitHub Pages (con el dominio vidriosystem.co) y el contenedor sirven la app en la
+  // raiz. VITE_BASE_PATH queda para el caso de servirla bajo un subdirectorio.
+  base: process.env.VITE_BASE_PATH ?? '/',
   plugins: [react()],
   resolve: {
     alias: {
