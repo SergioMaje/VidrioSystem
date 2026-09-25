@@ -20,8 +20,6 @@ RUN npm ci
 
 COPY . .
 
-# Servido desde el contenedor la app vive en la raiz, no bajo /VidrioSystem/.
-ENV VITE_BASE_PATH=/
 RUN npm run build
 
 # ── Etapa de ejecucion ─────────────────────────────────────────────────────

@@ -137,9 +137,10 @@ explicito, en vez de servir una pantalla en blanco.
 
 ### Base path
 
-GitHub Pages sirve la app bajo `/VidrioSystem/`; el contenedor la sirve en `/`. Ese valor
-esta en un solo lugar (`base` en `vite.config.ts`, con default `/VidrioSystem/`) y el router
-lo deriva con `import.meta.env.BASE_URL`. El Dockerfile construye con `VITE_BASE_PATH=/`.
+GitHub Pages (con el dominio `vidriosystem.co`) y el contenedor sirven la app en `/`. Ese
+valor esta en un solo lugar (`base` en `vite.config.ts`, con default `/`) y el router lo
+deriva con `import.meta.env.BASE_URL`. Para servirla bajo un subdirectorio, construir con
+`VITE_BASE_PATH=/subdirectorio/`.
 
 ---
 
