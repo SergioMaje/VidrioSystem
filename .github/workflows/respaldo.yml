@@ -1,0 +1,72 @@
+name: Respaldo semanal de la base
+
+# El plan gratis de Supabase no guarda respaldos descargables: si se borra algo
+# o una migracion dana datos, no hay a donde volver. Este workflow vuelca la
+# base de produccion cada semana y la guarda como artefacto de Actions.
+#
+# El repo es PUBLICO y cualquier usuario de GitHub puede descargar sus
+# artefactos, asi que el volcado se sube cifrado con BACKUP_PASSPHRASE. Si esa
+# clave se pierde, los respaldos no sirven: guardarla fuera de GitHub.
+#
+# Restaurar (sobre una base vacia, con el CLI de Supabase y psql):
+#   gpg -d respaldo-AAAA-MM-DD.tar.gz.gpg | tar -xz
+#   psql "$DB_URL" -f respaldo/roles.sql
+#   psql "$DB_URL" -f respaldo/schema.sql
+#   psql "$DB_URL" -c 'SET session_replication_role = replica' -f respaldo/data.sql
+#
+# No incluye los archivos de Storage, solo la base.
+
+on:
+  schedule:
+    # Domingos 07:00 UTC (02:00 en Colombia), cuando nadie esta usando la app.
+    - cron: '0 7 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  respaldo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Misma version fijada que en ci.yml y deploy.yml.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.116.0
+
+      - name: Volcar roles, esquema y datos
+        run: |
+          mkdir respaldo
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f respaldo/roles.sql --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f respaldo/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f respaldo/data.sql --use-copy --data-only
+          # Un volcado vacio fallaria en silencio hasta el dia que se necesite.
+          test -s respaldo/schema.sql
+          test -s respaldo/data.sql
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+      - name: Cifrar
+        id: cifrar
+        run: |
+          # Sin clave, gpg cifraria con una vacia y el respaldo quedaria expuesto.
+          test -n "$BACKUP_PASSPHRASE"
+          fecha=$(date -u +%F)
+          tar -czf - respaldo \
+            | gpg --batch --yes --symmetric --cipher-algo AES256 \
+                --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+                -o "respaldo-$fecha.tar.gz.gpg"
+          rm -rf respaldo
+          echo "fecha=$fecha" >> "$GITHUB_OUTPUT"
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+
+      # 90 dias es el maximo que permite GitHub: quedan unos 13 respaldos.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: respaldo-${{ steps.cifrar.outputs.fecha }}
+          path: respaldo-*.tar.gz.gpg
+          retention-days: 90
+          if-no-files-found: error
