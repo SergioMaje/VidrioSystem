@@ -22,14 +22,15 @@ create extension if not exists pgcrypto with schema extensions;
 -- para saltarse el correo de confirmacion, que en local no se envia a ningun lado.
 --
 -- OJO con el trigger `on_auth_user_created`: al insertar en auth.users, la
--- funcion handle_new_user() crea sola la fila en public.usuarios con
--- rol = 'vendedor'. Por eso el insert de abajo hace `do update` y no
--- `do nothing`: sin eso, este usuario quedaria como vendedor y no podria
--- ejecutar las politicas de borrado, que exigen get_user_rol() = 'admin'.
+-- funcion handle_new_user() crea sola la fila en public.usuarios con la
+-- empresa y el rol que vienen en raw_app_meta_data (sin empresa_id rechaza el
+-- alta). El insert de abajo igual hace `do update`: si el usuario ya existia de
+-- un seed anterior, lo deja como admin activo.
 
 do $$
 declare
   v_user_id uuid := '00000000-0000-4000-8000-000000000001';
+  v_empresa uuid := (select id from public.empresas order by created_at limit 1);
 begin
   -- Las cuatro columnas de token del final no tienen default y quedarian en
   -- NULL. GoTrue las lee como texto no nulo, asi que un NULL ahi hace que el
@@ -47,7 +48,8 @@ begin
     'admin@glazz.local',
     extensions.crypt('admin123', extensions.gen_salt('bf')),
     now(), now(), now(),
-    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email'),
+                       'empresa_id', v_empresa, 'rol', 'admin'),
     '{"nombre":"Admin","apellido":"Local"}'::jsonb,
     '', '', '', ''
   )

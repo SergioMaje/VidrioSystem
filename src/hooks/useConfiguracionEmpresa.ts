@@ -19,7 +19,7 @@ export function useConfiguracionEmpresa() {
 
 type ConfiguracionEmpresaInput = Omit<
   ConfiguracionEmpresa,
-  'id' | 'logo_path' | 'created_at' | 'updated_at'
+  'id' | 'empresa_id' | 'logo_path' | 'created_at' | 'updated_at'
 >
 
 export function useGuardarConfiguracionEmpresa() {
@@ -43,12 +43,14 @@ const extensionDe = (file: File) => {
  * Sube el archivo con un nombre nuevo cada vez en vez de sobrescribir siempre `logo.png`:
  * el bucket es publico y se sirve por CDN, asi que reusar el nombre hace que el navegador
  * y la cache intermedia sigan entregando el logo viejo durante horas.
+ *
+ * Va dentro de la carpeta de la empresa: Storage solo deja escribir ahi a su admin.
  */
 export function useSubirLogoEmpresa() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ empresa, file }: { empresa: ConfiguracionEmpresa; file: File }) => {
-      const path = `logo-${Date.now()}.${extensionDe(file)}`
+      const path = `${empresa.empresa_id}/logo-${Date.now()}.${extensionDe(file)}`
       const { error: errorSubida } = await supabase.storage
         .from(BUCKET)
         .upload(path, file, { contentType: file.type })

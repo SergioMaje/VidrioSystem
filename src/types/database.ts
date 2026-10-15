@@ -5,6 +5,7 @@ export interface Usuario {
   email: string
   rol: 'admin' | 'vendedor' | 'bodega'
   activo: boolean
+  empresa_id: string
   created_at: string
   updated_at: string
 }
@@ -71,6 +72,7 @@ export interface CuentaPagoEmpresa {
  */
 export interface ConfiguracionEmpresa {
   id: string
+  empresa_id: string
   nombre: string
   eslogan: string | null
   nit: string | null
