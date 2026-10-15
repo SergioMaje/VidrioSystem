@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { Usuario } from '@/types/database'
@@ -32,9 +33,22 @@ export function useAuthState() {
   const [user, setUser] = useState<User | null>(null)
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const ultimoUsuarioId = useRef<string | null | undefined>(undefined)
 
   useEffect(() => {
+    // La cache de TanStack es por navegador, no por usuario: si en el mismo equipo sale
+    // uno y entra otro de otra vidrieria, sin esto veria por unos minutos los clientes,
+    // la caja y el logo del anterior hasta que cada query se refresque.
+    const alCambiarUsuario = (id: string | null) => {
+      if (ultimoUsuarioId.current !== undefined && ultimoUsuarioId.current !== id) {
+        queryClient.clear()
+      }
+      ultimoUsuarioId.current = id
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      alCambiarUsuario(session?.user?.id ?? null)
       setUser(session?.user ?? null)
       setLoading(false)
       if (session?.user) {
@@ -45,6 +59,7 @@ export function useAuthState() {
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      alCambiarUsuario(session?.user?.id ?? null)
       setUser(session?.user ?? null)
       if (session?.user) {
         fetchUsuario(session.user.id)
@@ -56,7 +71,7 @@ export function useAuthState() {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [queryClient])
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
