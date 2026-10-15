@@ -67,14 +67,19 @@ begin
   on conflict (provider, provider_id) do nothing;
 
   -- Promueve a admin la fila que ya creo el trigger.
-  insert into public.usuarios (id, nombre, apellido, email, rol, activo)
-  values (v_user_id, 'Admin', 'Local', 'admin@glazz.local', 'admin'::public.rol_usuario, true)
+  insert into public.usuarios (id, nombre, apellido, email, rol, activo, empresa_id)
+  values (v_user_id, 'Admin', 'Local', 'admin@glazz.local', 'admin'::public.rol_usuario, true,
+          (select id from public.empresas order by created_at limit 1))
   on conflict (id) do update
     set rol = 'admin'::public.rol_usuario,
         nombre = excluded.nombre,
         apellido = excluded.apellido,
         activo = true;
 end $$;
+
+-- El resto del seed corre como el admin local: asi current_empresa_id() resuelve y el
+-- DEFAULT de empresa_id deja cada fila en su empresa, igual que cuando escribe la app.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
 
 -- ==========================================================================
 -- Catalogos base
@@ -84,7 +89,7 @@ insert into public.categorias (nombre, descripcion, icono) values
   ('Perfileria','Perfiles de aluminio para marcos y hojas',            'minus'),
   ('Herrajes',  'Rodachinas, cerraduras, bisagras y accesorios',       'settings'),
   ('Sellantes', 'Siliconas, empaques y felpas',                        'droplet')
-on conflict (nombre) do nothing;
+on conflict (empresa_id, nombre) do nothing;
 
 insert into public.unidades_medida (nombre, simbolo, tipo) values
   ('Metro cuadrado', 'm2', 'area'::public.tipo_unidad),
@@ -92,7 +97,7 @@ insert into public.unidades_medida (nombre, simbolo, tipo) values
   ('Unidad',         'und','unidad'::public.tipo_unidad),
   ('Kilogramo',      'kg', 'peso'::public.tipo_unidad),
   ('Litro',          'L',  'volumen'::public.tipo_unidad)
-on conflict (nombre) do nothing;
+on conflict (empresa_id, nombre) do nothing;
 
 insert into public.tipos_producto (nombre, descripcion) values
   ('ventana'::public.tipo_producto_enum,  'Ventanas corredizas, proyectantes y fijas'),
@@ -100,7 +105,7 @@ insert into public.tipos_producto (nombre, descripcion) values
   ('division'::public.tipo_producto_enum, 'Divisiones de bano y oficina'),
   ('espejo'::public.tipo_producto_enum,   'Espejos con y sin marco'),
   ('otro'::public.tipo_producto_enum,     'Productos que no encajan en las categorias anteriores')
-on conflict (nombre) do nothing;
+on conflict (empresa_id, nombre) do nothing;
 
 -- ==========================================================================
 -- Inventario de ejemplo
@@ -121,7 +126,7 @@ from (values
   ('HER-ROD',  'Rodachina doble',       'Rodachina para ventana corrediza',  'Herrajes',   'und', 80.0,  20.0,   3200.0,   6500.0),
   ('SEL-SIL',  'Silicona neutra',       'Cartucho de silicona neutra 280ml', 'Sellantes',  'und', 25.0,  10.0,  11000.0,  18000.0)
 ) as v(codigo, nombre, descripcion, categoria, unidad, stock_actual, stock_minimo, precio_costo, precio_venta)
-on conflict (codigo) do nothing;
+on conflict (empresa_id, codigo) do nothing;
 
 -- ==========================================================================
 -- Cliente de ejemplo, para poder cotizar de inmediato
@@ -129,4 +134,4 @@ on conflict (codigo) do nothing;
 insert into public.clientes (nombre, apellido, tipo, documento, telefono, email, ciudad)
 values ('Cliente', 'De Prueba', 'natural'::public.tipo_cliente,
         '1000000000', '3000000000', 'cliente@glazz.local', 'Bogota')
-on conflict (documento) do nothing;
+on conflict (empresa_id, documento) do nothing;
