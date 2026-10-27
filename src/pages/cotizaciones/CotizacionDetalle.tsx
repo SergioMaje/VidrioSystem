@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
-import { useCotizacion, useCambiarEstadoCotizacion } from '@/hooks/useCotizaciones'
+import { useCotizacion, useCambiarEstadoCotizacion, useOrdenDeCotizacion } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
@@ -16,6 +16,7 @@ import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { estaLiquidada, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
+import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
 import type { Cliente, Cotizacion, CotizacionItem } from '@/types/database'
 
 const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline' }> = {
@@ -37,6 +38,7 @@ export function CotizacionDetalle() {
   const { data: cotizacion, isLoading } = useCotizacion(id ?? '')
   const { data: saldoInfo } = useSaldoCotizacion(id)
   const { data: pagos } = usePagosCotizacion(id)
+  const { data: orden } = useOrdenDeCotizacion(id)
   // Se cargan aqui y no dentro de imprimir(), que es sincrono y no puede esperar la query.
   const { data: cuentasPago } = useCuentasPagoEmpresa(true)
   const { data: empresa } = useConfiguracionEmpresa()
@@ -310,6 +312,25 @@ ${membreteCss}
           </div>
         </CardContent>
       </Card>
+
+      {orden && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Orden de trabajo</CardTitle>
+            <Button variant="outline" size="sm" onClick={() => navigate(`/ordenes/${orden.id}`)}>
+              <ClipboardList className="mr-2 h-4 w-4" />
+              Ver orden
+            </Button>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span className="font-mono font-medium">{orden.numero}</span>
+            <Badge variant={ESTADOS_ORDEN_CONFIG[orden.estado].variant}>{ESTADOS_ORDEN_CONFIG[orden.estado].label}</Badge>
+            {orden.fecha_entrega_estimada && (
+              <span className="text-muted-foreground">Entrega estimada: {formatFecha(orden.fecha_entrega_estimada)}</span>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 'aprobada' viene de un flujo anterior que creaba la orden sin cobrar:
           esas cotizaciones también necesitan poder cobrar su anticipo aquí. */}
