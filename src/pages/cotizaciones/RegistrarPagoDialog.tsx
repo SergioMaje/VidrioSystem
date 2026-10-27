@@ -12,8 +12,9 @@ import { useAuth } from '@/hooks/useAuth'
 import { useFinancieras } from '@/hooks/useFinancieras'
 import { useToast } from '@/hooks/useToast'
 import { CamposFinanciera } from '@/components/shared/CamposFinanciera'
+import { cajaVencida } from '@/lib/caja'
 import { METODO_PAGO_LABEL, anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo } from '@/lib/pagos'
-import { formatCOP, formatMiles, mensajeError, soloDigitos } from '@/lib/utils'
+import { formatCOP, formatFecha, formatMiles, mensajeError, soloDigitos } from '@/lib/utils'
 import type { Cotizacion, MetodoPago, Venta } from '@/types/database'
 
 type Props = {
@@ -163,11 +164,13 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        {!sesionCaja ? (
+        {!sesionCaja || cajaVencida(sesionCaja.opened_at) ? (
           <div className="space-y-4">
             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              Debes abrir caja antes de registrar un pago.
+              {sesionCaja
+                ? `La caja está abierta desde el ${formatFecha(sesionCaja.opened_at)}. Ciérrala y abre la de hoy antes de registrar un pago.`
+                : 'Debes abrir caja antes de registrar un pago.'}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
