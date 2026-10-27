@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
-import { fechaISOLocal, finDeDia, formatCOP, formatDuracion, formatFecha, formatFechaHora, formatHora } from '@/lib/utils'
+import { fechaISOLocal, finDeDia, formatCantidad, formatCOP, formatDuracion, formatFecha, formatFechaHora, formatHora } from '@/lib/utils'
 import { useHistorialCaja, useResumenSesiones } from '@/hooks/useCajaSesiones'
 import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
@@ -337,7 +337,7 @@ export function ReportesPage() {
                           <td className="px-4 py-3 font-medium">{item.nombre}</td>
                           <td className="px-4 py-3 text-muted-foreground">{item.categoria}</td>
                           <td className="px-4 py-3 text-right font-mono">
-                            {item.stock_actual} {item.unidad}
+                            {formatCantidad(item.stock_actual)} {item.unidad}
                           </td>
                           <td className="px-4 py-3 text-right font-mono">{formatCOP(item.precio_costo)}</td>
                           <td className="px-4 py-3 text-right font-semibold">{formatCOP(item.valor_total)}</td>

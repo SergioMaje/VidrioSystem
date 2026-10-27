@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2 } from 'lucide-react'
@@ -9,11 +9,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCategorias, useUnidadesMedida, useProveedores, useCrearItem, useEditarItem } from '@/hooks/useInventario'
 import { useToast } from '@/hooks/useToast'
 import { m2DeMedidas, precioPorPieza } from '@/lib/materiales'
-import { formatCOP } from '@/lib/utils'
+import { formatCantidad, formatCOP } from '@/lib/utils'
 import type { ItemInventario } from '@/types/database'
 
 /** Valor centinela: Radix no admite un SelectItem con value vacío. */
@@ -71,7 +72,7 @@ export function ItemFormDialog({ open, onOpenChange, item }: ItemFormDialogProps
   const editarItem = useEditarItem()
   const { toast } = useToast()
 
-  const { register, handleSubmit, setValue, watch, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { control, register, handleSubmit, setValue, watch, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
 
@@ -269,7 +270,7 @@ export function ItemFormDialog({ open, onOpenChange, item }: ItemFormDialogProps
                 </div>
                 {m2PorLamina && (
                   <p className="pt-1 text-sm">
-                    <span className="font-medium">{m2PorLamina.toFixed(2)} m²</span>{' '}
+                    <span className="font-medium">{formatCantidad(m2PorLamina)} m²</span>{' '}
                     <span className="text-muted-foreground">por lámina</span>
                   </p>
                 )}
@@ -315,7 +316,13 @@ export function ItemFormDialog({ open, onOpenChange, item }: ItemFormDialogProps
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Precio costo (COP{esPorArea ? ' por m²' : ''})</Label>
-                <Input type="number" step="1" {...register('precio_costo')} />
+                <Controller
+                  control={control}
+                  name="precio_costo"
+                  render={({ field }) => (
+                    <InputDinero value={field.value ? String(field.value) : ''} onChange={(d) => field.onChange(Number(d))} />
+                  )}
+                />
                 {/* El precio se almacena por unidad de medida — para el vidrio, por m² —
                     porque así lo multiplica el configurador. Este renglón traduce a la
                     vista con que se compra, para poder contrastarlo con la factura. */}
@@ -327,7 +334,13 @@ export function ItemFormDialog({ open, onOpenChange, item }: ItemFormDialogProps
               </div>
               <div className="space-y-2">
                 <Label>Precio venta (COP{esPorArea ? ' por m²' : ''})</Label>
-                <Input type="number" step="1" {...register('precio_venta')} />
+                <Controller
+                  control={control}
+                  name="precio_venta"
+                  render={({ field }) => (
+                    <InputDinero value={field.value ? String(field.value) : ''} onChange={(d) => field.onChange(Number(d))} />
+                  )}
+                />
                 {m2PorLamina && precioVentaActual > 0 && (
                   <p className="text-xs text-muted-foreground">
                     ≈ {formatCOP(precioPorPieza(precioVentaActual, m2PorLamina) ?? 0)} por lámina

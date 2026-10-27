@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
@@ -19,7 +20,7 @@ import {
   useVentasPorDesembolsar,
 } from '@/hooks/useFinancieras'
 import type { DesembolsoConDetalle } from '@/hooks/useFinancieras'
-import { fechaISOLocal, formatCOP, formatFecha, formatMiles, mensajeError, soloDigitos } from '@/lib/utils'
+import { fechaISOLocal, formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import type { VentaPorDesembolsar } from '@/types/database'
 
 const SIN_CUENTA = 'sin-cuenta'
@@ -437,17 +438,7 @@ function RegistrarDesembolsoDialog({
             </div>
             <div className="space-y-1.5">
               <Label>Monto recibido</Label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={monto === '' ? '' : formatMiles(Number(monto))}
-                  onChange={(e) => setMonto(soloDigitos(e.target.value))}
-                  className="pl-7 text-right font-mono"
-                />
-              </div>
+              <InputDinero value={monto} onChange={setMonto} />
             </div>
           </div>
 

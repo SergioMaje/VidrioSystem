@@ -33,6 +33,11 @@ export function formatMiles(valor: number): string {
   return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(valor)
 }
 
+/** Cantidades y stock: agrupa miles y deja hasta `decimales` decimales: 1500.5 → "1.500,5". */
+export function formatCantidad(valor: number, decimales = 2): string {
+  return new Intl.NumberFormat('es-CO', { maximumFractionDigits: decimales }).format(valor)
+}
+
 /** Deja solo los dígitos de lo que el usuario escribió en un input de dinero. */
 export function soloDigitos(texto: string): string {
   return texto.replace(/\D/g, '')

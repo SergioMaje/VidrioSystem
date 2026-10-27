@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Loader2, Lock } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useAbrirCaja } from '@/hooks/useCajaSesiones'
@@ -40,14 +40,7 @@ export function AbrirCajaCard() {
         </p>
         <div className="space-y-1">
           <Label>Monto inicial</Label>
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            value={monto}
-            onChange={(e) => setMonto(e.target.value)}
-            placeholder="0"
-          />
+          <InputDinero value={monto} onChange={setMonto} />
         </div>
         <Button className="w-full" onClick={handleAbrir} disabled={abrirCaja.isPending || !monto}>
           {abrirCaja.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

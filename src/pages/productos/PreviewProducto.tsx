@@ -1,5 +1,6 @@
 import { useId } from 'react'
 import { esRegular, nombrePiezaConLado, type CorteCalculado, type Medidas } from '@/lib/produccion'
+import { formatCantidad } from '@/lib/utils'
 import type { FormulaCorte, LadoCorredizo } from '@/types/database'
 
 interface PreviewProductoProps {
@@ -61,7 +62,7 @@ function orientacion(formula: FormulaCorte): 'h' | 'v' | null {
 
 function etiquetaCorte(c: CorteCalculado) {
   const veces = c.cantidad_piezas > 1 ? ` ×${c.cantidad_piezas}` : ''
-  return `${nombrePiezaConLado(c)} · ${c.valor_cm.toFixed(1)} cm${veces}`
+  return `${nombrePiezaConLado(c)} · ${formatCantidad(c.valor_cm, 1)} cm${veces}`
 }
 
 export function PreviewProducto({

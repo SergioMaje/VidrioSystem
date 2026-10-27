@@ -10,6 +10,7 @@ import { useCategorias, useUnidadesMedida, useCrearItemsMasivo } from '@/hooks/u
 import { useToast } from '@/hooks/useToast'
 import { descargarPlantillaProductos, leerProductosExcel, type ResultadoImportacion } from '@/lib/excelProductos'
 import { medidasFisicas } from '@/lib/materiales'
+import { formatCOP } from '@/lib/utils'
 import type { ItemInventario, Proveedor } from '@/types/database'
 
 interface ImportarProductosExcelProps {
@@ -144,8 +145,8 @@ export function ImportarProductosExcel({ proveedor, itemsExistentes }: ImportarP
                     <td className="px-3 py-2">{p.nombre}</td>
                     <td className="px-3 py-2"><ClaseBadge clase={p.clase_inventario} /></td>
                     <td className="px-3 py-2 text-muted-foreground">{medidasFisicas(p) ?? '—'}</td>
-                    <td className="px-3 py-2 text-right">{p.precio_costo}</td>
-                    <td className="px-3 py-2 text-right">{p.precio_venta}</td>
+                    <td className="px-3 py-2 text-right">{formatCOP(p.precio_costo)}</td>
+                    <td className="px-3 py-2 text-right">{formatCOP(p.precio_venta)}</td>
                   </tr>
                 ))}
               </tbody>

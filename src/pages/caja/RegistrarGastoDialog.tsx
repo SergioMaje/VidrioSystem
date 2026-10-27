@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useToast } from '@/hooks/useToast'
 import { useRegistrarGasto } from '@/hooks/useMovimientosCaja'
 import { CATEGORIA_GASTO_LABEL, METODOS_GASTO, METODO_PAGO_LABEL } from '@/lib/pagos'
-import { formatCOP, formatMiles, mensajeError, soloDigitos } from '@/lib/utils'
+import { InputDinero } from '@/components/shared/InputDinero'
+import { formatCOP, mensajeError } from '@/lib/utils'
 import type { CategoriaGasto, MetodoPago } from '@/types/database'
 
 type Props = {
@@ -96,22 +97,7 @@ export function RegistrarGastoDialog({ efectivoDisponible, open, onOpenChange }:
 
           <div className="space-y-1.5">
             <Label>Monto</Label>
-            {/* Mismo input de dinero que RegistrarPagoDialog: se teclean dígitos
-                y se muestran agrupados, para no confundir 20.000 con 200.000. */}
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                $
-              </span>
-              <Input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="0"
-                value={monto === '' ? '' : formatMiles(Number(monto))}
-                onChange={(e) => setMonto(soloDigitos(e.target.value))}
-                className="pl-7 text-right font-mono text-base"
-              />
-            </div>
+            <InputDinero value={monto} onChange={setMonto} inputClassName="text-base" />
             {metodoPago === 'efectivo' &&
               (sobrepasa ? (
                 <p className="text-xs text-destructive">

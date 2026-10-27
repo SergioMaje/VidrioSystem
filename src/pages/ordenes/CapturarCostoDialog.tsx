@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2 } from 'lucide-react'
@@ -7,7 +7,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useProveedores } from '@/hooks/useInventario'
@@ -34,7 +34,7 @@ export function CapturarCostoDialog({ material, open, onOpenChange }: CapturarCo
   const capturarCosto = useCapturarCostoMaterial()
   const { toast } = useToast()
 
-  const { register, handleSubmit, setValue, watch, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { control, handleSubmit, setValue, watch, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
 
@@ -73,7 +73,13 @@ export function CapturarCostoDialog({ material, open, onOpenChange }: CapturarCo
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label>Costo unitario (COP)</Label>
-            <Input type="number" step="1" {...register('costo_unitario')} />
+            <Controller
+              control={control}
+              name="costo_unitario"
+              render={({ field }) => (
+                <InputDinero value={field.value ? String(field.value) : ''} onChange={(d) => field.onChange(Number(d))} />
+              )}
+            />
             {errors.costo_unitario && <p className="text-xs text-destructive">{errors.costo_unitario.message}</p>}
           </div>
 

@@ -14,7 +14,7 @@ import { ItemFormDialog } from './ItemFormDialog'
 import { ExcelInventarioMenu } from './ExcelInventarioMenu'
 import { ItemDetalleDrawer } from './ItemDetalleDrawer'
 import { useItems, useCategorias } from '@/hooks/useInventario'
-import { formatCOP } from '@/lib/utils'
+import { formatCantidad, formatCOP } from '@/lib/utils'
 import { medidasFisicas } from '@/lib/materiales'
 import type { ItemInventario } from '@/types/database'
 
@@ -157,8 +157,8 @@ export function InventarioPage() {
                       <td className="px-4 py-3">
                         <ClaseBadge clase={item.clase_inventario} />
                       </td>
-                      <td className="px-4 py-3 text-right font-mono">{item.stock_actual}</td>
-                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">{item.stock_minimo}</td>
+                      <td className="px-4 py-3 text-right font-mono">{formatCantidad(item.stock_actual)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">{formatCantidad(item.stock_minimo)}</td>
                       <td className="px-4 py-3">{item.unidad_medida?.simbolo ?? '—'}</td>
                       <td className="px-4 py-3 text-right">{formatCOP(item.precio_costo)}</td>
                       <td className="px-4 py-3 text-right">{formatCOP(item.precio_venta)}</td>

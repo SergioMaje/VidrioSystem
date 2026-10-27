@@ -12,9 +12,10 @@ import { useAuth } from '@/hooks/useAuth'
 import { useFinancieras } from '@/hooks/useFinancieras'
 import { useToast } from '@/hooks/useToast'
 import { CamposFinanciera } from '@/components/shared/CamposFinanciera'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { cajaVencida } from '@/lib/caja'
 import { METODO_PAGO_LABEL, anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo } from '@/lib/pagos'
-import { formatCOP, formatFecha, formatMiles, mensajeError, soloDigitos } from '@/lib/utils'
+import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import type { Cotizacion, MetodoPago, Venta } from '@/types/database'
 
 type Props = {
@@ -198,23 +199,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
 
             <div className="space-y-1.5">
               <Label>Monto a recibir</Label>
-              {/* Se escribe solo en dígitos y se muestra agrupado en miles, para
-                  no confundir 150.000 con 1.500.000 al teclear. */}
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                  $
-                </span>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="0"
-                  value={monto === '' ? '' : formatMiles(Number(monto))}
-                  onChange={(e) => setMonto(soloDigitos(e.target.value))}
-                  disabled={esFinanciera}
-                  className="pl-7 text-right font-mono text-base"
-                />
-              </div>
+              <InputDinero value={monto} onChange={setMonto} disabled={esFinanciera} inputClassName="text-base" />
               <div className={`flex gap-2 pt-0.5 ${esFinanciera ? 'hidden' : ''}`}>
                 {esAnticipo && (
                   <Button type="button" variant="outline" size="sm" onClick={() => setMonto(String(minimo))}>

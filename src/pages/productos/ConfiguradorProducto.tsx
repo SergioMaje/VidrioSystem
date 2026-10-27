@@ -21,6 +21,7 @@ import { useReferencias } from '@/hooks/useReferencias'
 import { useItems } from '@/hooks/useInventario'
 import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
 import { escapar } from '@/lib/documentos'
+import { formatCantidad } from '@/lib/utils'
 import {
   altoNominal,
   anchoNominal,
@@ -355,10 +356,10 @@ export function ConfiguradorProducto({
     const plantillaNombre = plantillaSeleccionada?.nombre ?? '—'
     const referenciaNombre = referenciaSeleccionada?.nombre ?? null
     const colorLabel = COLORES_PERFIL.find((c) => c.value === colorPerfil)?.label ?? colorPerfil
-    const areaTexto = areaM2(medidas).toFixed(2)
-    const perimetroMl = (
+    const areaTexto = formatCantidad(areaM2(medidas))
+    const perimetroMl = formatCantidad(
       (medidas.anchoSuperiorCm + medidas.anchoInferiorCm + medidas.altoIzquierdoCm + medidas.altoDerechoCm) / 100
-    ).toFixed(2)
+    )
     const detalleLados = detalleMedidasPorLado(medidas)
     const fecha = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
@@ -395,7 +396,7 @@ export function ConfiguradorProducto({
             ${filasMateriales.map((m) => `
               <tr>
                 <td>${m.nombre}${m.opcion ? ' <span class="badge opcion">Opción</span>' : ''}</td>
-                <td>${m.cantidad.toFixed(2)}</td>
+                <td>${formatCantidad(m.cantidad)}</td>
                 <td>${m.simbolo}</td>
                 <td><span class="badge ${m.stock_ok ? 'ok' : 'no'}">${m.stock_ok ? 'Disponible' : 'Sin stock'}</span></td>
               </tr>
@@ -891,14 +892,14 @@ export function ConfiguradorProducto({
               )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Área</span>
-                <span className="font-medium">{areaM2(medidas).toFixed(2)} m²</span>
+                <span className="font-medium">{formatCantidad(areaM2(medidas))} m²</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Perímetro</span>
                 <span className="font-medium">
-                  {(
+                  {formatCantidad(
                     (medidas.anchoSuperiorCm + medidas.anchoInferiorCm + medidas.altoIzquierdoCm + medidas.altoDerechoCm) / 100
-                  ).toFixed(2)} ml
+                  )} ml
                 </span>
               </div>
               {referenciaSeleccionada && (
@@ -972,7 +973,7 @@ export function ConfiguradorProducto({
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {cantidad_calculada.toFixed(2)} {opcion.unidad_simbolo ?? ''}
+                        {formatCantidad(cantidad_calculada)} {opcion.unidad_simbolo ?? ''}
                         {opcion.desperdicio_pct > 0 && ` (inc. ${opcion.desperdicio_pct}% desperdicio)`}
                       </p>
                     </div>
@@ -986,7 +987,7 @@ export function ConfiguradorProducto({
                     <div className="flex-1">
                       <p className="font-medium">{mat.item?.nombre}</p>
                       <p className="text-xs text-muted-foreground">
-                        {mat.cantidad_calculada.toFixed(2)} {mat.item?.unidad_medida?.simbolo}
+                        {formatCantidad(mat.cantidad_calculada)} {mat.item?.unidad_medida?.simbolo}
                         {mat.desperdicio_pct > 0 && ` (inc. ${mat.desperdicio_pct}% desperdicio)`}
                       </p>
                     </div>
@@ -1018,7 +1019,7 @@ export function ConfiguradorProducto({
                         {c.cantidad_piezas} {c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}
                       </p>
                     </div>
-                    <span className="font-mono font-semibold">{c.valor_cm.toFixed(1)} cm</span>
+                    <span className="font-mono font-semibold">{formatCantidad(c.valor_cm, 1)} cm</span>
                   </div>
                 ))}
               </div>

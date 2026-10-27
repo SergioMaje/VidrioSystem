@@ -16,7 +16,7 @@ import { RegistrarRecorteDialog } from './RegistrarRecorteDialog'
 import { useMovimientos, useEliminarItem, useRegistrarMovimiento } from '@/hooks/useInventario'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import { formatCOP, formatFecha } from '@/lib/utils'
+import { formatCantidad, formatCOP, formatFecha } from '@/lib/utils'
 import { medidasFisicas, m2DeMedidas } from '@/lib/materiales'
 import type { ItemInventario } from '@/types/database'
 
@@ -130,7 +130,7 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Stock actual</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold">{item.stock_actual}</span>
+                  <span className="font-bold">{formatCantidad(item.stock_actual)}</span>
                   <StockBadge
                     stockActual={item.stock_actual}
                     stockMinimo={item.stock_minimo}
@@ -216,7 +216,7 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
                         if (n > 0) setValue('cantidad', Number((n * m2PorLamina).toFixed(3)))
                       }}
                     >
-                      = {((parseFloat(numLaminas) || 0) * m2PorLamina).toFixed(2)} m²
+                      = {formatCantidad((parseFloat(numLaminas) || 0) * m2PorLamina)} m²
                     </Button>
                   </div>
                 )}
@@ -247,7 +247,7 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
                         <p className="text-xs text-muted-foreground">{formatFecha(mov.created_at)}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-mono">{mov.tipo === 'entrada' ? '+' : mov.tipo === 'ajuste' ? '=' : '-'}{mov.cantidad}</p>
+                        <p className="font-mono">{mov.tipo === 'entrada' ? '+' : mov.tipo === 'ajuste' ? '=' : '-'}{formatCantidad(mov.cantidad)}</p>
                         <p className="text-xs text-muted-foreground">{mov.cantidad_anterior} → {mov.cantidad_posterior}</p>
                       </div>
                     </div>
