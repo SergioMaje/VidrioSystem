@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { TOLERANCIA } from '@/lib/pagos'
 import { formatCOP } from '@/lib/utils'
-import type { Cotizacion, CotizacionItem } from '@/types/database'
+import type { Cotizacion, CotizacionItem, OrdenTrabajo } from '@/types/database'
 
 /**
  * Marca como 'vencida' toda cotización en borrador/enviada cuya fecha_vencimiento
@@ -48,6 +48,26 @@ export function useCotizacion(id: string) {
       return data as Cotizacion & { items: CotizacionItem[] }
     },
     enabled: !!id,
+  })
+}
+
+/**
+ * La orden de trabajo que nació de la cotización al cobrar el anticipo. Es null
+ * mientras la cotización no se haya vendido.
+ */
+export function useOrdenDeCotizacion(cotizacionId: string | undefined) {
+  return useQuery({
+    queryKey: ['orden_de_cotizacion', cotizacionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ordenes_trabajo')
+        .select('id, numero, estado, fecha_entrega_estimada')
+        .eq('cotizacion_id', cotizacionId!)
+        .maybeSingle()
+      if (error) throw error
+      return data as Pick<OrdenTrabajo, 'id' | 'numero' | 'estado' | 'fecha_entrega_estimada'> | null
+    },
+    enabled: !!cotizacionId,
   })
 }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Play, CheckSquare, Truck, Loader2, Printer, Scissors, Calculator, Wallet, AlertCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -150,6 +150,7 @@ export function OrdenDetalle() {
     onSuccess: (_data, nuevoEstado) => {
       qc.invalidateQueries({ queryKey: ['orden', id] })
       qc.invalidateQueries({ queryKey: ['ordenes'] })
+      qc.invalidateQueries({ queryKey: ['orden_de_cotizacion'] })
       qc.invalidateQueries({ queryKey: ['dashboard_pipeline'] })
       qc.invalidateQueries({ queryKey: ['dashboard_entregas'] })
       if (nuevoEstado === 'en_produccion') {
@@ -320,7 +321,17 @@ export function OrdenDetalle() {
         </Button>
         <div className="flex-1">
           <h2 className="text-xl font-bold">{orden.numero}</h2>
-          <p className="text-sm text-muted-foreground">Creada el {formatFecha(orden.created_at)}</p>
+          <p className="text-sm text-muted-foreground">
+            Creada el {formatFecha(orden.created_at)}
+            {cotizacion && (
+              <>
+                {' · Cotización '}
+                <Link to={`/cotizaciones/${cotizacion.id}`} className="font-mono font-medium text-primary hover:underline">
+                  {cotizacion.numero}
+                </Link>
+              </>
+            )}
+          </p>
         </div>
         {itemsCotizacion && itemsCotizacion.length > 0 && (
           <Button variant="outline" size="sm" onClick={imprimirFichaProduccion}>

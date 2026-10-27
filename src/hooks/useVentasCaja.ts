@@ -267,8 +267,12 @@ export function useRegistrarAnticipo() {
     // (el RPC es atómico, pero la red puede cortarse tras el commit). Dejar la
     // caché sin refrescar tras un error fue lo que hizo que la UI siguiera
     // creyendo que no había pagos y ofreciera un anticipo ya cobrado.
-    onSettled: (_data, _err, variables) =>
-      invalidarPagos(qc, variables.cotizacion.id, variables.sessionId),
+    onSettled: (_data, _err, variables) => {
+      invalidarPagos(qc, variables.cotizacion.id, variables.sessionId)
+      // El RPC también crea la orden: la cotización debe mostrarla sin recargar.
+      qc.invalidateQueries({ queryKey: ['orden_de_cotizacion', variables.cotizacion.id] })
+      qc.invalidateQueries({ queryKey: ['ordenes'] })
+    },
   })
 }
 

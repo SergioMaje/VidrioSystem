@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { DollarSign } from 'lucide-react'
+import { AlertTriangle, DollarSign } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useCajaActual } from '@/hooks/useCajaSesiones'
-import { formatCOP } from '@/lib/utils'
+import { cajaVencida } from '@/lib/caja'
+import { formatCOP, formatFecha } from '@/lib/utils'
 import { AbrirCajaCard } from './AbrirCajaCard'
 import { CerrarCajaDialog } from './CerrarCajaDialog'
 import { MovimientosTab } from './MovimientosTab'
@@ -27,6 +28,44 @@ export function CajaPage() {
       <div className="space-y-4">
         <h2 className="text-xl font-bold">Caja</h2>
         <AbrirCajaCard />
+      </div>
+    )
+  }
+
+  const cerrarDialog = (
+    <CerrarCajaDialog
+      sessionId={sesion.id}
+      openingAmount={sesion.opening_amount}
+      open={cerrarOpen}
+      onOpenChange={setCerrarOpen}
+    />
+  )
+
+  // Turno de un día anterior: la base ya no acepta ventas, cobros ni gastos en
+  // él, así que lo único que se ofrece es arquearlo y cerrarlo.
+  if (cajaVencida(sesion.opened_at)) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-xl font-bold">Caja</h2>
+        <Card className="border-amber-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-amber-800">
+              <AlertTriangle className="h-4 w-4" />
+              La caja está abierta desde el {formatFecha(sesion.opened_at)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              La caja debe cerrarse cada día. Haz el arqueo y ciérrala para abrir la de hoy y seguir vendiendo.
+            </p>
+            <ResumenVentasSesion sessionId={sesion.id} openingAmount={sesion.opening_amount} />
+            <Button onClick={() => setCerrarOpen(true)}>
+              <DollarSign className="mr-2 h-4 w-4" />
+              Cerrar caja
+            </Button>
+          </CardContent>
+        </Card>
+        {cerrarDialog}
       </div>
     )
   }
@@ -79,12 +118,7 @@ export function CajaPage() {
         </TabsContent>
       </Tabs>
 
-      <CerrarCajaDialog
-        sessionId={sesion.id}
-        openingAmount={sesion.opening_amount}
-        open={cerrarOpen}
-        onOpenChange={setCerrarOpen}
-      />
+      {cerrarDialog}
     </div>
   )
 }
