@@ -13,8 +13,9 @@ import { useClientes } from '@/hooks/useClientes'
 import { useRegistrarVentaMostrador } from '@/hooks/useVentaMostrador'
 import { useFinancieras } from '@/hooks/useFinancieras'
 import { CamposFinanciera } from '@/components/shared/CamposFinanciera'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { METODO_PAGO_LABEL } from '@/lib/pagos'
-import { formatCOP, mensajeError } from '@/lib/utils'
+import { formatCantidad, formatCOP, mensajeError } from '@/lib/utils'
 import type { ItemInventario, MetodoPago } from '@/types/database'
 
 /** Sin cliente = venta a público general, así que el select necesita un valor vacío propio. */
@@ -163,7 +164,7 @@ export function VenderTab() {
                   <div className="shrink-0 text-right">
                     <p className="font-mono">{formatCOP(item.precio_venta)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {item.stock_actual <= 0 ? 'Sin stock' : `Stock: ${item.stock_actual}`}
+                      {item.stock_actual <= 0 ? 'Sin stock' : `Stock: ${formatCantidad(item.stock_actual)}`}
                     </p>
                   </div>
                   <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -205,12 +206,12 @@ export function VenderTab() {
                           <td className="px-4 py-3">
                             <p className="font-medium">{linea.item.nombre}</p>
                             <p className="font-mono text-xs text-muted-foreground">
-                              {linea.item.codigo} · Stock: {linea.item.stock_actual}
+                              {linea.item.codigo} · Stock: {formatCantidad(linea.item.stock_actual)}
                             </p>
                             {excede && (
                               <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
                                 <TriangleAlert className="h-3 w-3" />
-                                Solo hay {linea.item.stock_actual} disponibles
+                                Solo hay {formatCantidad(linea.item.stock_actual)} disponibles
                               </p>
                             )}
                             {faltaPrecio && (
@@ -233,15 +234,11 @@ export function VenderTab() {
                             />
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <Input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={linea.precioUnitario}
-                              onChange={(e) =>
-                                actualizar(linea.item.id, { precioUnitario: Number(e.target.value) })
-                              }
-                              className={`ml-auto w-32 text-right ${faltaPrecio ? 'border-destructive' : ''}`}
+                            <InputDinero
+                              value={linea.precioUnitario ? String(linea.precioUnitario) : ''}
+                              onChange={(d) => actualizar(linea.item.id, { precioUnitario: Number(d) })}
+                              className="ml-auto w-32"
+                              inputClassName={faltaPrecio ? 'border-destructive' : ''}
                             />
                           </td>
                           <td className="px-4 py-3 text-right font-semibold">

@@ -5,9 +5,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { useClientes } from '@/hooks/useClientes'
 import { resumenOpciones } from '@/lib/opciones'
-import { formatCOP, cn } from '@/lib/utils'
+import { formatCantidad, formatCOP, cn } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem, nombreColorPerfil } from '@/lib/produccion'
 import { LADO_MEDICION_LABELS, textoLadoCorredizo } from '@/lib/lados'
 import type { CotizacionItem } from '@/types/database'
@@ -162,7 +163,7 @@ export function PanelCotizacion({
                         <span>Medidas</span>
                         <span className="font-mono text-foreground">
                           {item.ancho_cm ?? '—'} × {item.alto_cm ?? '—'} cm
-                          {item.area_m2 != null && ` (${item.area_m2.toFixed(2)} m²)`}
+                          {item.area_m2 != null && ` (${formatCantidad(item.area_m2)} m²)`}
                         </span>
                       </div>
                     )}
@@ -221,12 +222,10 @@ export function PanelCotizacion({
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Precio unit.</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={item.precio_unitario}
-                        onChange={(e) => onUpdateItem(idx, 'precio_unitario', parseFloat(e.target.value) || 0)}
-                        className="h-7 text-sm"
+                      <InputDinero
+                        value={item.precio_unitario ? String(item.precio_unitario) : ''}
+                        onChange={(d) => onUpdateItem(idx, 'precio_unitario', Number(d) || 0)}
+                        inputClassName="h-7 text-sm"
                       />
                     </div>
                   </div>

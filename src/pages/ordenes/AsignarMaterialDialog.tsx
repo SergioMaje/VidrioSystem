@@ -12,6 +12,7 @@ import { useSugerenciasMaterial, useAsignarMaterial } from '@/hooks/useOrdenMate
 import { useProveedores } from '@/hooks/useInventario'
 import { useToast } from '@/hooks/useToast'
 import { ORIGEN_MATERIAL_LABELS } from '@/lib/materiales'
+import { formatCantidad } from '@/lib/utils'
 import type { OrdenMaterial, SugerenciaMaterial } from '@/types/database'
 
 interface AsignarMaterialDialogProps {
@@ -100,7 +101,7 @@ export function AsignarMaterialDialog({ material, open, onOpenChange }: AsignarM
                     <span>
                       {s.origen === 'sobre_pedido'
                         ? 'Se compra para esta orden'
-                        : `Disponible: ${s.stock_actual}`}
+                        : `Disponible: ${formatCantidad(s.stock_actual)}`}
                       {s.ancho_cm && s.alto_cm ? ` · ${s.ancho_cm} × ${s.alto_cm} cm` : ''}
                     </span>
                     {s.origen !== 'sobre_pedido' && (

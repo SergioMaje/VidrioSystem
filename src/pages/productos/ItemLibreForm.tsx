@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { formatCOP } from '@/lib/utils'
+import { InputDinero } from '@/components/shared/InputDinero'
+import { formatCantidad, formatCOP } from '@/lib/utils'
 import type { EdicionItem } from './ConfiguradorProducto'
 import type { ItemCotizacion } from './PanelCotizacion'
 
@@ -61,7 +62,7 @@ export function ItemLibreForm({
     setAnchoCm(item.ancho_cm != null ? String(item.ancho_cm) : '')
     setAltoCm(item.alto_cm != null ? String(item.alto_cm) : '')
     setCantidad(String(item.cantidad))
-    setPrecioUnitario(String(item.precio_unitario))
+    setPrecioUnitario(String(Math.round(item.precio_unitario)))
     setNotas(item.notas ?? '')
   }, [edicion])
 
@@ -177,7 +178,7 @@ export function ItemLibreForm({
           </div>
           {areaM2 != null && (
             <p className="text-xs text-muted-foreground">
-              Área: <span className="font-mono text-foreground">{areaM2.toFixed(2)} m²</span>
+              Área: <span className="font-mono text-foreground">{formatCantidad(areaM2)} m²</span>
             </p>
           )}
 
@@ -196,14 +197,7 @@ export function ItemLibreForm({
               <Label htmlFor="precio-libre">
                 Precio unitario <span className="text-destructive">*</span>
               </Label>
-              <Input
-                id="precio-libre"
-                type="number"
-                min={0}
-                placeholder="0"
-                value={precioUnitario}
-                onChange={(e) => setPrecioUnitario(e.target.value)}
-              />
+              <InputDinero id="precio-libre" value={precioUnitario} onChange={setPrecioUnitario} />
             </div>
           </div>
 

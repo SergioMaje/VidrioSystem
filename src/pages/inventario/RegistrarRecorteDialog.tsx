@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useRegistrarRecorte } from '@/hooks/useInventario'
 import { useToast } from '@/hooks/useToast'
+import { formatCantidad } from '@/lib/utils'
 import type { ItemInventario } from '@/types/database'
 
 const schema = z.object({
@@ -91,7 +92,7 @@ export function RegistrarRecorteDialog({ item, open, onOpenChange }: RegistrarRe
 
           {cantidadEstimada !== null && (
             <p className="text-sm text-muted-foreground">
-              Se recuperan aproximadamente <span className="font-medium">{cantidadEstimada.toFixed(2)}</span>{' '}
+              Se recuperan aproximadamente <span className="font-medium">{formatCantidad(cantidadEstimada)}</span>{' '}
               {item.unidad_medida?.simbolo}
             </p>
           )}

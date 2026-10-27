@@ -14,7 +14,7 @@ import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfi
 import { useToast } from '@/hooks/useToast'
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { estaLiquidada, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
-import { formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
+import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
 import type { Cliente, Cotizacion, CotizacionItem } from '@/types/database'
@@ -84,7 +84,7 @@ export function CotizacionDetalle() {
           ${escapar(item.descripcion)}${item.ancho_cm && item.alto_cm ? ` <span class="dim">(${item.ancho_cm} × ${item.alto_cm} cm)</span>` : ''}
           ${detalleMedidasPorLado(medidasDeItem(item)) ? `<br/><span class="dim">${escapar(detalleMedidasPorLado(medidasDeItem(item))!)}</span>` : ''}
         </td>
-        <td class="right">${item.cantidad}</td>
+        <td class="right">${formatCantidad(item.cantidad)}</td>
         <td class="right">${formatCOP(item.precio_unitario)}</td>
         <td class="right"><strong>${formatCOP(item.precio_total)}</strong></td>
       </tr>`).join('')
@@ -295,7 +295,7 @@ ${membreteCss}
                       <p className="text-xs text-amber-700">{detalleMedidasPorLado(medidasDeItem(item))}</p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono">{item.cantidad}</td>
+                  <td className="px-4 py-3 text-right font-mono">{formatCantidad(item.cantidad)}</td>
                   <td className="px-4 py-3 text-right font-mono">{formatCOP(item.precio_unitario)}</td>
                   <td className="px-4 py-3 text-right font-mono font-medium">{formatCOP(item.precio_total)}</td>
                 </tr>

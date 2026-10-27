@@ -10,7 +10,7 @@ import { expirarCotizacionesVencidas } from '@/hooks/useCotizaciones'
 import { useCotizacionesMorosas } from '@/hooks/useVentasCaja'
 import { useVentasPorDesembolsar } from '@/hooks/useFinancieras'
 import { supabase } from '@/lib/supabase'
-import { getSaludo, formatFecha, formatCOP, diasHasta } from '@/lib/utils'
+import { getSaludo, formatFecha, formatCantidad, formatCOP, diasHasta } from '@/lib/utils'
 import { ESTADOS_ORDEN_CONFIG, ESTADOS_ACTIVOS } from '@/lib/estadosOrden'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import type { OrdenTrabajo } from '@/types/database'
@@ -313,7 +313,7 @@ export function DashboardPage() {
                     <div>
                       <p className="text-sm font-medium">{item.nombre}</p>
                       <p className="text-xs text-muted-foreground">
-                        Stock: {item.stock_actual} / Mín: {item.stock_minimo}
+                        Stock: {formatCantidad(item.stock_actual)} / Mín: {formatCantidad(item.stock_minimo)}
                       </p>
                     </div>
                     <Badge variant={item.stock_actual === 0 ? 'destructive' : 'warning'}>

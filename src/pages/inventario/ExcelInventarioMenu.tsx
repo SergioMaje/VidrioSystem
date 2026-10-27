@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/useToast'
 import { descargarPlantillaProductos, leerProductosExcel, type ResultadoImportacion } from '@/lib/excelProductos'
 import { descargarPlantillaStock, leerStockExcel, type ResultadoCargaStock } from '@/lib/excelStock'
 import { medidasFisicas } from '@/lib/materiales'
-import { formatCOP } from '@/lib/utils'
+import { formatCantidad, formatCOP } from '@/lib/utils'
 import type { ItemInventario } from '@/types/database'
 
 interface ExcelInventarioMenuProps {
@@ -276,8 +276,8 @@ export function ExcelInventarioMenu({ items }: ExcelInventarioMenuProps) {
                   <tr key={e.item_id} className="border-b last:border-0">
                     <td className="px-3 py-2 font-mono">{e.codigo}</td>
                     <td className="px-3 py-2">{e.nombre}</td>
-                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{e.stock_actual}</td>
-                    <td className="px-3 py-2 text-right font-mono text-emerald-600">+{e.cantidad}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{formatCantidad(e.stock_actual)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-emerald-600">+{formatCantidad(e.cantidad)}</td>
                     <td className="px-3 py-2 text-right font-mono font-medium">{e.stock_actual + e.cantidad}</td>
                   </tr>
                 ))}

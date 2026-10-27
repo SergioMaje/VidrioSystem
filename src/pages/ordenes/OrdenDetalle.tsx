@@ -17,7 +17,7 @@ import { escapar } from '@/lib/documentos'
 import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
 import { MaterialesOrdenPanel } from './MaterialesOrdenPanel'
 import { anticipoMinimo, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
-import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
+import { formatCantidad, formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import {
   calcularCortes,
   calcularMateriales,
@@ -193,7 +193,7 @@ export function OrdenDetalle() {
               <tr>
                 <td>${nombrePiezaConLado(c)}</td>
                 <td>${c.cantidad_piezas} ${c.cantidad_piezas === 1 ? 'pieza' : 'piezas'}${item.cantidad > 1 ? ` × ${item.cantidad} und = ${c.cantidad_piezas * item.cantidad}` : ''}</td>
-                <td class="right"><strong>${c.valor_cm.toFixed(1)} cm</strong></td>
+                <td class="right"><strong>${formatCantidad(c.valor_cm, 1)} cm</strong></td>
               </tr>
             `).join('')}
           </tbody>
@@ -207,7 +207,7 @@ export function OrdenDetalle() {
             ${materiales.map((m) => `
               <tr>
                 <td>${m.nombre}</td>
-                <td class="right">${m.cantidad.toFixed(2)}</td>
+                <td class="right">${formatCantidad(m.cantidad)}</td>
                 <td>${m.simbolo || '—'}</td>
               </tr>
             `).join('')}
@@ -464,7 +464,7 @@ export function OrdenDetalle() {
                                     {item.cantidad > 1 && ` × ${item.cantidad} und = ${c.cantidad_piezas * item.cantidad}`}
                                   </p>
                                 </div>
-                                <span className="font-mono font-semibold">{c.valor_cm.toFixed(1)} cm</span>
+                                <span className="font-mono font-semibold">{formatCantidad(c.valor_cm, 1)} cm</span>
                               </div>
                             ))}
                           </div>
@@ -481,7 +481,7 @@ export function OrdenDetalle() {
                               <div key={m.key} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                                 <p className="font-medium">{m.nombre}</p>
                                 <span className="font-mono text-muted-foreground">
-                                  {m.cantidad.toFixed(2)} {m.simbolo}
+                                  {formatCantidad(m.cantidad)} {m.simbolo}
                                 </span>
                               </div>
                             ))}

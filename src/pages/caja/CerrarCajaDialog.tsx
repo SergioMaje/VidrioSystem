@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { useToast } from '@/hooks/useToast'
 import { useCerrarCaja } from '@/hooks/useCajaSesiones'
 import { formatCOP, mensajeError } from '@/lib/utils'
@@ -73,14 +73,7 @@ export function CerrarCajaDialog({
             <ResumenVentasSesion sessionId={sessionId} openingAmount={openingAmount} />
             <div className="space-y-1">
               <Label>Conteo físico de efectivo</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={conteo}
-                onChange={(e) => setConteo(e.target.value)}
-                placeholder="0"
-              />
+              <InputDinero value={conteo} onChange={setConteo} />
             </div>
           </div>
         )}
