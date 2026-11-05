@@ -17,7 +17,7 @@ import { escapar } from '@/lib/documentos'
 import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
 import { MaterialesOrdenPanel } from './MaterialesOrdenPanel'
 import { anticipoMinimo, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
-import { formatCantidad, formatCOP, formatFecha, mensajeError } from '@/lib/utils'
+import { formatCantidad, formatCOP, formatFecha, hoyBogota, mensajeError } from '@/lib/utils'
 import {
   calcularCortes,
   calcularMateriales,
@@ -128,8 +128,8 @@ export function OrdenDetalle() {
   const cambiarEstado = useMutation({
     mutationFn: async (nuevoEstado: OrdenTrabajo['estado']) => {
       const updates: Partial<OrdenTrabajo> = { estado: nuevoEstado }
-      if (nuevoEstado === 'en_produccion') updates.fecha_inicio = new Date().toISOString().split('T')[0]
-      if (nuevoEstado === 'entregada') updates.fecha_entrega_real = new Date().toISOString().split('T')[0]
+      if (nuevoEstado === 'en_produccion') updates.fecha_inicio = hoyBogota()
+      if (nuevoEstado === 'entregada') updates.fecha_entrega_real = hoyBogota()
 
       const { error } = await supabase.from('ordenes_trabajo').update(updates).eq('id', id!)
       if (error) throw error

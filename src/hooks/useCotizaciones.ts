@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { TOLERANCIA } from '@/lib/pagos'
-import { formatCOP } from '@/lib/utils'
+import { formatCOP, hoyBogota } from '@/lib/utils'
 import type { Cotizacion, CotizacionItem, OrdenTrabajo } from '@/types/database'
 
 /**
@@ -11,7 +11,7 @@ import type { Cotizacion, CotizacionItem, OrdenTrabajo } from '@/types/database'
  * no encuentra filas la mayoría de las veces).
  */
 export async function expirarCotizacionesVencidas() {
-  const hoy = new Date().toISOString().split('T')[0]
+  const hoy = hoyBogota()
   await supabase
     .from('cotizaciones')
     .update({ estado: 'vencida' })
@@ -101,7 +101,7 @@ export function useCrearCotizacion() {
           cliente_id: input.cliente_id,
           usuario_id: input.usuario_id,
           estado: input.estado ?? 'borrador',
-          fecha_emision: new Date().toISOString().split('T')[0],
+          fecha_emision: hoyBogota(),
           fecha_vencimiento: input.fecha_vencimiento ?? null,
           subtotal,
           descuento_pct: input.descuento_pct,
