@@ -9,14 +9,11 @@ import { useReferencias } from '@/hooks/useReferencias'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { PageLoader } from '@/components/shared/LoadingSpinner'
+import { hoyBogota, sumarDias } from '@/lib/utils'
 
 type ModoItem = 'referencia' | 'libre'
 
-const vencimientoPorDefecto = () => {
-  const fecha = new Date()
-  fecha.setDate(fecha.getDate() + 7)
-  return fecha.toISOString().split('T')[0]
-}
+const vencimientoPorDefecto = () => sumarDias(hoyBogota(), 7)
 
 export function CotizacionFormPage() {
   const { id } = useParams<{ id?: string }>()

@@ -43,8 +43,14 @@ export function soloDigitos(texto: string): string {
   return texto.replace(/\D/g, '')
 }
 
+const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * `new Date('2026-11-05')` se lee como medianoche UTC y en Colombia (UTC-5)
+ * cae en el día anterior, así que las columnas `date` se parsean como fecha local.
+ */
 export function formatFecha(dateStr: string): string {
-  const date = new Date(dateStr)
+  const date = new Date(SOLO_FECHA.test(dateStr) ? dateStr + 'T00:00:00' : dateStr)
   return new Intl.DateTimeFormat('es-CO', {
     day: '2-digit',
     month: '2-digit',
@@ -82,6 +88,23 @@ export function fechaISOLocal(fecha: Date | string): string {
   const mes = String(d.getMonth() + 1).padStart(2, '0')
   const dia = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${mes}-${dia}`
+}
+
+const fechaBogota = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' })
+
+/**
+ * Fecha de hoy (YYYY-MM-DD) en hora Colombia. `toISOString()` usa UTC y desde
+ * las 19:00 ya devuelve el día siguiente.
+ */
+export function hoyBogota(): string {
+  return fechaBogota.format(new Date())
+}
+
+/** Suma días a una fecha YYYY-MM-DD sin pasar por UTC. */
+export function sumarDias(fecha: string, dias: number): string {
+  const d = new Date(fecha + 'T00:00:00')
+  d.setDate(d.getDate() + dias)
+  return fechaISOLocal(d)
 }
 
 /**
