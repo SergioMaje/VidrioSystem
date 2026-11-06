@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Banknote, Download, FileSpreadsheet, HandCoins, Landmark, TrendingUp } from 'lucide-react'
+import { Ban, Banknote, Download, FileSpreadsheet, HandCoins, Landmark, TrendingUp } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,8 +17,9 @@ import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
 import { useDesembolsos } from '@/hooks/useFinancieras'
 import { ResumenVentasSesion } from '@/pages/caja/ResumenVentasSesion'
+import { BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { FinancierasTab } from './FinancierasTab'
-import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, destinoDePago, esPagoFinanciera, origenDeVenta } from '@/lib/pagos'
+import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, destinoDePago, esPagoFinanciera, esVentaAnulada, origenDeVenta } from '@/lib/pagos'
 import type { Venta } from '@/types/database'
 
 type ItemValorizado = {
@@ -157,7 +158,12 @@ export function ReportesPage() {
     enabled: !!desde && !!hasta,
   })
 
-  const { data: ingresos, isLoading: loadingIngresos } = useVentasPeriodo(desde, hasta)
+  const { data: pagosPeriodo, isLoading: loadingIngresos } = useVentasPeriodo(desde, hasta)
+  // Un cobro anulado no es venta ni ingreso: sale de todos los totales y del CSV,
+  // y se consulta aparte en "Ver anuladas" con su motivo.
+  const ingresos = pagosPeriodo?.filter((v) => !esVentaAnulada(v))
+  const anuladas = (pagosPeriodo ?? []).filter(esVentaAnulada)
+  const [verAnuladas, setVerAnuladas] = useState(false)
   const { data: desembolsos } = useDesembolsos(desde, hasta)
   const desembolsosVivos = (desembolsos ?? []).filter((d) => !d.anulado_at)
 
@@ -629,11 +635,72 @@ export function ReportesPage() {
 
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Detalle de pagos de clientes</h3>
-            <Button variant="outline" onClick={exportarDetalleIngresos} disabled={!ingresos || ingresos.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              Exportar CSV
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant={verAnuladas ? 'secondary' : 'outline'}
+                onClick={() => setVerAnuladas((v) => !v)}
+                disabled={anuladas.length === 0 && !verAnuladas}
+              >
+                <Ban className="mr-2 h-4 w-4" />
+                {verAnuladas ? 'Ocultar anuladas' : `Ver anuladas (${anuladas.length})`}
+              </Button>
+              <Button variant="outline" onClick={exportarDetalleIngresos} disabled={!ingresos || ingresos.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Exportar CSV
+              </Button>
+            </div>
           </div>
+
+          {verAnuladas && (
+            <Card className="border-destructive/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Ventas anuladas en el período</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  No suman en ningún total. Su reverso quedó registrado en la caja como egreso.
+                </p>
+              </CardHeader>
+              <CardContent className="p-0">
+                {anuladas.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">No hay ventas anuladas en el período</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50 text-xs font-medium uppercase text-muted-foreground">
+                          <th className="px-4 py-3 text-left">Cobrado</th>
+                          <th className="px-4 py-3 text-left">N° Documento</th>
+                          <th className="px-4 py-3 text-left">Método</th>
+                          <th className="px-4 py-3 text-right">Monto</th>
+                          <th className="px-4 py-3 text-left">Motivo</th>
+                          <th className="px-4 py-3 text-left">Anuló</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {anuladas.map((v) => (
+                          <tr key={v.id} className="border-b last:border-0">
+                            <td className="px-4 py-3 text-muted-foreground">{formatFechaHora(v.created_at)}</td>
+                            <td className="px-4 py-3 font-mono text-xs">
+                              {origenDeVenta(v).numero}
+                              <BadgeAnulada motivo={v.motivo_anulacion} />
+                            </td>
+                            <td className="px-4 py-3">{METODO_PAGO_LABEL[v.metodo_pago]}</td>
+                            <td className="px-4 py-3 text-right font-mono line-through">{formatCOP(v.monto)}</td>
+                            <td className="px-4 py-3">{v.motivo_anulacion}</td>
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {v.anulado_por_usuario
+                                ? `${v.anulado_por_usuario.nombre} ${v.anulado_por_usuario.apellido}`
+                                : '—'}
+                              {v.anulado_at && <p className="text-xs">{formatFechaHora(v.anulado_at)}</p>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardContent className="p-0">
@@ -759,7 +826,14 @@ export function ReportesPage() {
                             {sesion.closed_at ? formatDuracion(sesion.opened_at, sesion.closed_at) : '—'}
                           </td>
                           <td className="px-4 py-3">{sesion.cerrada_por ? `${sesion.cerrada_por.nombre} ${sesion.cerrada_por.apellido}` : '—'}</td>
-                          <td className="px-4 py-3 text-right font-semibold">{resumen ? formatCOP(resumen.total_cobrado) : '—'}</td>
+                          <td className="px-4 py-3 text-right font-semibold">
+                            {resumen ? formatCOP(resumen.total_cobrado - resumen.total_anulado) : '—'}
+                            {resumen && resumen.num_anulados > 0 && (
+                              <p className="text-xs font-normal text-muted-foreground">
+                                {resumen.num_anulados} anulada(s)
+                              </p>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-right font-mono">
                             {resumen && resumen.total_gastos > 0 ? (
                               <span className="text-destructive">−{formatCOP(resumen.total_gastos)}</span>

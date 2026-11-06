@@ -2,7 +2,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { TOLERANCIA, anticipoMinimo, cumpleAnticipoMinimo, estaLiquidada, excedeSaldo, tipoDePago } from '@/lib/pagos'
 import { finDeDia, formatCOP } from '@/lib/utils'
-import type { Cotizacion, CotizacionSaldo, Usuario, Venta } from '@/types/database'
+import type {
+  CashRegisterSession,
+  Cotizacion,
+  CotizacionSaldo,
+  OrdenTrabajo,
+  Usuario,
+  Venta,
+  VentaMostradorItem,
+} from '@/types/database'
 
 /** Origen de un pago: una cotización o una venta de mostrador, nunca las dos. */
 type Origen = { numero: string; cliente: { nombre: string; apellido: string } | null } | null
@@ -34,6 +42,7 @@ export type VentaReporte = Venta & {
   cotizacion: Origen
   venta_mostrador: Origen
   usuario: { nombre: string; apellido: string } | null
+  anulado_por_usuario: { nombre: string; apellido: string } | null
 }
 
 /** Ventas de un rango de fechas, sin importar el turno de caja: base del reporte de ingresos. */
@@ -46,7 +55,7 @@ export function useVentasPeriodo(desde: string, hasta: string) {
         .select(
           // `ventas` tiene dos FK a `usuarios` (usuario_id y autorizado_por): sin el
           // hint explícito PostgREST no sabe cuál usar y responde 300 (PGRST201).
-          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), venta_mostrador:ventas_mostrador(numero, cliente:clientes(nombre, apellido)), usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido)'
+          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), venta_mostrador:ventas_mostrador(numero, cliente:clientes(nombre, apellido)), usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido), anulado_por_usuario:usuarios!ventas_anulado_por_fkey(nombre, apellido)'
         )
         .gte('created_at', desde)
         .lt('created_at', finDeDia(hasta))
@@ -60,6 +69,7 @@ export function useVentasPeriodo(desde: string, hasta: string) {
 
 export type PagoConUsuario = Venta & {
   usuario: Pick<Usuario, 'nombre' | 'apellido'> | null
+  anulado_por_usuario: Pick<Usuario, 'nombre' | 'apellido'> | null
 }
 
 /** Saldo de una cotización, derivado en la vista `cotizaciones_saldo`. */
@@ -87,7 +97,9 @@ export function usePagosCotizacion(cotizacionId: string | null | undefined) {
       const { data, error } = await supabase
         .from('ventas')
         // Mismo motivo que en useVentasPeriodo: el hint de FK es obligatorio.
-        .select('*, usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido)')
+        .select(
+          '*, usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido), anulado_por_usuario:usuarios!ventas_anulado_por_fkey(nombre, apellido)'
+        )
         .eq('cotizacion_id', cotizacionId as string)
         .order('created_at')
       if (error) throw error
@@ -224,6 +236,7 @@ export function useRegistrarAnticipo() {
       motivoAutorizacion,
       financieraId,
       referenciaFinanciera,
+      idempotencyKey,
     }: {
       cotizacion: Cotizacion
       sessionId: string | undefined
@@ -235,6 +248,12 @@ export function useRegistrarAnticipo() {
       /** Obligatoria con metodoPago 'financiera'; el crédito cubre el total. */
       financieraId?: string
       referenciaFinanciera?: string
+      /**
+       * Una por apertura del diálogo. Si la misma petición llega dos veces (doble
+       * clic, reintento tras un corte de red), el RPC devuelve la orden ya creada
+       * sin cobrar otra vez.
+       */
+      idempotencyKey?: string
     }) => {
       if (!sessionId) throw new Error('Debes abrir caja antes de registrar el anticipo')
       if (monto <= 0) throw new Error('El anticipo debe ser mayor a cero')
@@ -260,6 +279,7 @@ export function useRegistrarAnticipo() {
         p_motivo_autorizacion: motivoAutorizacion?.trim() || null,
         p_financiera_id: metodoPago === 'financiera' ? financieraId : null,
         p_referencia_financiera: metodoPago === 'financiera' ? referenciaFinanciera?.trim() || null : null,
+        p_idempotency_key: idempotencyKey ?? null,
       })
       if (error) throw error
     },
@@ -291,12 +311,15 @@ export function useRegistrarAbono() {
       metodoPago,
       monto,
       usuarioId,
+      idempotencyKey,
     }: {
       cotizacionId: string
       sessionId: string | undefined
       metodoPago: Venta['metodo_pago']
       monto: number
       usuarioId: string
+      /** Ver useRegistrarAnticipo: la misma clave no cobra dos veces. */
+      idempotencyKey?: string
     }) => {
       if (!sessionId) throw new Error('Debes abrir caja antes de registrar un abono')
       if (monto <= 0) throw new Error('El abono debe ser mayor a cero')
@@ -326,10 +349,156 @@ export function useRegistrarAbono() {
         monto,
         tipo: tipoDePago(total_abonado, monto, total),
         usuario_id: usuarioId,
+        idempotency_key: idempotencyKey ?? null,
       })
+      // La misma clave ya entró: es un reintento de un abono ya cobrado, no un
+      // error. Se trata como éxito para no ofrecer cobrarlo otra vez.
+      if (error?.code === '23505' && error.message.includes('ventas_idempotency_key_key')) return
       if (error) throw error
     },
     onSettled: (_data, _err, variables) =>
       invalidarPagos(qc, variables.cotizacionId, variables.sessionId),
+  })
+}
+
+/** Lo que necesita el diálogo de anulación para anunciar los efectos antes de confirmar. */
+export type PreviaAnulacion = {
+  /** Caja donde entró el cobro. */
+  cajaOriginal: Pick<CashRegisterSession, 'id' | 'status' | 'opened_at'> | null
+  /** Caja abierta hoy, a donde iría el reverso si la original ya cerró. */
+  cajaAbierta: Pick<CashRegisterSession, 'id' | 'opened_at'> | null
+  /** Otros cobros activos de la misma cotización (en el duplicado, el válido). */
+  otrosCobrosActivos: number
+  cotizacion: Pick<Cotizacion, 'numero' | 'estado' | 'estado_previo_venta'> | null
+  ordenes: Pick<OrdenTrabajo, 'id' | 'numero' | 'estado'>[]
+  /** Si alguna orden ya consumió material del inventario. */
+  materialConsumido: boolean
+  /** Líneas de la venta de mostrador que volverían al inventario. */
+  itemsMostrador: Pick<VentaMostradorItem, 'id' | 'descripcion' | 'cantidad'>[]
+}
+
+/**
+ * Vista previa de la anulación. Es solo informativa: las reglas (permisos, caja
+ * abierta, orden en producción, desembolso registrado) las aplica el RPC
+ * `anular_venta`, que es el que decide.
+ */
+export function usePreviaAnulacion(venta: Venta | null) {
+  return useQuery({
+    queryKey: ['previa-anulacion', venta?.id],
+    enabled: !!venta,
+    queryFn: async (): Promise<PreviaAnulacion> => {
+      const v = venta as Venta
+      const [original, abierta] = await Promise.all([
+        supabase.from('cash_register_sessions').select('id, status, opened_at').eq('id', v.session_id).maybeSingle(),
+        supabase.from('cash_register_sessions').select('id, opened_at').eq('status', 'open').maybeSingle(),
+      ])
+      if (original.error) throw original.error
+      if (abierta.error) throw abierta.error
+
+      const previa: PreviaAnulacion = {
+        cajaOriginal: original.data,
+        cajaAbierta: abierta.data,
+        otrosCobrosActivos: 0,
+        cotizacion: null,
+        ordenes: [],
+        materialConsumido: false,
+        itemsMostrador: [],
+      }
+
+      if (v.cotizacion_id) {
+        const [otros, cot, ordenes] = await Promise.all([
+          supabase
+            .from('ventas')
+            .select('id', { count: 'exact', head: true })
+            .eq('cotizacion_id', v.cotizacion_id)
+            .is('anulado_at', null)
+            .neq('id', v.id),
+          supabase.from('cotizaciones').select('numero, estado, estado_previo_venta').eq('id', v.cotizacion_id).single(),
+          supabase
+            .from('ordenes_trabajo')
+            .select('id, numero, estado')
+            .eq('cotizacion_id', v.cotizacion_id)
+            .neq('estado', 'cancelada'),
+        ])
+        if (otros.error) throw otros.error
+        if (cot.error) throw cot.error
+        if (ordenes.error) throw ordenes.error
+        previa.otrosCobrosActivos = otros.count ?? 0
+        previa.cotizacion = cot.data
+        previa.ordenes = ordenes.data ?? []
+
+        if (previa.ordenes.length > 0) {
+          const { count, error } = await supabase
+            .from('orden_materiales')
+            .select('id', { count: 'exact', head: true })
+            .in('orden_id', previa.ordenes.map((o) => o.id))
+            .eq('estado', 'consumido')
+          if (error) throw error
+          previa.materialConsumido = (count ?? 0) > 0
+        }
+      } else if (v.venta_mostrador_id) {
+        const { data, error } = await supabase
+          .from('ventas_mostrador_items')
+          .select('id, descripcion, cantidad')
+          .eq('venta_id', v.venta_mostrador_id)
+        if (error) throw error
+        previa.itemsMostrador = data ?? []
+      }
+
+      return previa
+    },
+  })
+}
+
+/**
+ * Anula un cobro sin borrarlo. Todo pasa en una sola transacción, en el RPC
+ * `anular_venta`:
+ *   * marca el cobro como anulado;
+ *   * registra el reverso en caja, salvo con financiera;
+ *   * reintegra el inventario de mostrador;
+ *   * si era el último cobro de la cotización, la devuelve a su estado previo y
+ *     cancela la orden pendiente.
+ * Solo admin; la garantía está en el RPC.
+ */
+export function useAnularVenta() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      venta,
+      motivo,
+      saleEfectivo,
+    }: {
+      venta: Venta
+      motivo: string
+      /** Solo cuenta si la caja del cobro ya cerró y el pago fue en efectivo. */
+      saleEfectivo: boolean
+    }) => {
+      const { data, error } = await supabase.rpc('anular_venta', {
+        p_venta_id: venta.id,
+        p_motivo: motivo,
+        p_sale_efectivo: saleEfectivo,
+      })
+      if (error) throw error
+      return data as unknown as Venta
+    },
+    // onSettled: mismo criterio que los cobros, porque un corte de red después
+    // del commit también movió la caja.
+    onSettled: (_data, _err, { venta }) => {
+      if (venta.cotizacion_id) {
+        invalidarPagos(qc, venta.cotizacion_id, venta.session_id)
+        qc.invalidateQueries({ queryKey: ['orden_de_cotizacion', venta.cotizacion_id] })
+      }
+      // El reverso puede ir a una caja distinta a la del cobro.
+      qc.invalidateQueries({ queryKey: ['caja-actual'] })
+      qc.invalidateQueries({ queryKey: ['ventas-sesion'] })
+      qc.invalidateQueries({ queryKey: ['resumen-sesiones'] })
+      qc.invalidateQueries({ queryKey: ['ventas-periodo'] })
+      qc.invalidateQueries({ queryKey: ['ventas-por-desembolsar'] })
+      qc.invalidateQueries({ queryKey: ['gastos-sesion'] })
+      qc.invalidateQueries({ queryKey: ['gastos-periodo'] })
+      qc.invalidateQueries({ queryKey: ['items'] })
+      qc.invalidateQueries({ queryKey: ['movimientos'] })
+      qc.invalidateQueries({ queryKey: ['previa-anulacion', venta.id] })
+    },
   })
 }

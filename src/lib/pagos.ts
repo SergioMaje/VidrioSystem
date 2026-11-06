@@ -74,21 +74,48 @@ export const CATEGORIA_GASTO_LABEL: Record<CategoriaGasto, string> = {
   proveedor: 'Proveedor',
   retiro: 'Retiro de efectivo',
   otro: 'Otro',
+  reverso_anulacion: 'Reverso de anulación',
 }
+
+/**
+ * Las categorías que se pueden elegir al registrar un gasto a mano. El reverso
+ * de anulación solo lo genera `anular_venta` (y `registrar_gasto_caja` lo
+ * rechaza).
+ */
+export const CATEGORIAS_GASTO_MANUAL = (Object.keys(CATEGORIA_GASTO_LABEL) as CategoriaGasto[]).filter(
+  (c) => c !== 'reverso_anulacion'
+)
+
+export const esReversoAnulacion = (m: { categoria: CategoriaGasto }) => m.categoria === 'reverso_anulacion'
+
+/**
+ * Un cobro anulado no cuenta como venta ni como abonado. En la caja sí sigue
+ * sumando como ingreso, porque su reverso lo compensa como egreso.
+ */
+export const esVentaAnulada = (v: { anulado_at: string | null }) => v.anulado_at !== null
 
 /** Un gasto anulado no salió del cajón: no cuenta para el arqueo. */
 export const esGastoVivo = (m: { anulado_at: string | null }) => m.anulado_at === null
 
 /**
- * Lo que los gastos del turno sacaron del cajón. Solo efectivo: un gasto pagado
- * por transferencia se reporta, pero no toca el arqueo. Espejo en TS de lo que
- * calcula `cerrar_caja` en Postgres.
+ * Lo que los egresos del turno (gastos y reversos de anulación) sacaron del
+ * cajón. Solo efectivo: un gasto pagado por transferencia se reporta, pero no
+ * toca el arqueo, y tampoco un reverso marcado sin salida de efectivo. Espejo
+ * en TS de lo que calcula `cerrar_caja` en Postgres.
  */
 export const totalGastosEfectivo = (
-  movimientos: { anulado_at: string | null; metodo_pago: MetodoPago; monto: number }[] = []
+  movimientos: {
+    anulado_at: string | null
+    metodo_pago: MetodoPago
+    monto: number
+    afecta_efectivo?: boolean
+  }[] = []
 ) =>
   movimientos.reduce(
-    (suma, m) => (esGastoVivo(m) && m.metodo_pago === 'efectivo' ? suma + m.monto : suma),
+    (suma, m) =>
+      esGastoVivo(m) && m.metodo_pago === 'efectivo' && m.afecta_efectivo !== false
+        ? suma + m.monto
+        : suma,
     0
   )
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Loader2, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -56,6 +56,13 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
   const [financieraId, setFinancieraId] = useState('')
   const [referencia, setReferencia] = useState('')
   const [inicializado, setInicializado] = useState(false)
+  // Una clave por apertura del diálogo: si el mismo cobro llega dos veces (doble
+  // clic antes de que se deshabilite el botón, reintento tras un corte de red),
+  // la base lo reconoce y no cobra de nuevo. Se renueva al reabrir.
+  const [claveIdempotencia, setClaveIdempotencia] = useState(() => crypto.randomUUID())
+  // `isPending` tarda un render en deshabilitar el botón; este ref corta el
+  // segundo clic en el mismo instante.
+  const enviando = useRef(false)
 
   const { data: financieras } = useFinancieras(true)
   // El crédito cubre el total y no se combina: solo se ofrece como primer pago.
@@ -82,6 +89,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
     setMotivo('')
     setFinancieraId('')
     setReferencia('')
+    setClaveIdempotencia(crypto.randomUUID())
     setInicializado(true)
   }, [open, inicializado, esAnticipo, minimo, saldo, saldoListo])
 
@@ -115,7 +123,8 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
     (!esFinanciera || (esAnticipo && !!financieraId))
 
   const handleConfirmar = async () => {
-    if (!usuario) return
+    if (!usuario || enviando.current) return
+    enviando.current = true
     try {
       if (esAnticipo) {
         await registrarAnticipo.mutateAsync({
@@ -128,6 +137,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
           motivoAutorizacion: bajoMinimo ? motivo : undefined,
           financieraId: esFinanciera ? financieraId : undefined,
           referenciaFinanciera: esFinanciera ? referencia : undefined,
+          idempotencyKey: claveIdempotencia,
         })
         toast({
           title: esFinanciera
@@ -142,6 +152,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
           metodoPago,
           monto: montoNum,
           usuarioId: usuario.id,
+          idempotencyKey: claveIdempotencia,
         })
         toast({ title: 'Abono registrado', variant: 'success' })
       }
@@ -151,6 +162,8 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
         title: mensajeError(err, 'Error al registrar el pago'),
         variant: 'destructive',
       })
+    } finally {
+      enviando.current = false
     }
   }
 

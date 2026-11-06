@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:db": "docker exec -i supabase_db_glazz psql -U postgres -X -q -o /dev/null < supabase/tests/anulacion_ventas.sql"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

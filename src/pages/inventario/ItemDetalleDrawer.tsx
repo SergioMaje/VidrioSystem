@@ -87,6 +87,7 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
     salida: 'text-red-600',
     ajuste: 'text-blue-600',
     produccion: 'text-orange-600',
+    reintegro_anulacion: 'text-green-600',
   }
 
   return (
@@ -242,12 +243,14 @@ export function ItemDetalleDrawer({ item, open, onOpenChange, onEdit }: ItemDeta
                   {movimientos.map((mov) => (
                     <div key={mov.id} className="flex items-start justify-between rounded-md border px-3 py-2 text-sm">
                       <div>
-                        <span className={`font-medium capitalize ${tipoColors[mov.tipo]}`}>{mov.tipo}</span>
+                        <span className={`font-medium capitalize ${tipoColors[mov.tipo]}`}>
+                          {mov.tipo === 'reintegro_anulacion' ? 'Reintegro por anulación' : mov.tipo}
+                        </span>
                         {mov.motivo && <p className="text-xs text-muted-foreground">{mov.motivo}</p>}
                         <p className="text-xs text-muted-foreground">{formatFecha(mov.created_at)}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-mono">{mov.tipo === 'entrada' ? '+' : mov.tipo === 'ajuste' ? '=' : '-'}{formatCantidad(mov.cantidad)}</p>
+                        <p className="font-mono">{mov.tipo === 'entrada' || mov.tipo === 'reintegro_anulacion' ? '+' : mov.tipo === 'ajuste' ? '=' : '-'}{formatCantidad(mov.cantidad)}</p>
                         <p className="text-xs text-muted-foreground">{mov.cantidad_anterior} → {mov.cantidad_posterior}</p>
                       </div>
                     </div>

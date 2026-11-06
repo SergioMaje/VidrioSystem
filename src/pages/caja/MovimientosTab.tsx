@@ -11,7 +11,13 @@ import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useVentasSesion } from '@/hooks/useVentasCaja'
 import { useAnularGasto, useMovimientosSesion } from '@/hooks/useMovimientosCaja'
-import { CATEGORIA_GASTO_LABEL, METODO_PAGO_LABEL, esGastoVivo, totalGastosEfectivo } from '@/lib/pagos'
+import {
+  CATEGORIA_GASTO_LABEL,
+  METODO_PAGO_LABEL,
+  esGastoVivo,
+  esReversoAnulacion,
+  totalGastosEfectivo,
+} from '@/lib/pagos'
 import { formatCOP, formatHora, mensajeError } from '@/lib/utils'
 import type { CashRegisterSession, MovimientoCajaConUsuario } from '@/types/database'
 import { RegistrarGastoDialog } from './RegistrarGastoDialog'
@@ -30,9 +36,13 @@ export function MovimientosTab({ sesion }: { sesion: CashRegisterSession }) {
 
   const esAdmin = usuario?.rol === 'admin'
   const vivos = (movimientos ?? []).filter(esGastoVivo)
+  // Gastos y reversos de ventas anuladas: los dos sacan efectivo del cajón.
   const gastosEfectivo = totalGastosEfectivo(movimientos)
-  const totalGastos = vivos.reduce((suma, m) => suma + m.monto, 0)
+  // El total de gastos no incluye los reversos: no son gastos del negocio.
+  const totalGastos = vivos.filter((m) => !esReversoAnulacion(m)).reduce((suma, m) => suma + m.monto, 0)
 
+  // Todos los cobros, también los anulados: entraron al cajón y su reverso
+  // los compensa como egreso (misma cuenta que cerrar_caja).
   const ventasEfectivo = (ventas ?? []).reduce(
     (suma, v) => (v.metodo_pago === 'efectivo' ? suma + v.monto : suma),
     0
@@ -61,7 +71,7 @@ export function MovimientosTab({ sesion }: { sesion: CashRegisterSession }) {
               <p className="font-mono font-semibold">{formatCOP(totalGastos)}</p>
             </div>
             <div className="rounded-md border p-2 text-center">
-              <p className="text-xs text-muted-foreground">En efectivo</p>
+              <p className="text-xs text-muted-foreground">Egresos en efectivo</p>
               <p className="font-mono font-semibold text-destructive">−{formatCOP(gastosEfectivo)}</p>
             </div>
             <div className="rounded-md border p-2 text-center">
@@ -95,6 +105,7 @@ export function MovimientosTab({ sesion }: { sesion: CashRegisterSession }) {
                 <tbody>
                   {movimientos.map((m) => {
                     const anulado = !esGastoVivo(m)
+                    const reverso = esReversoAnulacion(m)
                     return (
                       <tr
                         key={m.id}
@@ -102,10 +113,13 @@ export function MovimientosTab({ sesion }: { sesion: CashRegisterSession }) {
                       >
                         <td className="px-3 py-2 font-mono text-xs">{formatHora(m.created_at)}</td>
                         <td className="px-3 py-2">
-                          <Badge variant="secondary">{CATEGORIA_GASTO_LABEL[m.categoria]}</Badge>
+                          <Badge variant={reverso ? 'warning' : 'secondary'}>{CATEGORIA_GASTO_LABEL[m.categoria]}</Badge>
                         </td>
                         <td className="px-3 py-2">
                           {m.concepto}
+                          {reverso && !m.afecta_efectivo && (
+                            <span className="ml-2 text-xs text-muted-foreground">(sin salida de efectivo)</span>
+                          )}
                           {anulado && (
                             /* El motivo vive junto a la fila: sin él, un gasto tachado
                                es una pregunta sin responder en el arqueo. */
@@ -123,7 +137,9 @@ export function MovimientosTab({ sesion }: { sesion: CashRegisterSession }) {
                         <td className="px-3 py-2 text-right">
                           {/* Gate cosmético: la garantía de que solo un admin anula
                               está en el RPC anular_movimiento_caja. */}
-                          {esAdmin && !anulado && (
+                          {/* Un reverso no se anula: dejaría la venta anulada sin
+                              su contrapartida en caja (también lo rechaza el RPC). */}
+                          {esAdmin && !anulado && !reverso && (
                             <Button size="sm" variant="ghost" onClick={() => setAAnular(m)}>
                               Anular
                             </Button>

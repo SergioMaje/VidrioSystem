@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/useToast'
 import { useRegistrarGasto } from '@/hooks/useMovimientosCaja'
-import { CATEGORIA_GASTO_LABEL, METODOS_GASTO, METODO_PAGO_LABEL } from '@/lib/pagos'
+import { CATEGORIAS_GASTO_MANUAL, CATEGORIA_GASTO_LABEL, METODOS_GASTO, METODO_PAGO_LABEL } from '@/lib/pagos'
 import { InputDinero } from '@/components/shared/InputDinero'
 import { formatCOP, mensajeError } from '@/lib/utils'
 import type { CategoriaGasto, MetodoPago } from '@/types/database'
@@ -78,7 +78,7 @@ export function RegistrarGastoDialog({ efectivoDisponible, open, onOpenChange }:
             <Select value={categoria} onValueChange={(v) => setCategoria(v as CategoriaGasto)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {(Object.keys(CATEGORIA_GASTO_LABEL) as CategoriaGasto[]).map((c) => (
+                {CATEGORIAS_GASTO_MANUAL.map((c) => (
                   <SelectItem key={c} value={c}>{CATEGORIA_GASTO_LABEL[c]}</SelectItem>
                 ))}
               </SelectContent>
