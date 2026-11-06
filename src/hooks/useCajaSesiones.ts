@@ -91,14 +91,25 @@ export type ResumenSesion = {
   total_tarjeta: number
   /** Vendido a crédito de financiera: no entra al cajón ni ha llegado al banco. */
   total_financiera: number
+  /**
+   * Todo lo que entró en el turno, incluidos los cobros anulados después (su
+   * reverso los compensa como egreso). Para ventas, restar `total_anulado`.
+   */
   total_cobrado: number
   num_pagos: number
-  /** Gastos vivos del turno; solo los de efectivo bajan el arqueo. */
+  /** Gastos vivos del turno, sin reversos; solo los de efectivo bajan el arqueo. */
   total_gastos_efectivo: number
   total_gastos: number
   num_gastos: number
-  /** Lo que debería quedar en el cajón: fondo + ventas en efectivo − gastos. */
+  /** Lo que debería quedar en el cajón: fondo + cobros en efectivo − egresos en efectivo. */
   neto_efectivo: number
+  /** Reversos de anulación registrados en este turno (pueden ser de cobros de otro turno). */
+  total_reversos_efectivo: number
+  total_reversos: number
+  num_reversos: number
+  /** Cobros de este turno que se anularon. */
+  total_anulado: number
+  num_anulados: number
 }
 
 /**

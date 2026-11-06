@@ -129,7 +129,8 @@ export interface ItemInventario {
 export interface MovimientoInventario {
   id: string
   item_id: string
-  tipo: 'entrada' | 'salida' | 'ajuste' | 'produccion'
+  /** `reintegro_anulacion`: devuelve al stock lo que descontó una venta anulada. */
+  tipo: 'entrada' | 'salida' | 'ajuste' | 'produccion' | 'reintegro_anulacion'
   cantidad: number
   cantidad_anterior: number
   cantidad_posterior: number
@@ -197,6 +198,8 @@ export interface Cotizacion {
   fecha_vencimiento: string | null
   /** Cuándo el cliente aprobó (pagó el anticipo y pasó a 'vendida'). Null hasta entonces. */
   fecha_aprobacion: string | null
+  /** Estado antes de convertirse en 'vendida'; a él vuelve si se anula su único cobro. */
+  estado_previo_venta: Cotizacion['estado'] | null
   subtotal: number
   descuento_pct: number
   iva_pct: number
@@ -473,6 +476,16 @@ export interface Venta {
   desembolso_id: string | null
   usuario_id: string
   created_at: string
+  /**
+   * Un cobro nunca se borra: se anula (RPC `anular_venta`). Anulado = `anulado_at`
+   * no null. No suma en ventas ni en saldos; en caja lo compensa un movimiento
+   * `reverso_anulacion`.
+   */
+  anulado_at: string | null
+  anulado_por: string | null
+  motivo_anulacion: string | null
+  /** Generada por el navegador una vez por diálogo de cobro: evita cobrar dos veces. */
+  idempotency_key: string | null
   cotizacion?: Cotizacion
 }
 
@@ -486,6 +499,9 @@ export interface VentaMostrador {
   usuario_id: string
   total: number
   created_at: string
+  anulado_at: string | null
+  anulado_por: string | null
+  motivo_anulacion: string | null
   cliente?: Cliente | null
   items?: VentaMostradorItem[]
 }
@@ -510,6 +526,8 @@ export type CategoriaGasto =
   | 'proveedor'
   | 'retiro'
   | 'otro'
+  /** Solo lo genera `anular_venta`: compensa el ingreso de un cobro anulado. */
+  | 'reverso_anulacion'
 
 /**
  * Salida de dinero del turno. Anular no borra la fila (`anulado_at`): un
@@ -528,6 +546,13 @@ export interface MovimientoCaja {
   anulado_at: string | null
   anulado_por: string | null
   motivo_anulacion: string | null
+  /** Cobro que compensa, en los reversos de anulación. */
+  venta_id: string | null
+  /**
+   * Falso solo en un reverso registrado en otra caja cuando no salió efectivo
+   * del cajón (el dinero nunca entró): no resta del arqueo.
+   */
+  afecta_efectivo: boolean
 }
 
 export type MovimientoCajaConUsuario = MovimientoCaja & {

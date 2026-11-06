@@ -1,10 +1,23 @@
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useVentasSesion } from '@/hooks/useVentasCaja'
 import { useMovimientosSesion } from '@/hooks/useMovimientosCaja'
-import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, origenDeVenta, totalGastosEfectivo } from '@/lib/pagos'
+import { useAuth } from '@/hooks/useAuth'
+import type { VentaConCotizacion } from '@/hooks/useVentasCaja'
+import {
+  METODO_PAGO_LABEL,
+  TIPO_PAGO_LABEL,
+  esGastoVivo,
+  esReversoAnulacion,
+  esVentaAnulada,
+  origenDeVenta,
+  totalGastosEfectivo,
+} from '@/lib/pagos'
 import { formatCOP } from '@/lib/utils'
 import type { MetodoPago } from '@/types/database'
+import { AnularVentaDialog, BadgeAnulada } from './AnularVentaDialog'
 
 /** Cifras del cierre, ya guardadas. Solo existen en un turno cerrado. */
 export type Arqueo = {
@@ -29,16 +42,30 @@ export function ResumenVentasSesion({
 }) {
   const { data: ventas, isLoading } = useVentasSesion(sessionId)
   const { data: movimientos } = useMovimientosSesion(sessionId)
+  const { usuario } = useAuth()
+  const [aAnular, setAAnular] = useState<VentaConCotizacion | null>(null)
+  // Cosmético: la regla de que solo un admin anula vive en el RPC anular_venta.
+  const esAdmin = usuario?.rol === 'admin'
 
   if (isLoading) return <LoadingSpinner className="py-8" />
 
+  // Las ventas del turno no incluyen los cobros anulados.
   const totales: Record<MetodoPago, number> = { efectivo: 0, tarjeta: 0, transferencia: 0, financiera: 0 }
-  for (const v of ventas ?? []) totales[v.metodo_pago] += v.monto
+  const activas = (ventas ?? []).filter((v) => !esVentaAnulada(v))
+  for (const v of activas) totales[v.metodo_pago] += v.monto
   const totalGeneral = Object.values(totales).reduce((suma, t) => suma + t, 0)
-  // Lo que los gastos sacaron del cajón. Con el turno cerrado no se recalcula
-  // nada: manda `arqueo`, que ya viene con esto descontado desde `cerrar_caja`.
-  const gastosEfectivo = totalGastosEfectivo(movimientos)
-  const efectivoEsperado = openingAmount + totales.efectivo - gastosEfectivo
+
+  // El arqueo sí cuenta todo lo que entró al cajón, anulado o no: el cobro
+  // anulado entró, y su reverso lo compensa como egreso. Es la misma cuenta de
+  // `cerrar_caja`. Con el turno cerrado no se recalcula nada: manda `arqueo`.
+  const ingresosEfectivo = (ventas ?? []).reduce(
+    (suma, v) => (v.metodo_pago === 'efectivo' ? suma + v.monto : suma),
+    0
+  )
+  const vivos = (movimientos ?? []).filter(esGastoVivo)
+  const gastosEfectivo = totalGastosEfectivo(vivos.filter((m) => !esReversoAnulacion(m)))
+  const reversosEfectivo = totalGastosEfectivo(vivos.filter(esReversoAnulacion))
+  const efectivoEsperado = openingAmount + ingresosEfectivo - gastosEfectivo - reversosEfectivo
 
   return (
     <div className="space-y-4">
@@ -63,18 +90,34 @@ export function ResumenVentasSesion({
                 <th className="px-3 py-2">Tipo</th>
                 <th className="px-3 py-2">Método</th>
                 <th className="px-3 py-2 text-right">Monto</th>
+                {esAdmin && <th className="px-3 py-2" />}
               </tr>
             </thead>
             <tbody>
               {ventas.map((v) => {
                 const origen = origenDeVenta(v)
+                const anulada = esVentaAnulada(v)
                 return (
-                  <tr key={v.id} className="border-b last:border-0">
-                    <td className="px-3 py-2 font-mono text-xs">{origen.numero}</td>
+                  <tr key={v.id} className={`border-b last:border-0 ${anulada ? 'text-muted-foreground' : ''}`}>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      <span className={anulada ? 'line-through' : ''}>{origen.numero}</span>
+                      {anulada && <BadgeAnulada motivo={v.motivo_anulacion} />}
+                    </td>
                     <td className="px-3 py-2">{origen.cliente}</td>
                     <td className="px-3 py-2">{TIPO_PAGO_LABEL[v.tipo]}</td>
                     <td className="px-3 py-2">{METODO_PAGO_LABEL[v.metodo_pago]}</td>
-                    <td className="px-3 py-2 text-right font-mono">{formatCOP(v.monto)}</td>
+                    <td className={`px-3 py-2 text-right font-mono ${anulada ? 'line-through' : ''}`}>
+                      {formatCOP(v.monto)}
+                    </td>
+                    {esAdmin && (
+                      <td className="px-3 py-2 text-right">
+                        {!anulada && (
+                          <Button size="sm" variant="ghost" onClick={() => setAAnular(v)}>
+                            Anular
+                          </Button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 )
               })}
@@ -87,7 +130,7 @@ export function ResumenVentasSesion({
 
       <div className="space-y-1 text-sm">
         <div className="flex justify-between">
-          <span className="text-muted-foreground">Total cobrado ({ventas?.length ?? 0} pagos)</span>
+          <span className="text-muted-foreground">Total cobrado ({activas.length} pagos)</span>
           <span className="font-mono font-semibold">{formatCOP(totalGeneral)}</span>
         </div>
         {totales.financiera > 0 && (
@@ -98,13 +141,19 @@ export function ResumenVentasSesion({
         )}
         <p className="pt-2 text-xs font-medium uppercase text-muted-foreground">Arqueo de efectivo</p>
         <div className="flex justify-between"><span className="text-muted-foreground">Fondo inicial</span><span className="font-mono">{formatCOP(openingAmount)}</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">Ventas en efectivo (+)</span><span className="font-mono">{formatCOP(totales.efectivo)}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Cobros en efectivo (+)</span><span className="font-mono">{formatCOP(ingresosEfectivo)}</span></div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Gastos en efectivo (−)</span>
           <span className={`font-mono ${gastosEfectivo > 0 ? 'text-destructive' : ''}`}>
             {formatCOP(gastosEfectivo)}
           </span>
         </div>
+        {reversosEfectivo > 0 && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Reversos de ventas anuladas (−)</span>
+            <span className="font-mono text-destructive">{formatCOP(reversosEfectivo)}</span>
+          </div>
+        )}
 
         {arqueo ? (
           <>
@@ -137,6 +186,12 @@ export function ResumenVentasSesion({
           por el cajón.
         </p>
       </div>
+
+      <AnularVentaDialog
+        venta={aAnular}
+        documento={aAnular ? origenDeVenta(aAnular).numero : ''}
+        onClose={() => setAAnular(null)}
+      />
     </div>
   )
 }

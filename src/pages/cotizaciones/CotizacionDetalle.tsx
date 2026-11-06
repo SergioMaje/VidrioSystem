@@ -7,17 +7,19 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
+import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { useCotizacion, useCambiarEstadoCotizacion, useOrdenDeCotizacion } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
+import { useAuth } from '@/hooks/useAuth'
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
-import { estaLiquidada, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { esVentaAnulada, estaLiquidada, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
-import type { Cliente, Cotizacion, CotizacionItem } from '@/types/database'
+import type { Cliente, Cotizacion, CotizacionItem, Venta } from '@/types/database'
 
 const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline' }> = {
   borrador: { label: 'Borrador', variant: 'secondary' },
@@ -46,6 +48,10 @@ export function CotizacionDetalle() {
   const cambiarEstado = useCambiarEstadoCotizacion()
 
   const [pagoOpen, setPagoOpen] = useState(false)
+  const [aAnular, setAAnular] = useState<Venta | null>(null)
+  const { usuario } = useAuth()
+  // Cosmético: la regla de que solo un admin anula vive en el RPC anular_venta.
+  const esAdmin = usuario?.rol === 'admin'
 
   const handleMarcarEnviada = async () => {
     if (!id) return
@@ -370,14 +376,20 @@ ${membreteCss}
                     <th className="py-2">Método</th>
                     <th className="py-2">Recibió</th>
                     <th className="py-2 text-right">Monto</th>
+                    {esAdmin && <th className="py-2" />}
                   </tr>
                 </thead>
                 <tbody>
-                  {pagos.map((pago) => (
-                    <tr key={pago.id} className="border-b last:border-0">
-                      <td className="py-2">{formatFechaHora(pago.created_at)}</td>
+                  {pagos.map((pago) => {
+                    const anulada = esVentaAnulada(pago)
+                    return (
+                    <tr
+                      key={pago.id}
+                      className={`border-b last:border-0 ${anulada ? 'text-muted-foreground' : ''}`}
+                    >
+                      <td className={`py-2 ${anulada ? 'line-through' : ''}`}>{formatFechaHora(pago.created_at)}</td>
                       <td className="py-2">
-                        {TIPO_PAGO_LABEL[pago.tipo]}
+                        <span className={anulada ? 'line-through' : ''}>{TIPO_PAGO_LABEL[pago.tipo]}</span>
                         {pago.autorizado_por && (
                           <span className="ml-1 text-xs text-amber-700" title={pago.motivo_autorizacion ?? ''}>
                             (autorizado)
@@ -388,12 +400,35 @@ ${membreteCss}
                       <td className="py-2 text-muted-foreground">
                         {pago.usuario ? `${pago.usuario.nombre} ${pago.usuario.apellido}` : '—'}
                       </td>
-                      <td className="py-2 text-right font-mono">{formatCOP(pago.monto)}</td>
+                      <td className={`py-2 text-right font-mono ${anulada ? 'line-through' : ''}`}>
+                        {formatCOP(pago.monto)}
+                      </td>
+                      {esAdmin && (
+                        <td className="py-2 text-right">
+                          {!anulada && (
+                            <Button size="sm" variant="ghost" onClick={() => setAAnular(pago)}>
+                              Anular
+                            </Button>
+                          )}
+                        </td>
+                      )}
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             )}
+            {pagos
+              ?.filter(esVentaAnulada)
+              .map((pago) => (
+                <p key={pago.id} className="text-xs text-muted-foreground">
+                  <BadgeAnulada motivo={pago.motivo_anulacion} /> {formatCOP(pago.monto)} del{' '}
+                  {formatFechaHora(pago.created_at)}: {pago.motivo_anulacion}
+                  {pago.anulado_por_usuario &&
+                    ` — ${pago.anulado_por_usuario.nombre} ${pago.anulado_por_usuario.apellido}`}
+                  {pago.anulado_at && `, ${formatFechaHora(pago.anulado_at)}`}
+                </p>
+              ))}
 
             <div className="space-y-1 border-t pt-3">
               <div className="flex justify-between text-sm">
@@ -489,6 +524,7 @@ ${membreteCss}
         open={pagoOpen}
         onOpenChange={setPagoOpen}
       />
+      <AnularVentaDialog venta={aAnular} documento={cotizacion.numero} onClose={() => setAAnular(null)} />
     </div>
   )
 }
