@@ -30,9 +30,11 @@ interface ClienteFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   cliente?: Cliente | null
+  /** Se llama solo al crear (no al editar), con el cliente ya guardado. */
+  onCreado?: (cliente: Cliente) => void
 }
 
-export function ClienteFormDialog({ open, onOpenChange, cliente }: ClienteFormDialogProps) {
+export function ClienteFormDialog({ open, onOpenChange, cliente, onCreado }: ClienteFormDialogProps) {
   const crearCliente = useCrearCliente()
   const editarCliente = useEditarCliente()
   const { toast } = useToast()
@@ -78,8 +80,11 @@ export function ClienteFormDialog({ open, onOpenChange, cliente }: ClienteFormDi
         await editarCliente.mutateAsync({ id: cliente.id, data: payload })
         toast({ title: 'Cliente actualizado', variant: 'success' })
       } else {
-        await crearCliente.mutateAsync(payload)
+        const creado = await crearCliente.mutateAsync(payload)
         toast({ title: 'Cliente creado', variant: 'success' })
+        onOpenChange(false)
+        onCreado?.(creado)
+        return
       }
       onOpenChange(false)
     } catch {
