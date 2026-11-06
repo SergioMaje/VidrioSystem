@@ -39,8 +39,11 @@ export function useCrearCliente() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: ClienteInput) => {
-      const { error } = await supabase.from('clientes').insert(data)
+      // Se devuelve la fila creada: quien viene de una cotización necesita su id
+      // para dejarlo seleccionado al volver.
+      const { data: creado, error } = await supabase.from('clientes').insert(data).select().single()
       if (error) throw error
+      return creado as Cliente
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['clientes'] }),
   })
