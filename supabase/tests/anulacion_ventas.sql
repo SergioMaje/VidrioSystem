@@ -410,5 +410,39 @@ select pg_temp.afirmar(
   'una devolución en efectivo resta del esperado de hoy');
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- 7. Observación obligatoria al cerrar con descuadre (tolerancia $2.000)
+-- ════════════════════════════════════════════════════════════════════════════
+-- caja2 espera 400. Sobran 12.000 → fuera de tolerancia.
+select pg_temp.como('admin');
+set local role authenticated;
+select pg_temp.debe_fallar(format(
+  $q$select public.cerrar_caja(%L, 400 + 12000)$q$, pg_temp.id('caja2')), 'observación');
+select pg_temp.debe_fallar(format(
+  $q$select public.cerrar_caja(%L, 400 + 12000, '   ')$q$, pg_temp.id('caja2')), 'observación');
+select pg_temp.afirmar(
+  (public.cerrar_caja(pg_temp.id('caja2'), 400 + 12000, 'Abono sin registrar del señor Pérez')).difference = 12000,
+  'con observación, el cierre con sobrante fuera de tolerancia pasa');
+reset role;
+select pg_temp.afirmar(
+  (select observacion_cierre = 'Abono sin registrar del señor Pérez'
+     from public.cash_register_sessions where id = pg_temp.id('caja2')),
+  'la observación queda guardada en el turno');
+
+-- Dentro de la tolerancia cierra sin observación.
+select pg_temp.como('admin');
+with x as (
+  insert into public.cash_register_sessions (opened_by, opening_amount)
+  values (pg_temp.id('admin'), 5000) returning id
+) select pg_temp.guardar('caja3', id) from x;
+set local role authenticated;
+select pg_temp.afirmar(
+  (public.cerrar_caja(pg_temp.id('caja3'), 5000 - 1500)).difference = -1500,
+  'un faltante dentro de la tolerancia cierra sin observación');
+reset role;
+select pg_temp.afirmar(
+  (select observacion_cierre is null from public.cash_register_sessions where id = pg_temp.id('caja3')),
+  'sin observación, la columna queda vacía');
+
+-- ════════════════════════════════════════════════════════════════════════════
 \echo 'OK: todas las pruebas de anulación de ventas pasaron'
 rollback;

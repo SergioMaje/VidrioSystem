@@ -18,6 +18,8 @@ type Origen = { numero: string; cliente: { nombre: string; apellido: string } | 
 export type VentaConCotizacion = Venta & {
   cotizacion: Origen
   venta_mostrador: Origen
+  /** Quién registró el cobro: con él se filtra por cajero en el cierre. */
+  usuario: { nombre: string; apellido: string } | null
 }
 
 export function useVentasSesion(sessionId: string | undefined) {
@@ -27,7 +29,7 @@ export function useVentasSesion(sessionId: string | undefined) {
       const { data, error } = await supabase
         .from('ventas')
         .select(
-          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), venta_mostrador:ventas_mostrador(numero, cliente:clientes(nombre, apellido))'
+          '*, cotizacion:cotizaciones(numero, cliente:clientes(nombre, apellido)), venta_mostrador:ventas_mostrador(numero, cliente:clientes(nombre, apellido)), usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido)'
         )
         .eq('session_id', sessionId as string)
         .order('created_at')

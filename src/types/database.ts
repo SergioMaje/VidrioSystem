@@ -380,6 +380,8 @@ export interface CashRegisterSession {
   expected_amount: number | null
   counted_amount: number | null
   difference: number | null
+  /** Explicación del cajero; obligatoria si el descuadre supera TOLERANCIA_CAJA. */
+  observacion_cierre: string | null
   status: 'open' | 'closed'
   created_at: string
   opened_by_usuario?: Usuario

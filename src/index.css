@@ -57,3 +57,31 @@
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * Imprimir/PDF de un diálogo marcado con `data-imprimir` (cierre de caja):
+ * solo se imprime ese diálogo, sin la app de fondo ni el overlay, y a todo lo
+ * alto, sin el scroll interno. Las secciones plegadas usan `print:block`.
+ */
+@media print {
+  body:has([data-imprimir]) > *:not(:has([data-imprimir])) {
+    display: none !important;
+  }
+  *:has(> [data-imprimir]) > *:not([data-imprimir]) {
+    display: none !important;
+  }
+  [data-imprimir] {
+    position: static !important;
+    transform: none !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    animation: none !important;
+  }
+  /* Botón de cerrar (X) del diálogo. */
+  [data-imprimir] > button:last-child {
+    display: none !important;
+  }
+}
