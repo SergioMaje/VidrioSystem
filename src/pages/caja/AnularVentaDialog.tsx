@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useAnularVenta, usePreviaAnulacion, type PreviaAnulacion } from '@/hooks/useVentasCaja'
 import { useToast } from '@/hooks/useToast'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 import { cajaVencida } from '@/lib/caja'
 import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
@@ -165,9 +167,11 @@ export function AnularVentaDialog({
     }
   }
 
+  const atajo = useAtajoConfirmar(handleAnular, { habilitado: !!venta && puedeAnular, conCtrl: true })
+
   return (
     <Dialog open={!!venta} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onKeyDown={atajo}>
         <DialogHeader>
           <DialogTitle>Anular venta</DialogTitle>
         </DialogHeader>
@@ -271,6 +275,7 @@ export function AnularVentaDialog({
               <Button variant="destructive" onClick={handleAnular} disabled={!puedeAnular}>
                 {anularVenta.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Anular venta
+                <PistaConfirmar conCtrl />
               </Button>
             </DialogFooter>
           </div>

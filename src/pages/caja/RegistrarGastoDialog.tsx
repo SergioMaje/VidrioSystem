@@ -6,6 +6,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/useToast'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 import { useRegistrarGasto } from '@/hooks/useMovimientosCaja'
 import { CATEGORIAS_GASTO_MANUAL, CATEGORIA_GASTO_LABEL, METODOS_GASTO, METODO_PAGO_LABEL } from '@/lib/pagos'
 import { InputDinero } from '@/components/shared/InputDinero'
@@ -65,9 +67,11 @@ export function RegistrarGastoDialog({ efectivoDisponible, open, onOpenChange }:
     }
   }
 
+  const atajo = useAtajoConfirmar(handleConfirmar, { habilitado: puedeConfirmar, conCtrl: true })
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" onKeyDown={atajo}>
         <DialogHeader>
           <DialogTitle>Registrar gasto</DialogTitle>
         </DialogHeader>
@@ -133,6 +137,7 @@ export function RegistrarGastoDialog({ efectivoDisponible, open, onOpenChange }:
             <Button onClick={handleConfirmar} disabled={!puedeConfirmar}>
               {registrarGasto.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Registrar gasto
+              <PistaConfirmar conCtrl />
             </Button>
           </DialogFooter>
         </div>

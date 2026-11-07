@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { InputDinero } from '@/components/shared/InputDinero'
 import { useToast } from '@/hooks/useToast'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 import { useCerrarCaja } from '@/hooks/useCajaSesiones'
 import { useVentasSesion } from '@/hooks/useVentasCaja'
 import { useMovimientosSesion } from '@/hooks/useMovimientosCaja'
@@ -63,6 +65,9 @@ export function CerrarCajaDialog({
     }
   }
 
+  const puedeCerrar = !resultado && contado != null && contado >= 0 && !faltaObservacion && !cerrarCaja.isPending
+  const atajo = useAtajoConfirmar(handleCerrar, { habilitado: puedeCerrar, conCtrl: true })
+
   const handleClose = (isOpen: boolean) => {
     if (!isOpen) {
       setConteo('')
@@ -79,6 +84,7 @@ export function CerrarCajaDialog({
       <DialogContent
         className="max-h-[90vh] max-w-3xl overflow-y-auto [&>*]:min-w-0"
         data-imprimir={resultado ? '' : undefined}
+        onKeyDown={atajo}
       >
         <DialogHeader>
           <DialogTitle>{resultado ? 'Cierre de caja' : 'Cerrar caja'}</DialogTitle>
@@ -149,9 +155,10 @@ export function CerrarCajaDialog({
           ) : (
             <>
               <Button type="button" variant="outline" onClick={() => handleClose(false)}>Cancelar</Button>
-              <Button onClick={handleCerrar} disabled={cerrarCaja.isPending || contado == null || faltaObservacion}>
+              <Button onClick={handleCerrar} disabled={!puedeCerrar}>
                 {cerrarCaja.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Confirmar cierre
+                <PistaConfirmar conCtrl />
               </Button>
             </>
           )}

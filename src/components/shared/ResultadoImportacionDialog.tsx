@@ -3,6 +3,8 @@ import { AlertTriangle, CheckCircle2, Info, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { ErrorImportacion } from '@/lib/excel'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 
 interface ResultadoImportacionDialogProps {
   open: boolean
@@ -33,9 +35,10 @@ export function ResultadoImportacionDialog({
   open, onClose, titulo, resumen, nota, errores, destinoErrores = 'no se importarán',
   children, textoConfirmar, puedeConfirmar, confirmando, onConfirmar,
 }: ResultadoImportacionDialogProps) {
+  const atajo = useAtajoConfirmar(onConfirmar, { habilitado: puedeConfirmar && !confirmando })
   return (
     <Dialog open={open} onOpenChange={(abierto) => { if (!abierto) onClose() }}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" onKeyDown={atajo}>
         <DialogHeader>
           <DialogTitle>{titulo}</DialogTitle>
         </DialogHeader>
@@ -88,6 +91,7 @@ export function ResultadoImportacionDialog({
           <Button onClick={onConfirmar} disabled={!puedeConfirmar || confirmando}>
             {confirmando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {textoConfirmar}
+            <PistaConfirmar />
           </Button>
         </DialogFooter>
       </DialogContent>

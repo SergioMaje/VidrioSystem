@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ConfiguradorProducto, type EdicionItem } from '@/pages/productos/ConfiguradorProducto'
 import { ItemLibreForm } from '@/pages/productos/ItemLibreForm'
@@ -8,6 +8,7 @@ import { useCrearCotizacion, useCotizacion, useActualizarCotizacion } from '@/ho
 import { useReferencias } from '@/hooks/useReferencias'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
+import { useCambiosSinGuardar } from '@/providers/cambiosSinGuardar'
 import { PageLoader } from '@/components/shared/LoadingSpinner'
 import { hoyBogota, sumarDias } from '@/lib/utils'
 
@@ -28,7 +29,8 @@ export function CotizacionFormPage() {
   const actualizarCotizacion = useActualizarCotizacion()
 
   const [clienteId, setClienteId] = useState('')
-  const [fechaVencimiento, setFechaVencimiento] = useState(vencimientoPorDefecto)
+  const [fechaInicial] = useState(vencimientoPorDefecto)
+  const [fechaVencimiento, setFechaVencimiento] = useState(fechaInicial)
   const [notas, setNotas] = useState('')
   const [items, setItems] = useState<ItemCotizacion[]>([])
   const [descuentoPct, setDescuentoPct] = useState(0)
@@ -57,6 +59,27 @@ export function CotizacionFormPage() {
       )
     }
   }, [modoEdicion, cotizacionExistente])
+
+  // Cambios sin guardar: el estado actual comparado con el que había al cargar
+  // (la cotización existente, o el formulario vacío). Lo usan los atajos de
+  // teclado para preguntar antes de salir.
+  const inicial = useMemo(() => {
+    if (!modoEdicion) {
+      return JSON.stringify({ clienteId: '', fechaVencimiento: fechaInicial, notas: '', descuentoPct: 0, ivaPct: 19, items: [] })
+    }
+    if (!cotizacionExistente) return null
+    return JSON.stringify({
+      clienteId: cotizacionExistente.cliente_id,
+      fechaVencimiento: cotizacionExistente.fecha_vencimiento || fechaInicial,
+      notas: cotizacionExistente.notas || '',
+      descuentoPct: cotizacionExistente.descuento_pct,
+      ivaPct: cotizacionExistente.iva_pct,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      items: cotizacionExistente.items.map(({ id, cotizacion_id, ...rest }) => rest),
+    })
+  }, [modoEdicion, cotizacionExistente, fechaInicial])
+  const actual = JSON.stringify({ clienteId, fechaVencimiento, notas, descuentoPct, ivaPct, items })
+  useCambiosSinGuardar(inicial !== null && actual !== inicial)
 
   const handleAgregarItem = (item: ItemCotizacion) => {
     setItems((prev) => [...prev, item])

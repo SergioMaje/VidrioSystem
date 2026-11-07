@@ -11,6 +11,8 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { InputDinero } from '@/components/shared/InputDinero'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import {
   useAnularDesembolso,
@@ -409,9 +411,11 @@ function RegistrarDesembolsoDialog({
     }
   }
 
+  const atajoDesembolso = useAtajoConfirmar(handleConfirmar, { habilitado: puedeConfirmar, conCtrl: true })
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onKeyDown={atajoDesembolso}>
         <DialogHeader>
           <DialogTitle>Desembolso de {financieraNombre}</DialogTitle>
         </DialogHeader>
@@ -491,6 +495,7 @@ function RegistrarDesembolsoDialog({
             <Button onClick={handleConfirmar} disabled={!puedeConfirmar}>
               {registrar.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Registrar desembolso
+              <PistaConfirmar conCtrl />
             </Button>
           </DialogFooter>
         </div>
@@ -527,9 +532,12 @@ function AnularDesembolsoDialog({
     }
   }
 
+  const puedeAnular = !!desembolso && !!motivo.trim() && !anular.isPending
+  const atajoAnular = useAtajoConfirmar(handleAnular, { habilitado: puedeAnular, conCtrl: true })
+
   return (
     <Dialog open={!!desembolso} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" onKeyDown={atajoAnular}>
         <DialogHeader>
           <DialogTitle>Anular desembolso</DialogTitle>
         </DialogHeader>
@@ -556,9 +564,10 @@ function AnularDesembolsoDialog({
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
-              <Button variant="destructive" onClick={handleAnular} disabled={!motivo.trim() || anular.isPending}>
+              <Button variant="destructive" onClick={handleAnular} disabled={!puedeAnular}>
                 {anular.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Anular desembolso
+                <PistaConfirmar conCtrl />
               </Button>
             </DialogFooter>
           </div>
