@@ -7,6 +7,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -29,9 +31,12 @@ export function ConfirmDialog({
   confirmLabel = 'Confirmar',
   variant = 'destructive',
 }: ConfirmDialogProps) {
+  // Lo destructivo (eliminar) pide Ctrl+Enter: un Enter de más no debe borrar nada.
+  const conCtrl = variant === 'destructive'
+  const atajo = useAtajoConfirmar(onConfirm, { habilitado: open && !loading, conCtrl })
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent onKeyDown={atajo}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -42,6 +47,7 @@ export function ConfirmDialog({
           </Button>
           <Button variant={variant} onClick={onConfirm} disabled={loading}>
             {loading ? 'Procesando...' : confirmLabel}
+            {!loading && <PistaConfirmar conCtrl={conCtrl} />}
           </Button>
         </DialogFooter>
       </DialogContent>

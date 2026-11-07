@@ -11,6 +11,8 @@ import { useRegistrarAnticipo, useRegistrarAbono, useSaldoCotizacion } from '@/h
 import { useAuth } from '@/hooks/useAuth'
 import { useFinancieras } from '@/hooks/useFinancieras'
 import { useToast } from '@/hooks/useToast'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 import { CamposFinanciera } from '@/components/shared/CamposFinanciera'
 import { InputDinero } from '@/components/shared/InputDinero'
 import { cajaVencida } from '@/lib/caja'
@@ -168,17 +170,19 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
   }
 
   const saldoResultante = Math.max(0, saldo - montoNum)
+  const cajaLista = !!sesionCaja && !cajaVencida(sesionCaja.opened_at)
+  const atajo = useAtajoConfirmar(handleConfirmar, { habilitado: cajaLista && puedeConfirmar, conCtrl: true })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" onKeyDown={atajo}>
         <DialogHeader>
           <DialogTitle>
             {esFinanciera ? 'Venta a crédito de financiera' : esAnticipo ? 'Registrar anticipo' : 'Registrar abono'}
           </DialogTitle>
         </DialogHeader>
 
-        {!sesionCaja || cajaVencida(sesionCaja.opened_at) ? (
+        {!cajaLista ? (
           <div className="space-y-4">
             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -309,6 +313,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
               <Button onClick={handleConfirmar} disabled={!puedeConfirmar}>
                 {pendiente && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {esFinanciera ? 'Confirmar venta a crédito' : esAnticipo ? 'Confirmar anticipo' : 'Confirmar abono'}
+                <PistaConfirmar conCtrl />
               </Button>
             </DialogFooter>
           </div>

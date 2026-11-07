@@ -11,6 +11,8 @@ import { Loader2 } from 'lucide-react'
 import { useSugerenciasMaterial, useAsignarMaterial } from '@/hooks/useOrdenMateriales'
 import { useProveedores } from '@/hooks/useInventario'
 import { useToast } from '@/hooks/useToast'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 import { ORIGEN_MATERIAL_LABELS } from '@/lib/materiales'
 import { formatCantidad } from '@/lib/utils'
 import type { OrdenMaterial, SugerenciaMaterial } from '@/types/database'
@@ -65,9 +67,12 @@ export function AsignarMaterialDialog({ material, open, onOpenChange }: AsignarM
     }
   }
 
+  const puedeAsignar = !!seleccion && cantidad > 0 && !asignarMaterial.isPending
+  const atajo = useAtajoConfirmar(onConfirmar, { habilitado: puedeAsignar })
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg" onKeyDown={atajo}>
         <DialogHeader>
           <DialogTitle>Elegir material para "{material.item_requerido?.nombre ?? '—'}"</DialogTitle>
         </DialogHeader>
@@ -154,11 +159,12 @@ export function AsignarMaterialDialog({ material, open, onOpenChange }: AsignarM
           </Button>
           <Button
             type="button"
-            disabled={!seleccion || cantidad <= 0 || asignarMaterial.isPending}
+            disabled={!puedeAsignar}
             onClick={onConfirmar}
           >
             {asignarMaterial.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Asignar
+            <PistaConfirmar />
           </Button>
         </DialogFooter>
       </DialogContent>

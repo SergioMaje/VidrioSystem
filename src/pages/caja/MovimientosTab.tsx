@@ -9,6 +9,8 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
+import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
+import { PistaConfirmar } from '@/components/shared/Kbd'
 import { useVentasSesion } from '@/hooks/useVentasCaja'
 import { useAnularGasto, useMovimientosSesion } from '@/hooks/useMovimientosCaja'
 import {
@@ -201,9 +203,12 @@ function AnularGastoDialog({
     }
   }
 
+  const puedeAnular = !!movimiento && !!motivo.trim() && !anularGasto.isPending
+  const atajo = useAtajoConfirmar(handleAnular, { habilitado: puedeAnular, conCtrl: true })
+
   return (
     <Dialog open={!!movimiento} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" onKeyDown={atajo}>
         <DialogHeader>
           <DialogTitle>Anular gasto</DialogTitle>
         </DialogHeader>
@@ -234,10 +239,11 @@ function AnularGastoDialog({
               <Button
                 variant="destructive"
                 onClick={handleAnular}
-                disabled={!motivo.trim() || anularGasto.isPending}
+                disabled={!puedeAnular}
               >
                 {anularGasto.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Anular gasto
+                <PistaConfirmar conCtrl />
               </Button>
             </DialogFooter>
           </div>

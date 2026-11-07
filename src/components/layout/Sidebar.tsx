@@ -1,27 +1,12 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import {
-  LayoutDashboard, Package, Boxes, FileText, Users, ClipboardList,
-  LogOut, Menu, X, Layers, Truck, BarChart2, DollarSign, Settings,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { LogOut, Menu, X, Layers } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { Kbd } from '@/components/shared/Kbd'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
-
-const navItems: { to: string; label: string; icon: LucideIcon; soloAdmin?: boolean }[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/inventario', label: 'Inventario', icon: Boxes },
-  { to: '/proveedores', label: 'Proveedores', icon: Truck },
-  { to: '/productos', label: 'Productos', icon: Package },
-  { to: '/cotizaciones', label: 'Cotizaciones', icon: FileText },
-  { to: '/ordenes', label: 'Órdenes', icon: ClipboardList },
-  { to: '/clientes', label: 'Clientes', icon: Users },
-  { to: '/caja', label: 'Caja', icon: DollarSign },
-  { to: '/reportes', label: 'Reportes', icon: BarChart2 },
-  { to: '/configuracion', label: 'Configuración', icon: Settings, soloAdmin: true },
-]
+import { NAV_ITEMS } from './navegacion'
 
 function SidebarContent({ onClose }: { onClose?: () => void }) {
   const { usuario, signOut } = useAuth()
@@ -44,16 +29,17 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
       <Separator />
 
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems
+        {NAV_ITEMS
           .filter(({ soloAdmin }) => !soloAdmin || usuario?.rol === 'admin')
-          .map(({ to, label, icon: Icon }) => (
+          .map(({ to, label, icon: Icon, atajo }) => (
           <NavLink
             key={to}
             to={to}
             onClick={onClose}
+            title={`Atajo: G luego ${atajo}`}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
+                'group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
                 isActive || location.pathname.startsWith(to)
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -62,6 +48,11 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
           >
             <Icon className="h-4 w-4 shrink-0" />
             {label}
+            {/* Pista del atajo al pasar el mouse; solo en escritorio, donde hay teclado. */}
+            <span className="ml-auto hidden gap-0.5 lg:group-hover:flex">
+              <Kbd>G</Kbd>
+              <Kbd>{atajo}</Kbd>
+            </span>
           </NavLink>
         ))}
       </nav>
