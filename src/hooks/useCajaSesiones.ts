@@ -49,10 +49,20 @@ export function useCerrarCaja() {
      * de control de la caja y el cliente no debe poder dictarla. El RPC también
      * resuelve `closed_by` desde `auth.uid()`.
      */
-    mutationFn: async ({ sessionId, counted_amount }: { sessionId: string; counted_amount: number }) => {
+    mutationFn: async ({
+      sessionId,
+      counted_amount,
+      observacion,
+    }: {
+      sessionId: string
+      counted_amount: number
+      /** Obligatoria si el descuadre supera TOLERANCIA_CAJA; el RPC la exige. */
+      observacion?: string
+    }) => {
       const { data, error } = await supabase.rpc('cerrar_caja', {
         p_session_id: sessionId,
         p_counted_amount: counted_amount,
+        p_observacion: observacion?.trim() || null,
       })
       if (error) throw error
       return data as unknown as CashRegisterSession
@@ -61,6 +71,7 @@ export function useCerrarCaja() {
       qc.invalidateQueries({ queryKey: ['caja-actual'] })
       qc.invalidateQueries({ queryKey: ['historial-caja'] })
       qc.invalidateQueries({ queryKey: ['resumen-sesiones'] })
+      qc.invalidateQueries({ queryKey: ['sesion-caja'] })
     },
   })
 }
@@ -81,6 +92,27 @@ export function useHistorialCaja() {
       if (error) throw error
       return data as SesionCajaHistorial[]
     },
+  })
+}
+
+/** Un turno con quién lo abrió y quién lo cerró, para el encabezado del arqueo. */
+export function useSesionCaja(sessionId: string | undefined) {
+  return useQuery({
+    queryKey: ['sesion-caja', sessionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cash_register_sessions')
+        .select(`
+          *,
+          abierta_por:usuarios!cash_register_sessions_opened_by_fkey(nombre, apellido),
+          cerrada_por:usuarios!cash_register_sessions_closed_by_fkey(nombre, apellido)
+        `)
+        .eq('id', sessionId as string)
+        .single()
+      if (error) throw error
+      return data as SesionCajaHistorial
+    },
+    enabled: !!sessionId,
   })
 }
 

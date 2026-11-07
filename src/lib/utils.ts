@@ -19,18 +19,26 @@ export function mensajeError(err: unknown, porDefecto: string): string {
   return porDefecto
 }
 
-export function formatCOP(amount: number): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
+const milesCOP = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 })
+
+/**
+ * Único formateo de pesos de la app: 1250000 → "$1.250.000", -12000 → "-$12.000".
+ * Se arma a mano porque `Intl` con `style: 'currency'` mete un espacio duro
+ * entre el símbolo y la cifra en es-CO. Con `signo` también marca los
+ * positivos ("+$5.000"), para diferencias y descuadres. El signo menos es U+2212,
+ * que en tabular-nums tiene el mismo ancho que el más.
+ */
+export function formatCOP(amount: number, { signo = false }: { signo?: boolean } = {}): string {
+  const redondeado = Math.round(amount)
+  const cifra = `$${milesCOP.format(Math.abs(redondeado))}`
+  if (redondeado < 0) return `${signo ? '−' : '-'}${cifra}`
+  if (signo && redondeado > 0) return `+${cifra}`
+  return cifra
 }
 
 /** Agrupa en miles sin símbolo de moneda, para inputs: 1500000 → "1.500.000". */
 export function formatMiles(valor: number): string {
-  return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(valor)
+  return milesCOP.format(valor)
 }
 
 /** Cantidades y stock: agrupa miles y deja hasta `decimales` decimales: 1500.5 → "1.500,5". */

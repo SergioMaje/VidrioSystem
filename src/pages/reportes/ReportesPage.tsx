@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Ban, Banknote, Download, FileSpreadsheet, HandCoins, Landmark, TrendingUp } from 'lucide-react'
+import { Ban, Banknote, Download, FileSpreadsheet, HandCoins, Landmark, Printer, TrendingUp } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,12 +11,13 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
-import { fechaISOLocal, finDeDia, formatCantidad, formatCOP, formatDuracion, formatFecha, formatFechaHora, formatHora } from '@/lib/utils'
+import { fechaISOLocal, finDeDia, formatCantidad, formatCOP, formatDuracion, formatFecha, formatFechaHora } from '@/lib/utils'
 import { useHistorialCaja, useResumenSesiones } from '@/hooks/useCajaSesiones'
 import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
 import { useDesembolsos } from '@/hooks/useFinancieras'
 import { ResumenVentasSesion } from '@/pages/caja/ResumenVentasSesion'
+import { EncabezadoTurno } from '@/pages/caja/cierre/EncabezadoTurno'
 import { BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { FinancierasTab } from './FinancierasTab'
 import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, destinoDePago, esPagoFinanciera, esVentaAnulada, origenDeVenta } from '@/lib/pagos'
@@ -862,43 +863,27 @@ export function ReportesPage() {
       </Tabs>
 
       <Dialog open={!!sesionDetalle} onOpenChange={(o) => !o && setSesionDetalle(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto [&>*]:min-w-0" data-imprimir="">
           {sesionDetalle && (
             <>
               <DialogHeader>
-                <DialogTitle>Turno del {formatFecha(sesionDetalle.opened_at)}</DialogTitle>
-                <p className="text-sm text-muted-foreground">
-                  {formatHora(sesionDetalle.opened_at)}
-                  {' → '}
-                  {sesionDetalle.closed_at ? formatHora(sesionDetalle.closed_at) : '—'}
-                  {sesionDetalle.closed_at && ` · ${formatDuracion(sesionDetalle.opened_at, sesionDetalle.closed_at)}`}
-                </p>
+                <DialogTitle>Cierre de caja</DialogTitle>
               </DialogHeader>
 
-              <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                <span className="text-muted-foreground">
-                  Abrió:{' '}
-                  <span className="text-foreground">
-                    {sesionDetalle.abierta_por
-                      ? `${sesionDetalle.abierta_por.nombre} ${sesionDetalle.abierta_por.apellido}`
-                      : '—'}
-                  </span>
-                </span>
-                <span className="text-muted-foreground">
-                  Cerró:{' '}
-                  <span className="text-foreground">
-                    {sesionDetalle.cerrada_por
-                      ? `${sesionDetalle.cerrada_por.nombre} ${sesionDetalle.cerrada_por.apellido}`
-                      : '—'}
-                  </span>
-                </span>
-              </div>
+              <EncabezadoTurno sessionId={sesionDetalle.id} />
 
               <ResumenVentasSesion
                 sessionId={sesionDetalle.id}
                 openingAmount={sesionDetalle.opening_amount}
                 arqueo={sesionDetalle}
               />
+
+              <div className="flex justify-end print:hidden">
+                <Button variant="outline" onClick={() => window.print()}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Imprimir / PDF
+                </Button>
+              </div>
             </>
           )}
         </DialogContent>
