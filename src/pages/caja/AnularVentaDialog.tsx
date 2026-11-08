@@ -9,13 +9,10 @@ import { useAnularVenta, usePreviaAnulacion, type PreviaAnulacion } from '@/hook
 import { useToast } from '@/hooks/useToast'
 import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
 import { PistaConfirmar } from '@/components/shared/Kbd'
-import { cajaVencida } from '@/lib/caja'
+import { MOTIVO_ANULACION_MIN, efectoEnCaja, type Efecto } from '@/lib/anulacion'
 import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import type { Cotizacion, Venta } from '@/types/database'
-
-/** El mismo mínimo que exige `anular_venta` y el check de la tabla. */
-const MOTIVO_ANULACION_MIN = 10
 
 const ESTADO_COTIZACION_LABEL: Record<Cotizacion['estado'], string> = {
   borrador: 'Borrador',
@@ -24,9 +21,8 @@ const ESTADO_COTIZACION_LABEL: Record<Cotizacion['estado'], string> = {
   rechazada: 'Rechazada',
   vencida: 'Vencida',
   vendida: 'Vendida',
+  anulada: 'Anulada',
 }
-
-type Efecto = { texto: string; bloquea?: boolean }
 
 /**
  * Los efectos de anular, en palabras, antes de confirmar. Es un espejo de las
@@ -34,39 +30,8 @@ type Efecto = { texto: string; bloquea?: boolean }
  * clic, el RPC decide y su mensaje llega como error.
  */
 function efectosDeAnular(venta: Venta, previa: PreviaAnulacion): Efecto[] {
-  const efectos: Efecto[] = []
+  const efectos = efectoEnCaja(venta, previa)
   const monto = formatCOP(venta.monto)
-  const metodo = METODO_PAGO_LABEL[venta.metodo_pago].toLowerCase()
-
-  if (venta.metodo_pago === 'financiera') {
-    if (venta.desembolso_id) {
-      efectos.push({
-        texto: 'La financiera ya desembolsó esta venta: la anulación requiere gestión manual con la financiera.',
-        bloquea: true,
-      })
-    } else {
-      efectos.push({
-        texto: 'No hay egreso en caja: el dinero del crédito nunca entró. La venta sale de la cartera por desembolsar.',
-      })
-    }
-  } else if (previa.cajaOriginal?.status === 'open') {
-    efectos.push({ texto: `Reverso de ${monto} en ${metodo} en la caja del cobro, que sigue abierta.` })
-  } else if (!previa.cajaAbierta) {
-    efectos.push({
-      texto: 'La caja de este cobro ya cerró y no hay una caja abierta. Abre la caja para registrar el reverso.',
-      bloquea: true,
-    })
-  } else {
-    efectos.push({
-      texto: `La caja del cobro ya cerró (no se modifica). El reverso de ${monto} en ${metodo} va a la caja abierta de hoy.`,
-    })
-    if (cajaVencida(previa.cajaAbierta.opened_at)) {
-      efectos.push({
-        texto: `La caja abierta es del ${formatFecha(previa.cajaAbierta.opened_at)}: ciérrala y abre la de hoy primero.`,
-        bloquea: true,
-      })
-    }
-  }
 
   if (venta.cotizacion_id && previa.cotizacion) {
     if (previa.otrosCobrosActivos > 0) {

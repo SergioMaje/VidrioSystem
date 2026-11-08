@@ -21,6 +21,7 @@ const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'defa
   rechazada: { label: 'Rechazada', variant: 'destructive' },
   vencida: { label: 'Vencida', variant: 'warning' },
   vendida: { label: 'Vendida', variant: 'outline' },
+  anulada: { label: 'Anulada', variant: 'destructive' },
 }
 
 // Agrupaciones que no son un estado suelto de la tabla, pero sí las que el

@@ -188,18 +188,31 @@ export interface Cliente {
   updated_at: string
 }
 
+/**
+ * Por qué se anuló una cotización. Decide si el reverso de los cobros en
+ * efectivo de cajas ya cerradas saca plata del cajón hoy.
+ *   * desistimiento: el cliente desistió y se le devuelve el dinero.
+ *   * error: cobro o cotización duplicada; ese dinero nunca entró.
+ */
+export type TipoAnulacionCotizacion = 'desistimiento' | 'error'
+
 export interface Cotizacion {
   id: string
   numero: string
   cliente_id: string
   usuario_id: string
-  estado: 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'vencida' | 'vendida'
+  estado: 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'vencida' | 'vendida' | 'anulada'
   fecha_emision: string
   fecha_vencimiento: string | null
   /** Cuándo el cliente aprobó (pagó el anticipo y pasó a 'vendida'). Null hasta entonces. */
   fecha_aprobacion: string | null
   /** Estado antes de convertirse en 'vendida'; a él vuelve si se anula su único cobro. */
   estado_previo_venta: Cotizacion['estado'] | null
+  /** Datos de la anulación (`anular_cotizacion`). Todos null salvo en 'anulada'. */
+  anulado_at: string | null
+  anulado_por: string | null
+  motivo_anulacion: string | null
+  tipo_anulacion: TipoAnulacionCotizacion | null
   subtotal: number
   descuento_pct: number
   iva_pct: number

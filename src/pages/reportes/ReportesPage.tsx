@@ -52,6 +52,7 @@ const ESTADO_VARIANTS: Record<string, 'default' | 'secondary' | 'destructive' | 
   rechazada: 'destructive',
   vencida: 'warning',
   vendida: 'success',
+  anulada: 'destructive',
 }
 
 type MetodoPago = Venta['metodo_pago']
