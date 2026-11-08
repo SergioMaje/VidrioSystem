@@ -54,8 +54,14 @@ export function DashboardPage() {
     queryKey: ['dashboard_cotizaciones'],
     queryFn: async () => {
       await expirarCotizacionesVencidas()
-      const { count } = await supabase.from('cotizaciones').select('*', { count: 'exact', head: true }).in('estado', ['borrador', 'enviada'])
-      return count ?? 0
+      // Se cuentan envíos, no filas: un envío con tres opciones es una sola
+      // cotización pendiente para el cliente.
+      const { data, error } = await supabase
+        .from('cotizaciones')
+        .select('id, grupo_id')
+        .in('estado', ['borrador', 'enviada'])
+      if (error) throw error
+      return new Set((data as { id: string; grupo_id: string | null }[]).map((c) => c.grupo_id ?? c.id)).size
     },
   })
 

@@ -203,7 +203,17 @@ export interface Cotizacion {
   numero: string
   cliente_id: string
   usuario_id: string
-  estado: 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'vencida' | 'vendida' | 'anulada'
+  /** 'descartada': el cliente eligió otra opción del mismo envío. */
+  estado: 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'vencida' | 'vendida' | 'anulada' | 'descartada'
+  /**
+   * Envío al que pertenece esta opción (varias opciones para que el cliente
+   * elija una). Los tres campos son null en una cotización suelta.
+   */
+  grupo_id: string | null
+  /** Letra de la opción en el envío: A, B, C… */
+  opcion_etiqueta: string | null
+  /** Nombre corto para el cliente, p. ej. "Templado 5 mm". Opcional. */
+  opcion_nombre: string | null
   fecha_emision: string
   fecha_vencimiento: string | null
   /** Cuándo el cliente aprobó (pagó el anticipo y pasó a 'vendida'). Null hasta entonces. */

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { TOLERANCIA } from '@/lib/pagos'
 import { formatCOP, hoyBogota } from '@/lib/utils'
+import { calcularTotales, etiquetaDeIndice, MAX_OPCIONES, siguienteEtiqueta } from '@/lib/cotizaciones'
 import type { Cotizacion, CotizacionItem, OrdenTrabajo } from '@/types/database'
 
 /**
@@ -77,57 +78,184 @@ export function useOrdenDeCotizacion(cotizacionId: string | undefined) {
   })
 }
 
+/** Lo que cambia entre las opciones de un envío. */
+export type OpcionInput = {
+  /** Nombre corto para el cliente; solo se guarda si el envío tiene varias opciones. */
+  nombre?: string
+  descuento_pct: number
+  iva_pct: number
+  items: Omit<CotizacionItem, 'id' | 'cotizacion_id'>[]
+}
+
+/** Cliente, vencimiento y notas son del envío; ítems, descuento e IVA, de cada opción. */
 type CotizacionInput = {
   cliente_id: string
   usuario_id: string
   estado?: 'borrador' | 'enviada'
   fecha_vencimiento?: string
-  descuento_pct: number
-  iva_pct: number
   notas?: string
-  items: Omit<CotizacionItem, 'id' | 'cotizacion_id'>[]
+  opciones: OpcionInput[]
 }
 
+const nombreOpcion = (nombre?: string | null) => nombre?.trim() || null
+
+/** Inserta los ítems de varias cotizaciones en una sola llamada. */
+async function insertarItems(porCotizacion: { cotizacionId: string; items: OpcionInput['items'] }[]) {
+  const filas = porCotizacion.flatMap(({ cotizacionId, items }) =>
+    items.map((item) => ({ ...item, cotizacion_id: cotizacionId }))
+  )
+  if (filas.length === 0) return
+  const { error } = await supabase.from('cotizacion_items').insert(filas)
+  if (error) throw error
+}
+
+/**
+ * Crea una cotización suelta, o un envío con varias opciones si `opciones`
+ * trae más de una. Cada opción es una cotización completa (COT-<ts>-A, -B…)
+ * enlazada por `grupo_id`: al cobrar una, la base descarta las demás.
+ */
 export function useCrearCotizacion() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (input: CotizacionInput) => {
-      const subtotal = input.items.reduce((s, i) => s + i.precio_total, 0)
-      const descuento = subtotal * (input.descuento_pct / 100)
-      const base = subtotal - descuento
-      const iva = base * (input.iva_pct / 100)
-      const total = base + iva
+      if (input.opciones.length === 0) throw new Error('La cotización necesita al menos una opción')
+      if (input.opciones.length > MAX_OPCIONES) throw new Error(`Un envío admite máximo ${MAX_OPCIONES} opciones`)
 
-      const numero = `COT-${Date.now()}`
+      const base = `COT-${Date.now()}`
+      const agrupada = input.opciones.length > 1
+      const grupoId = agrupada ? crypto.randomUUID() : null
 
-      const { data: cot, error } = await supabase
-        .from('cotizaciones')
-        .insert({
-          numero,
+      const filas = input.opciones.map((opcion, idx) => {
+        const { subtotal, total } = calcularTotales(opcion.items, opcion.descuento_pct, opcion.iva_pct)
+        const etiqueta = agrupada ? etiquetaDeIndice(idx) : null
+        return {
+          numero: etiqueta ? `${base}-${etiqueta}` : base,
           cliente_id: input.cliente_id,
           usuario_id: input.usuario_id,
           estado: input.estado ?? 'borrador',
           fecha_emision: hoyBogota(),
           fecha_vencimiento: input.fecha_vencimiento ?? null,
           subtotal,
-          descuento_pct: input.descuento_pct,
-          iva_pct: input.iva_pct,
+          descuento_pct: opcion.descuento_pct,
+          iva_pct: opcion.iva_pct,
           total,
           notas: input.notas ?? null,
+          grupo_id: grupoId,
+          opcion_etiqueta: etiqueta,
+          opcion_nombre: agrupada ? nombreOpcion(opcion.nombre) : null,
+        }
+      })
+
+      const { data: cotizaciones, error } = await supabase.from('cotizaciones').insert(filas).select()
+      if (error) throw error
+
+      // Se empareja por número y no por posición: el orden de la respuesta no
+      // está garantizado.
+      const porNumero = new Map((cotizaciones as Cotizacion[]).map((c) => [c.numero, c]))
+      await insertarItems(
+        filas.map((fila, idx) => ({ cotizacionId: porNumero.get(fila.numero)!.id, items: input.opciones[idx].items }))
+      )
+      return porNumero.get(filas[0].numero)!
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['cotizaciones'] }),
+  })
+}
+
+/** Las opciones de un envío, con sus ítems, en orden A, B, C… */
+export function useOpcionesDelGrupo(grupoId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['opciones_grupo', grupoId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cotizaciones')
+        .select('*, items:cotizacion_items(*)')
+        .eq('grupo_id', grupoId!)
+        .order('opcion_etiqueta')
+      if (error) throw error
+      return data as (Cotizacion & { items: CotizacionItem[] })[]
+    },
+    enabled: !!grupoId,
+  })
+}
+
+type AgregarOpcionInput = {
+  /** Cualquier cotización del envío; si es suelta, pasa a ser la opción A. */
+  origenId: string
+  usuario_id: string
+  estado: 'borrador' | 'enviada'
+  opcion: OpcionInput
+}
+
+/**
+ * Suma una opción a un envío ya creado. Cliente, vencimiento y notas se copian
+ * del envío. Si el origen era una cotización suelta, se convierte en la opción
+ * A sin cambiarle el número, que el cliente ya pudo haber visto.
+ */
+export function useAgregarOpcion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: AgregarOpcionInput) => {
+      const { data: origen, error: origenError } = await supabase
+        .from('cotizaciones')
+        .select('id, numero, estado, cliente_id, fecha_vencimiento, notas, grupo_id')
+        .eq('id', input.origenId)
+        .single()
+      if (origenError) throw origenError
+      const o = origen as Pick<Cotizacion, 'id' | 'numero' | 'estado' | 'cliente_id' | 'fecha_vencimiento' | 'notas' | 'grupo_id'>
+      if (o.estado !== 'borrador' && o.estado !== 'enviada') {
+        throw new Error('Solo se agregan opciones a un envío en borrador o enviado')
+      }
+
+      let grupoId = o.grupo_id
+      if (!grupoId) {
+        grupoId = crypto.randomUUID()
+        const { error } = await supabase
+          .from('cotizaciones')
+          .update({ grupo_id: grupoId, opcion_etiqueta: etiquetaDeIndice(0) })
+          .eq('id', o.id)
+        if (error) throw error
+      }
+
+      const { data: hermanas, error: hermanasError } = await supabase
+        .from('cotizaciones')
+        .select('opcion_etiqueta')
+        .eq('grupo_id', grupoId)
+      if (hermanasError) throw hermanasError
+      const etiqueta = siguienteEtiqueta((hermanas as Pick<Cotizacion, 'opcion_etiqueta'>[]).map((h) => h.opcion_etiqueta))
+      // Mismo número base que el envío: COT-123-A → COT-123-C.
+      const base = o.numero.replace(/-[A-Z]$/, '')
+
+      const { subtotal, total } = calcularTotales(input.opcion.items, input.opcion.descuento_pct, input.opcion.iva_pct)
+      const { data: cot, error } = await supabase
+        .from('cotizaciones')
+        .insert({
+          numero: `${base}-${etiqueta}`,
+          cliente_id: o.cliente_id,
+          usuario_id: input.usuario_id,
+          estado: input.estado,
+          fecha_emision: hoyBogota(),
+          fecha_vencimiento: o.fecha_vencimiento,
+          subtotal,
+          descuento_pct: input.opcion.descuento_pct,
+          iva_pct: input.opcion.iva_pct,
+          total,
+          notas: o.notas,
+          grupo_id: grupoId,
+          opcion_etiqueta: etiqueta,
+          opcion_nombre: nombreOpcion(input.opcion.nombre),
         })
         .select()
         .single()
       if (error) throw error
 
-      if (input.items.length > 0) {
-        const { error: itemsError } = await supabase.from('cotizacion_items').insert(
-          input.items.map((item) => ({ ...item, cotizacion_id: cot.id }))
-        )
-        if (itemsError) throw itemsError
-      }
-      return cot
+      await insertarItems([{ cotizacionId: cot.id, items: input.opcion.items }])
+      return cot as Cotizacion
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cotizaciones'] }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['cotizaciones'] })
+      qc.invalidateQueries({ queryKey: ['cotizacion', variables.origenId] })
+      qc.invalidateQueries({ queryKey: ['opciones_grupo'] })
+    },
   })
 }
 
@@ -139,6 +267,8 @@ type CotizacionUpdateInput = {
   descuento_pct: number
   iva_pct: number
   notas?: string
+  /** Solo para una opción de un envío; en una cotización suelta se omite. */
+  opcion_nombre?: string
   items: Omit<CotizacionItem, 'id' | 'cotizacion_id'>[]
 }
 
@@ -146,11 +276,7 @@ export function useActualizarCotizacion() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (input: CotizacionUpdateInput) => {
-      const subtotal = input.items.reduce((s, i) => s + i.precio_total, 0)
-      const descuento = subtotal * (input.descuento_pct / 100)
-      const base = subtotal - descuento
-      const iva = base * (input.iva_pct / 100)
-      const total = base + iva
+      const { subtotal, total } = calcularTotales(input.items, input.descuento_pct, input.iva_pct)
 
       // Editar recalcula el total desde los ítems, sin mirar lo ya cobrado: se
       // podía dejar una cotización con un total por debajo de sus abonos, y a
@@ -181,6 +307,7 @@ export function useActualizarCotizacion() {
           iva_pct: input.iva_pct,
           total,
           notas: input.notas ?? null,
+          ...(input.opcion_nombre !== undefined && { opcion_nombre: nombreOpcion(input.opcion_nombre) }),
         })
         .eq('id', input.id)
       if (error) throw error
@@ -201,20 +328,30 @@ export function useActualizarCotizacion() {
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['cotizaciones'] })
       qc.invalidateQueries({ queryKey: ['cotizacion', variables.id] })
+      qc.invalidateQueries({ queryKey: ['opciones_grupo'] })
     },
   })
 }
 
+/**
+ * Cambia el estado de una cotización. Con `grupoId`, el cambio aplica a todas
+ * las opciones del envío que sigan abiertas (borrador o enviada): el envío se
+ * manda o se rechaza completo.
+ */
 export function useCambiarEstadoCotizacion() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, estado }: { id: string; estado: Cotizacion['estado'] }) => {
-      const { error } = await supabase.from('cotizaciones').update({ estado }).eq('id', id)
+    mutationFn: async ({ id, estado, grupoId }: { id: string; estado: Cotizacion['estado']; grupoId?: string | null }) => {
+      const consulta = supabase.from('cotizaciones').update({ estado })
+      const { error } = grupoId
+        ? await consulta.eq('grupo_id', grupoId).in('estado', ['borrador', 'enviada'])
+        : await consulta.eq('id', id)
       if (error) throw error
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cotizaciones'] })
-      qc.invalidateQueries({ queryKey: ['cotizacion', variables.id] })
+      qc.invalidateQueries({ queryKey: ['cotizacion'] })
+      qc.invalidateQueries({ queryKey: ['opciones_grupo'] })
     },
   })
 }

@@ -12,17 +12,9 @@ import { useCotizaciones } from '@/hooks/useCotizaciones'
 import { useSaldos } from '@/hooks/useVentasCaja'
 import { estaLiquidada } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
-import type { Cotizacion } from '@/types/database'
+import { ESTADOS_COTIZACION_CONFIG } from '@/lib/cotizaciones'
 
-const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline' }> = {
-  borrador: { label: 'Borrador', variant: 'secondary' },
-  enviada: { label: 'Enviada', variant: 'default' },
-  aprobada: { label: 'Aprobada', variant: 'success' },
-  rechazada: { label: 'Rechazada', variant: 'destructive' },
-  vencida: { label: 'Vencida', variant: 'warning' },
-  vendida: { label: 'Vendida', variant: 'outline' },
-  anulada: { label: 'Anulada', variant: 'destructive' },
-}
+const estadoConfig = ESTADOS_COTIZACION_CONFIG
 
 // Agrupaciones que no son un estado suelto de la tabla, pero sí las que el
 // usuario pide desde el dashboard.
@@ -44,7 +36,10 @@ export function CotizacionesPage() {
   const filtradas = cotizaciones?.filter((c) => {
     const cliente = c.cliente as { nombre: string; apellido: string } | undefined
     const q = busqueda.toLowerCase()
-    const coincide = c.numero.toLowerCase().includes(q) || (cliente ? `${cliente.nombre} ${cliente.apellido}`.toLowerCase().includes(q) : false)
+    const coincide =
+      c.numero.toLowerCase().includes(q) ||
+      (c.opcion_nombre?.toLowerCase().includes(q) ?? false) ||
+      (cliente ? `${cliente.nombre} ${cliente.apellido}`.toLowerCase().includes(q) : false)
     const saldo = saldos?.get(c.id)
     const coincideEstado =
       estadoFiltro === 'todos' ? true
@@ -122,7 +117,14 @@ export function CotizacionesPage() {
                         className="cursor-pointer border-b transition-colors hover:bg-muted/30"
                         onClick={() => navigate(`/cotizaciones/${cot.id}`)}
                       >
-                        <td className="px-4 py-3 font-mono text-xs font-medium">{cot.numero}</td>
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs font-medium">{cot.numero}</span>
+                          {cot.opcion_etiqueta && (
+                            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                              Opción {cot.opcion_etiqueta}{cot.opcion_nombre ? ` · ${cot.opcion_nombre}` : ''}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3">{cliente ? `${cliente.nombre} ${cliente.apellido}` : '—'}</td>
                         <td className="px-4 py-3 text-muted-foreground">{formatFecha(cot.fecha_emision)}</td>
                         <td className="px-4 py-3 text-muted-foreground">{cot.fecha_vencimiento ? formatFecha(cot.fecha_vencimiento) : '—'}</td>

@@ -295,6 +295,11 @@ export function useRegistrarAnticipo() {
       // El RPC también crea la orden: la cotización debe mostrarla sin recargar.
       qc.invalidateQueries({ queryKey: ['orden_de_cotizacion', variables.cotizacion.id] })
       qc.invalidateQueries({ queryKey: ['ordenes'] })
+      // Si era una opción de un envío, el RPC descartó las demás.
+      if (variables.cotizacion.grupo_id) {
+        qc.invalidateQueries({ queryKey: ['opciones_grupo', variables.cotizacion.grupo_id] })
+        qc.invalidateQueries({ queryKey: ['cotizacion'] })
+      }
     },
   })
 }

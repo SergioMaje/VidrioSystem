@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, Trash2, Pencil, ShoppingCart, FileText, UserPlus } from 'lucide-react'
+import { Loader2, Trash2, Pencil, ShoppingCart, FileText, UserPlus, Plus, Copy, Layers } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,11 +11,20 @@ import { ClienteFormDialog } from '@/pages/clientes/ClienteFormDialog'
 import { useClientes } from '@/hooks/useClientes'
 import { resumenOpciones } from '@/lib/opciones'
 import { formatCantidad, formatCOP, cn } from '@/lib/utils'
+import { calcularTotales, MAX_OPCIONES } from '@/lib/cotizaciones'
 import { detalleMedidasPorLado, medidasDeItem, nombreColorPerfil } from '@/lib/produccion'
 import { LADO_MEDICION_LABELS, textoLadoCorredizo } from '@/lib/lados'
 import type { CotizacionItem } from '@/types/database'
 
 export type ItemCotizacion = Omit<CotizacionItem, 'id' | 'cotizacion_id'>
+
+/** Lo que se muestra de cada opción del envío en la tira de pestañas. */
+export interface ResumenOpcion {
+  etiqueta: string
+  nombre: string
+  total: number
+  cantidadItems: number
+}
 
 interface PanelCotizacionProps {
   clienteId: string
@@ -36,6 +45,25 @@ interface PanelCotizacionProps {
   modoEdicion?: boolean
   editandoIdx?: number | null
   onEditarItem?: (idx: number) => void
+  /**
+   * Opciones del envío. Si viene, se muestra la tira de pestañas para armar
+   * varias opciones; los ítems, descuento e IVA son los de `opcionActiva`.
+   */
+  opciones?: ResumenOpcion[]
+  opcionActiva?: number
+  onSeleccionarOpcion?: (idx: number) => void
+  onAgregarOpcion?: () => void
+  onDuplicarOpcion?: () => void
+  onEliminarOpcion?: () => void
+  nombreOpcion?: string
+  onNombreOpcionChange?: (v: string) => void
+  /**
+   * Se trabaja una sola opción de un envío (editarla o agregarla): su letra, o
+   * 'nueva'. Null en una cotización suelta.
+   */
+  etiquetaFija?: string | null
+  /** Al agregar una opción, cliente, vencimiento y notas son del envío y no se tocan. */
+  datosEnvioBloqueados?: boolean
 }
 
 export function PanelCotizacion({
@@ -57,19 +85,30 @@ export function PanelCotizacion({
   modoEdicion = false,
   editandoIdx = null,
   onEditarItem,
+  opciones,
+  opcionActiva = 0,
+  onSeleccionarOpcion,
+  onAgregarOpcion,
+  onDuplicarOpcion,
+  onEliminarOpcion,
+  nombreOpcion = '',
+  onNombreOpcionChange,
+  etiquetaFija = null,
+  datosEnvioBloqueados = false,
 }: PanelCotizacionProps) {
   const { data: clientes } = useClientes()
   // El cliente se crea aquí mismo, sin salir: navegar perdería los ítems ya cargados.
   const [nuevoClienteOpen, setNuevoClienteOpen] = useState(false)
   const sinClientes = !!clientes && clientes.length === 0
 
-  const subtotal = items.reduce((s, i) => s + i.precio_total, 0)
-  const descuento = subtotal * (descuentoPct / 100)
-  const base = subtotal - descuento
-  const iva = base * (ivaPct / 100)
-  const total = base + iva
+  const { subtotal, total } = calcularTotales(items, descuentoPct, ivaPct)
 
   const puedeGuardar = !!clienteId && items.length > 0 && !!fechaVencimiento
+  const variasOpciones = !!opciones && opciones.length > 1
+  // El nombre se pide cuando hay con qué compararlo: varias opciones, o una
+  // opción de un envío ya existente.
+  const pideNombre = variasOpciones || etiquetaFija !== null
+  const etiquetaVisible = etiquetaFija ?? (variasOpciones ? opciones![opcionActiva].etiqueta : null)
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -93,7 +132,7 @@ export function PanelCotizacion({
               </div>
             ) : (
               <div className="flex gap-2">
-                <Select value={clienteId} onValueChange={onClienteChange}>
+                <Select value={clienteId} onValueChange={onClienteChange} disabled={datosEnvioBloqueados}>
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Selecciona un cliente..." />
                   </SelectTrigger>
@@ -112,6 +151,7 @@ export function PanelCotizacion({
                   className="shrink-0"
                   title="Nuevo cliente"
                   aria-label="Nuevo cliente"
+                  disabled={datosEnvioBloqueados}
                   onClick={() => setNuevoClienteOpen(true)}
                 >
                   <UserPlus className="h-4 w-4" />
@@ -125,19 +165,118 @@ export function PanelCotizacion({
               type="date"
               value={fechaVencimiento}
               onChange={(e) => onFechaVencimientoChange(e.target.value)}
+              disabled={datosEnvioBloqueados}
             />
-            <p className="text-xs text-muted-foreground">Hasta cuándo es válido el precio cotizado.</p>
+            <p className="text-xs text-muted-foreground">
+              {datosEnvioBloqueados
+                ? 'Cliente, vencimiento y notas son los del envío.'
+                : 'Hasta cuándo es válido el precio cotizado.'}
+            </p>
           </div>
         </CardContent>
       </Card>
 
+      {opciones && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers className="h-4 w-4" />
+              Opciones del envío
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {variasOpciones
+                ? 'El cliente elige una. Al cobrar su anticipo, las demás quedan descartadas.'
+                : 'Agrega otra opción para que el cliente compare (p. ej. otro vidrio o color).'}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Opciones del envío">
+              {opciones.map((o, idx) => (
+                <button
+                  key={o.etiqueta}
+                  type="button"
+                  role="tab"
+                  aria-selected={idx === opcionActiva}
+                  onClick={() => onSeleccionarOpcion?.(idx)}
+                  className={cn(
+                    'flex flex-col items-start rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors',
+                    idx === opcionActiva
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'hover:bg-muted',
+                    o.cantidadItems === 0 && idx !== opcionActiva && 'border-dashed'
+                  )}
+                >
+                  <span className="font-semibold">
+                    Opción {o.etiqueta}
+                    {o.nombre && <span className="font-normal text-muted-foreground"> · {o.nombre}</span>}
+                  </span>
+                  <span className="font-mono text-muted-foreground">
+                    {o.cantidadItems === 0 ? 'Sin ítems' : formatCOP(o.total)}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onDuplicarOpcion}
+                disabled={opciones.length >= MAX_OPCIONES || items.length === 0}
+                title="Crea otra opción con una copia de los ítems de esta"
+              >
+                <Copy className="mr-1.5 h-3.5 w-3.5" />
+                Duplicar {variasOpciones ? `opción ${opciones[opcionActiva].etiqueta}` : 'como opción B'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onAgregarOpcion}
+                disabled={opciones.length >= MAX_OPCIONES}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Opción vacía
+              </Button>
+              {variasOpciones && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={onEliminarOpcion}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Eliminar opción {opciones[opcionActiva].etiqueta}
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="flex-1">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-            Ítems{items.length > 0 && <span className="ml-2 text-sm font-normal text-muted-foreground">({items.length})</span>}
+            {etiquetaVisible
+              ? etiquetaVisible === 'nueva' ? 'Ítems de la nueva opción' : `Ítems de la opción ${etiquetaVisible}`
+              : 'Ítems'}
+            {items.length > 0 && <span className="ml-2 text-sm font-normal text-muted-foreground">({items.length})</span>}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {pideNombre && onNombreOpcionChange && (
+            <div className="space-y-1">
+              <Label className="text-xs">Nombre de la opción (lo ve el cliente)</Label>
+              <Input
+                value={nombreOpcion}
+                onChange={(e) => onNombreOpcionChange(e.target.value)}
+                placeholder="Ej.: Templado 5 mm, Aluminio negro…"
+                maxLength={60}
+                className="h-8 text-sm"
+              />
+            </div>
+          )}
           {items.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
               <FileText className="h-8 w-8 text-muted-foreground/40" />
@@ -297,7 +436,7 @@ export function PanelCotizacion({
           </div>
           <Separator />
           <div className="flex items-center justify-between font-bold">
-            <span>Total</span>
+            <span>Total{etiquetaVisible && etiquetaVisible !== 'nueva' ? ` opción ${etiquetaVisible}` : ''}</span>
             <span className="font-mono text-primary">{formatCOP(total)}</span>
           </div>
 
@@ -306,9 +445,10 @@ export function PanelCotizacion({
             <textarea
               className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               rows={2}
-              placeholder="Notas para el cliente..."
+              placeholder={variasOpciones ? 'Notas para el cliente (aplican a todas las opciones)...' : 'Notas para el cliente...'}
               value={notas}
               onChange={(e) => onNotasChange(e.target.value)}
+              disabled={datosEnvioBloqueados}
             />
           </div>
 
@@ -338,7 +478,7 @@ export function PanelCotizacion({
                   disabled={!puedeGuardar || isPending}
                   onClick={() => onGuardar('enviada')}
                 >
-                  Enviar
+                  {variasOpciones ? `Enviar ${opciones!.length} opciones` : 'Enviar'}
                 </Button>
               </>
             )}

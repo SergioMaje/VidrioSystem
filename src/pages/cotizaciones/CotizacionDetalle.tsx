@@ -1,40 +1,31 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { AnularCotizacionDialog } from './AnularCotizacionDialog'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
-import { useCotizacion, useCambiarEstadoCotizacion, useOrdenDeCotizacion } from '@/hooks/useCotizaciones'
+import { useCotizacion, useCambiarEstadoCotizacion, useOrdenDeCotizacion, useOpcionesDelGrupo } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/hooks/useAuth'
-import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { esVentaAnulada, estaLiquidada, textoAnticipoSolicitado, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
+import { abrirYImprimir, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
-import type { Cliente, Cotizacion, CotizacionItem, Venta } from '@/types/database'
+import type { Cliente, Venta } from '@/types/database'
 
-const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline' }> = {
-  borrador: { label: 'Borrador', variant: 'secondary' },
-  enviada: { label: 'Enviada', variant: 'default' },
-  aprobada: { label: 'Aprobada', variant: 'success' },
-  rechazada: { label: 'Rechazada', variant: 'destructive' },
-  vencida: { label: 'Vencida', variant: 'warning' },
-  vendida: { label: 'Vendida', variant: 'outline' },
-  anulada: { label: 'Anulada', variant: 'destructive' },
-}
-
-/** Una empresa se identifica con NIT; una persona natural, con cédula. */
-const etiquetaDocumento = (tipo?: Cliente['tipo']) => (tipo === 'juridico' ? 'NIT' : 'C.C.')
+const estadoConfig = ESTADOS_COTIZACION_CONFIG
 
 export function CotizacionDetalle() {
   const { id } = useParams<{ id: string }>()
@@ -44,6 +35,7 @@ export function CotizacionDetalle() {
   const { data: saldoInfo } = useSaldoCotizacion(id)
   const { data: pagos } = usePagosCotizacion(id)
   const { data: orden } = useOrdenDeCotizacion(id)
+  const { data: opcionesGrupo } = useOpcionesDelGrupo(cotizacion?.grupo_id)
   // Se cargan aqui y no dentro de imprimir(), que es sincrono y no puede esperar la query.
   const { data: cuentasPago } = useCuentasPagoEmpresa(true)
   const { data: empresa } = useConfiguracionEmpresa()
@@ -61,8 +53,8 @@ export function CotizacionDetalle() {
   const handleMarcarEnviada = async () => {
     if (!id) return
     try {
-      await cambiarEstado.mutateAsync({ id, estado: 'enviada' })
-      toast({ title: 'Cotización marcada como enviada', variant: 'success' })
+      await cambiarEstado.mutateAsync({ id, estado: 'enviada', grupoId: cotizacion?.grupo_id })
+      toast({ title: cotizacion?.grupo_id ? 'Envío marcado como enviado' : 'Cotización marcada como enviada', variant: 'success' })
     } catch {
       toast({ title: 'Error al actualizar estado', variant: 'destructive' })
     }
@@ -71,183 +63,33 @@ export function CotizacionDetalle() {
   const handleRechazar = async () => {
     if (!id) return
     try {
-      await cambiarEstado.mutateAsync({ id, estado: 'rechazada' })
-      toast({ title: 'Cotización rechazada', variant: 'success' })
+      await cambiarEstado.mutateAsync({ id, estado: 'rechazada', grupoId: cotizacion?.grupo_id })
+      toast({ title: cotizacion?.grupo_id ? 'Envío rechazado: todas sus opciones abiertas' : 'Cotización rechazada', variant: 'success' })
     } catch {
       toast({ title: 'Error al actualizar estado', variant: 'destructive' })
     }
   }
 
+  const contextoImpresion = () => ({ empresa, logo: logoEmpresa, cuentas: cuentasPago ?? [] })
+
   const imprimir = () => {
     if (!cotizacion) return
-    const cli = cotizacion.cliente as Cliente | undefined
-    // A una empresa se le factura por su razon social; el contacto va como dato aparte.
-    const razonSocial = cli ? (cli.empresa ?? `${cli.nombre} ${cli.apellido}`) : '—'
-    const items = (cotizacion.items ?? []) as CotizacionItem[]
-    const descuentoValor = cotizacion.subtotal * (cotizacion.descuento_pct / 100)
-    const ivaValor = cotizacion.total - cotizacion.subtotal * (1 - cotizacion.descuento_pct / 100)
-    const abonadoImpreso = saldoInfo?.total_abonado ?? 0
-    const saldoImpreso = saldoInfo?.saldo ?? cotizacion.total
+    abrirYImprimir(htmlCotizacion(
+      cotizacion,
+      { abonado: saldoInfo?.total_abonado ?? 0, saldo: saldoInfo?.saldo ?? cotizacion.total },
+      contextoImpresion(),
+    ))
+  }
 
-    const filasHtml = items.map((item) => `
-      <tr>
-        <td>
-          ${escapar(item.descripcion)}${item.ancho_cm && item.alto_cm ? ` <span class="dim">(${item.ancho_cm} × ${item.alto_cm} cm)</span>` : ''}
-          ${detalleMedidasPorLado(medidasDeItem(item)) ? `<br/><span class="dim">${escapar(detalleMedidasPorLado(medidasDeItem(item))!)}</span>` : ''}
-        </td>
-        <td class="right">${formatCantidad(item.cantidad)}</td>
-        <td class="right">${formatCOP(item.precio_unitario)}</td>
-        <td class="right"><strong>${formatCOP(item.precio_total)}</strong></td>
-      </tr>`).join('')
+  // Si el cliente ya eligió, las descartadas no se vuelven a ofrecer.
+  const opcionesImprimibles = (opcionesGrupo ?? []).filter((o) =>
+    o.estado !== 'anulada' &&
+    !(o.estado === 'descartada' && opcionesGrupo!.some((x) => x.estado === 'vendida'))
+  )
 
-    const cuentas = cuentasPago ?? []
-    const cuentasHtml = cuentas.length === 0 ? '' : `
-      <div class="caja">
-        <h2>Medios de pago</h2>
-        ${cuentas.map((cuenta) => `
-        <div class="cuenta">
-          <span class="cuenta-banco">${escapar(cuenta.banco)} · ${escapar(cuenta.tipo_cuenta)}</span>
-          <span class="cuenta-num">${escapar(cuenta.numero_cuenta)}</span>
-          <div class="cuenta-tit">${escapar(cuenta.titular)}</div>
-        </div>`).join('')}
-      </div>`
-
-    // Lo que la vidriería pide de anticipo (Configuración). Una anulada ya no pide nada.
-    const pctAnticipo = empresa?.anticipo_solicitado_pct
-    const anticipoHtml = !pctAnticipo || cotizacion.estado === 'anulada' ? '' : `
-    <div class="anticipo">${escapar(textoAnticipoSolicitado(pctAnticipo, cotizacion.total))}</div>`
-
-    const notasHtml = !cotizacion.notas ? '' : `
-      <div class="caja"><h2>Notas</h2>${escapar(cotizacion.notas).replace(/\n/g, '<br/>')}</div>`
-
-    // Si solo hay uno de los dos bloques, ocupa el ancho completo en vez de dejar un hueco.
-    const pieHtml = !notasHtml && !cuentasHtml ? '' :
-      `<div class="pie${notasHtml && cuentasHtml ? '' : ' una'}">${notasHtml}${cuentasHtml}</div>`
-
-    const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Cotización ${cotizacion.numero}</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    /* print-color-adjust: sin esto el navegador descarta los fondos al imprimir y un logo
-       con color de fondo sale descolorido. */
-    body{font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.35;color:#000;padding:1.4cm;
-      -webkit-print-color-adjust:exact;print-color-adjust:exact}
-${membreteCss}
-    /* Dos bloques independientes: los datos del cliente no se mezclan con los del documento. */
-    .bloques{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;margin-bottom:12px}
-    .bloque h2{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
-      color:#000;padding-bottom:3px;border-bottom:1px solid #999;margin-bottom:5px}
-    /* Etiqueta en columna fija: un valor largo envuelve dentro de su celda y nunca la invade. */
-    .campos{display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
-    .campos dt{color:#555;white-space:nowrap}
-    .campos dd{font-weight:600;word-break:break-word}
-    .razon{font-weight:700;font-size:12px;margin-bottom:3px}
-    table{width:100%;border-collapse:collapse}
-    th{text-align:left;padding:4px 6px;font-size:9px;text-transform:uppercase;
-      letter-spacing:.05em;border-bottom:1.5px solid #000;border-top:1px solid #000}
-    td{padding:4px 6px;border-bottom:1px solid #ddd;vertical-align:top}
-    tr{page-break-inside:avoid}
-    .right{text-align:right;white-space:nowrap}
-    /* Las medidas van junto a la descripcion: una linea menos por item. */
-    .dim{color:#555;font-size:10px}
-    .totales{margin-top:8px;margin-left:auto;width:230px}
-    .totales .row{display:flex;justify-content:space-between;padding:2px 0}
-    /* Doble filete sobre el total: convencion de documento contable. */
-    .totales .total{border-top:3px double #000;margin-top:3px;padding-top:5px;font-weight:700;font-size:13px}
-    .totales .abonado{margin-top:3px}
-    .totales .saldo{border-top:1px solid #999;margin-top:2px;padding-top:3px;font-weight:700}
-    /* Notas y cuentas comparten fila: ahorra un bloque completo de alto. */
-    .pie{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;align-items:start}
-    .pie.una{grid-template-columns:1fr}
-    .caja{border:1px solid #999;padding:6px 9px;page-break-inside:avoid}
-    .caja h2{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-      margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid #ddd}
-    .cuenta{padding:2px 0}
-    .cuenta+.cuenta{border-top:1px solid #ddd;margin-top:2px}
-    .cuenta-banco{font-weight:600}
-    .cuenta-num{font-family:"Courier New",monospace}
-    .cuenta-tit{font-size:10px;color:#555}
-    /* El único color del documento, para que el cliente lo vea sin buscarlo. */
-    /* Anticipo a la izquierda de los totales, a la altura de la fila del Total. */
-    .cierre{display:flex;justify-content:flex-end;align-items:flex-end;gap:14px;margin-top:8px}
-    .cierre .totales{margin-top:0;margin-left:0}
-    .anticipo{width:fit-content;max-width:100%;border:1.5px solid #2563eb;
-      background:#eff6ff;color:#1d4ed8;font-weight:700;font-size:12px;padding:5px 10px;page-break-inside:avoid}
-    .anulada{border:2px solid #b91c1c;color:#b91c1c;font-weight:700;text-align:center;
-      padding:6px;margin-bottom:12px;font-size:13px;letter-spacing:.1em}
-    .anulada span{display:block;font-size:10px;font-weight:400;letter-spacing:0}
-    @media print{
-      body{padding:0}
-      /* El navegador ya aplica los margenes de pagina; duplicarlos empujaba el pie a otra hoja. */
-      @page{margin:1.2cm}
-    }
-  </style>
-</head>
-<body>
-  ${membreteHtml(empresa, logoEmpresa, {
-    titulo: 'Cotización',
-    numero: cotizacion.numero,
-    fecha: `Emitida el ${formatFecha(cotizacion.fecha_emision)}`,
-  })}
-  ${cotizacion.estado === 'anulada' ? `
-  <div class="anulada">ANULADA<span>${cotizacion.anulado_at ? `El ${formatFechaHora(cotizacion.anulado_at)}` : ''}${cotizacion.tipo_anulacion ? ` · ${TIPO_ANULACION_LABEL[cotizacion.tipo_anulacion]}` : ''}</span></div>` : ''}
-
-  <div class="bloques">
-    <div class="bloque">
-      <h2>Cliente</h2>
-      <div class="razon">${escapar(razonSocial)}</div>
-      <dl class="campos">
-        ${cli?.documento ? `<dt>${etiquetaDocumento(cli.tipo)}</dt><dd>${escapar(cli.documento)}</dd>` : ''}
-        ${cli?.empresa ? `<dt>Contacto</dt><dd>${escapar(`${cli.nombre} ${cli.apellido}`)}</dd>` : ''}
-        ${cli?.direccion ? `<dt>Dirección</dt><dd>${escapar(cli.direccion)}${cli.ciudad ? `, ${escapar(cli.ciudad)}` : ''}</dd>` : ''}
-        ${cli?.telefono ? `<dt>Teléfono</dt><dd>${escapar(cli.telefono)}</dd>` : ''}
-        ${cli?.email ? `<dt>Correo</dt><dd>${escapar(cli.email)}</dd>` : ''}
-      </dl>
-    </div>
-    <div class="bloque">
-      <h2>Datos de la cotización</h2>
-      <dl class="campos">
-        <dt>Estado</dt><dd>${estadoConfig[cotizacion.estado].label}</dd>
-        <dt>Emisión</dt><dd>${formatFecha(cotizacion.fecha_emision)}</dd>
-        <dt>Vence</dt><dd>${cotizacion.fecha_vencimiento ? formatFecha(cotizacion.fecha_vencimiento) : '—'}</dd>
-        <dt>IVA</dt><dd>${cotizacion.iva_pct}%</dd>
-      </dl>
-    </div>
-  </div>
-
-  <table>
-    <thead>
-      <tr><th>Descripción</th><th class="right">Cant.</th><th class="right">Precio unit.</th><th class="right">Total</th></tr>
-    </thead>
-    <tbody>${filasHtml}</tbody>
-  </table>
-
-  <div class="cierre">
-  ${anticipoHtml}
-  <div class="totales">
-    <div class="row"><span>Subtotal</span><span>${formatCOP(cotizacion.subtotal)}</span></div>
-    ${cotizacion.descuento_pct > 0 ? `<div class="row"><span>Descuento (${cotizacion.descuento_pct}%)</span><span>-${formatCOP(descuentoValor)}</span></div>` : ''}
-    <div class="row"><span>IVA (${cotizacion.iva_pct}%)</span><span>${formatCOP(ivaValor)}</span></div>
-    <div class="row total"><span>Total</span><span>${formatCOP(cotizacion.total)}</span></div>
-    ${abonadoImpreso > 0 ? `
-    <div class="row abonado"><span>Abonado</span><span>-${formatCOP(abonadoImpreso)}</span></div>
-    <div class="row saldo"><span>Saldo pendiente</span><span>${formatCOP(saldoImpreso)}</span></div>` : ''}
-  </div>
-  </div>
-
-  ${pieHtml}
-</body>
-</html>`
-
-    const win = window.open('', '_blank')
-    if (!win) return
-    win.document.write(html)
-    win.document.close()
-    win.focus()
-    setTimeout(() => win.print(), 400)
+  const imprimirEnvio = () => {
+    if (!cotizacion || opcionesImprimibles.length === 0) return
+    abrirYImprimir(htmlEnvio(opcionesImprimibles, cotizacion.cliente as Cliente | undefined, contextoImpresion()))
   }
 
   if (isLoading) return <LoadingSpinner className="py-20" />
@@ -261,7 +103,16 @@ ${membreteCss}
   const anulada = cotizacion.estado === 'anulada'
   // Una anulada no tiene nada vigente: su saldo no es una deuda del cliente.
   const liquidada = !anulada && estaLiquidada(saldo)
-  const pctAnticipo = anulada ? null : empresa?.anticipo_solicitado_pct
+  // Ni una anulada ni una descartada le piden anticipo al cliente.
+  const pctAnticipo = anulada || cotizacion.estado === 'descartada' ? null : empresa?.anticipo_solicitado_pct
+  const opcion = textoOpcion(cotizacion)
+  const hermanas = (opcionesGrupo ?? []).filter((o) => o.id !== cotizacion.id)
+  const elegida = (opcionesGrupo ?? []).find((o) => o.estado === 'vendida')
+  // Las que el RPC descartará al cobrar el anticipo de esta.
+  const aDescartar = hermanas
+    .filter((o) => ['borrador', 'enviada', 'vencida', 'aprobada'].includes(o.estado))
+    .map((o) => o.opcion_etiqueta ?? '')
+  const abierta = cotizacion.estado === 'borrador' || cotizacion.estado === 'enviada'
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -271,14 +122,108 @@ ${membreteCss}
         </Button>
         <div className="flex-1">
           <h2 className="text-xl font-bold">{cotizacion.numero}</h2>
-          <p className="text-sm text-muted-foreground">Creada el {formatFechaHora(cotizacion.created_at)}</p>
+          <p className="text-sm text-muted-foreground">
+            {opcion && (
+              <span className="font-medium text-foreground">
+                {opcion}
+                {opcionesGrupo && ` (de ${opcionesGrupo.length})`} ·{' '}
+              </span>
+            )}
+            Creada el {formatFechaHora(cotizacion.created_at)}
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={imprimir}>
-          <Printer className="mr-2 h-4 w-4" />
-          Imprimir / PDF
-        </Button>
+        {opcionesImprimibles.length > 1 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Printer className="mr-2 h-4 w-4" />
+                Imprimir / PDF
+                <ChevronDown className="ml-1 h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={imprimirEnvio}>
+                Todo el envío ({opcionesImprimibles.length} opciones)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={imprimir}>Solo la opción {cotizacion.opcion_etiqueta}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button variant="outline" size="sm" onClick={imprimir}>
+            <Printer className="mr-2 h-4 w-4" />
+            Imprimir / PDF
+          </Button>
+        )}
         <Badge variant={cfg.variant} className={anulada ? 'px-3 py-1 text-sm' : undefined}>{cfg.label}</Badge>
       </div>
+
+      {cotizacion.estado === 'descartada' && (
+        <div className="flex items-start gap-2 rounded-md border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          <Layers className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            {elegida ? (
+              <>
+                El cliente eligió la{' '}
+                <button type="button" className="font-medium text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/cotizaciones/${elegida.id}`)}>
+                  {textoOpcion(elegida)} ({elegida.numero})
+                </button>
+                . Esta opción quedó descartada.
+              </>
+            ) : (
+              'El cliente eligió otra opción de este envío y esta quedó descartada.'
+            )}
+          </p>
+        </div>
+      )}
+
+      {opcionesGrupo && opcionesGrupo.length > 1 && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers className="h-4 w-4" />
+              Opciones de este envío
+            </CardTitle>
+            {abierta && (
+              <Button variant="outline" size="sm" onClick={() => navigate(`/cotizaciones/nueva?agregarA=${cotizacion.id}`)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Agregar opción
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="p-0">
+            <ul className="divide-y">
+              {opcionesGrupo.map((o) => {
+                const actual = o.id === cotizacion.id
+                const cfgOpcion = estadoConfig[o.estado]
+                return (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      disabled={actual}
+                      onClick={() => navigate(`/cotizaciones/${o.id}`)}
+                      className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                        actual ? 'bg-primary/5' : 'hover:bg-muted/40'
+                      }`}
+                    >
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                        actual ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                      }`}>
+                        {o.opcion_etiqueta}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className={actual ? 'font-medium' : ''}>{o.opcion_nombre || `Opción ${o.opcion_etiqueta}`}</span>
+                        <span className="block font-mono text-xs text-muted-foreground">{o.numero}</span>
+                      </span>
+                      <span className="font-mono">{formatCOP(o.total)}</span>
+                      <Badge variant={cfgOpcion.variant}>{cfgOpcion.label}</Badge>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {anulada && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -563,6 +508,16 @@ ${membreteCss}
               <Pencil className="mr-2 h-4 w-4" />
               Editar
             </Button>
+            {!cotizacion.grupo_id && (
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/cotizaciones/nueva?agregarA=${cotizacion.id}`)}
+                title="Crea otra opción para que el cliente compare; esta pasa a ser la opción A"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Agregar opción
+              </Button>
+            )}
             {cotizacion.estado === 'borrador' ? (
               <Button
                 className="flex-1"
@@ -570,7 +525,7 @@ ${membreteCss}
                 disabled={cambiarEstado.isPending}
               >
                 <Send className="mr-2 h-4 w-4" />
-                Marcar como enviada
+                {cotizacion.grupo_id ? 'Marcar envío como enviado' : 'Marcar como enviada'}
               </Button>
             ) : (
               <Button
@@ -579,7 +534,7 @@ ${membreteCss}
                 disabled={cambiarEstado.isPending}
               >
                 <ShoppingCart className="mr-2 h-4 w-4" />
-                Cliente aprobó — Registrar anticipo
+                {cotizacion.grupo_id ? 'Cliente eligió esta opción — Registrar anticipo' : 'Cliente aprobó — Registrar anticipo'}
               </Button>
             )}
             <Button
@@ -588,12 +543,14 @@ ${membreteCss}
               disabled={cambiarEstado.isPending}
             >
               <XCircle className="mr-2 h-4 w-4" />
-              Rechazar
+              {cotizacion.grupo_id ? 'Rechazar envío' : 'Rechazar'}
             </Button>
           </div>
           {cotizacion.estado === 'borrador' && (
             <p className="text-xs text-muted-foreground">
-              Marca la cotización como enviada al cliente para poder registrar el anticipo.
+              {cotizacion.grupo_id
+                ? 'Marca el envío como enviado al cliente para poder registrar el anticipo de la opción que elija.'
+                : 'Marca la cotización como enviada al cliente para poder registrar el anticipo.'}
             </p>
           )}
         </div>
@@ -603,6 +560,7 @@ ${membreteCss}
         cotizacion={cotizacion}
         open={pagoOpen}
         onOpenChange={setPagoOpen}
+        opcionesADescartar={aDescartar}
       />
       <AnularVentaDialog venta={aAnular} documento={cotizacion.numero} onClose={() => setAAnular(null)} />
       <AnularCotizacionDialog
