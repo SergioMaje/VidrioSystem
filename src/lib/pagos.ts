@@ -1,4 +1,5 @@
 import type { CategoriaGasto, MetodoPago, TipoPago } from '@/types/database'
+import { formatCOP } from './utils'
 
 /** El cliente debe entregar al menos este porcentaje del total como anticipo. */
 export const ANTICIPO_MIN_PCT = 0.5
@@ -10,6 +11,18 @@ export const anticipoMinimo = (total: number) => Math.round(total * ANTICIPO_MIN
 
 export const cumpleAnticipoMinimo = (monto: number, total: number) =>
   monto + TOLERANCIA >= anticipoMinimo(total)
+
+/**
+ * Lo que la vidriería le pide al cliente (Configuración), impreso en la
+ * cotización. No es la regla de cobro: se sigue aceptando desde
+ * `ANTICIPO_MIN_PCT`. Con el 100% no se repite el monto, porque es el total.
+ */
+export const anticipoSolicitado = (pct: number, total: number) => Math.round((total * pct) / 100)
+
+export function textoAnticipoSolicitado(pct: number, total: number) {
+  const texto = `Anticipo del ${pct}% de la cotización`
+  return pct >= 100 ? texto : `${texto}: ${formatCOP(anticipoSolicitado(pct, total))}`
+}
 
 export const estaLiquidada = (saldo: number) => saldo <= TOLERANCIA
 

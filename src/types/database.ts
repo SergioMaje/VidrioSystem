@@ -82,6 +82,8 @@ export interface ConfiguracionEmpresa {
   email: string | null
   /** Ruta dentro del bucket `empresa`, no la URL publica. */
   logo_path: string | null
+  /** % de anticipo que se imprime en la cotización (50–100). Null: no se muestra. */
+  anticipo_solicitado_pct: number | null
   created_at: string
   updated_at: string
 }

@@ -17,7 +17,7 @@ import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfi
 import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/hooks/useAuth'
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
-import { esVentaAnulada, estaLiquidada, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { esVentaAnulada, estaLiquidada, textoAnticipoSolicitado, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
@@ -112,6 +112,11 @@ export function CotizacionDetalle() {
         </div>`).join('')}
       </div>`
 
+    // Lo que la vidriería pide de anticipo (Configuración). Una anulada ya no pide nada.
+    const pctAnticipo = empresa?.anticipo_solicitado_pct
+    const anticipoHtml = !pctAnticipo || cotizacion.estado === 'anulada' ? '' : `
+    <div class="anticipo">${escapar(textoAnticipoSolicitado(pctAnticipo, cotizacion.total))}</div>`
+
     const notasHtml = !cotizacion.notas ? '' : `
       <div class="caja"><h2>Notas</h2>${escapar(cotizacion.notas).replace(/\n/g, '<br/>')}</div>`
 
@@ -165,6 +170,12 @@ ${membreteCss}
     .cuenta-banco{font-weight:600}
     .cuenta-num{font-family:"Courier New",monospace}
     .cuenta-tit{font-size:10px;color:#555}
+    /* El único color del documento, para que el cliente lo vea sin buscarlo. */
+    /* Anticipo a la izquierda de los totales, a la altura de la fila del Total. */
+    .cierre{display:flex;justify-content:flex-end;align-items:flex-end;gap:14px;margin-top:8px}
+    .cierre .totales{margin-top:0;margin-left:0}
+    .anticipo{width:fit-content;max-width:100%;border:1.5px solid #2563eb;
+      background:#eff6ff;color:#1d4ed8;font-weight:700;font-size:12px;padding:5px 10px;page-break-inside:avoid}
     .anulada{border:2px solid #b91c1c;color:#b91c1c;font-weight:700;text-align:center;
       padding:6px;margin-bottom:12px;font-size:13px;letter-spacing:.1em}
     .anulada span{display:block;font-size:10px;font-weight:400;letter-spacing:0}
@@ -214,6 +225,8 @@ ${membreteCss}
     <tbody>${filasHtml}</tbody>
   </table>
 
+  <div class="cierre">
+  ${anticipoHtml}
   <div class="totales">
     <div class="row"><span>Subtotal</span><span>${formatCOP(cotizacion.subtotal)}</span></div>
     ${cotizacion.descuento_pct > 0 ? `<div class="row"><span>Descuento (${cotizacion.descuento_pct}%)</span><span>-${formatCOP(descuentoValor)}</span></div>` : ''}
@@ -222,6 +235,7 @@ ${membreteCss}
     ${abonadoImpreso > 0 ? `
     <div class="row abonado"><span>Abonado</span><span>-${formatCOP(abonadoImpreso)}</span></div>
     <div class="row saldo"><span>Saldo pendiente</span><span>${formatCOP(saldoImpreso)}</span></div>` : ''}
+  </div>
   </div>
 
   ${pieHtml}
@@ -247,6 +261,7 @@ ${membreteCss}
   const anulada = cotizacion.estado === 'anulada'
   // Una anulada no tiene nada vigente: su saldo no es una deuda del cliente.
   const liquidada = !anulada && estaLiquidada(saldo)
+  const pctAnticipo = anulada ? null : empresa?.anticipo_solicitado_pct
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -358,7 +373,19 @@ ${membreteCss}
             {cotizacion.descuento_pct > 0 && <div className="flex justify-between text-sm text-muted-foreground"><span>Descuento ({cotizacion.descuento_pct}%)</span><span className="font-mono">-{formatCOP(cotizacion.subtotal * cotizacion.descuento_pct / 100)}</span></div>}
             <div className="flex justify-between text-sm"><span>IVA ({cotizacion.iva_pct}%)</span><span className="font-mono">{formatCOP(cotizacion.total - cotizacion.subtotal * (1 - cotizacion.descuento_pct / 100))}</span></div>
             <Separator />
-            <div className="flex justify-between font-bold text-lg"><span>Total</span><span className="font-mono text-primary">{formatCOP(cotizacion.total)}</span></div>
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+              <span className="text-lg font-bold">Total</span>
+              {/* El anticipo va pegado al total: en pantallas angostas baja de línea sin separarse de él. */}
+              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+                {pctAnticipo && (
+                  <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-1 text-sm font-medium text-primary">
+                    <Wallet className="h-4 w-4 shrink-0" />
+                    {textoAnticipoSolicitado(pctAnticipo, cotizacion.total)}
+                  </p>
+                )}
+                <span className="font-mono text-lg font-bold text-primary">{formatCOP(cotizacion.total)}</span>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
