@@ -22,6 +22,7 @@ const ESTADO_COTIZACION_LABEL: Record<Cotizacion['estado'], string> = {
   vencida: 'Vencida',
   vendida: 'Vendida',
   anulada: 'Anulada',
+  descartada: 'Descartada',
 }
 
 /**

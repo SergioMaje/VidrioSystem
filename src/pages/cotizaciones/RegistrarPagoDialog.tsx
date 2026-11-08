@@ -25,6 +25,8 @@ type Props = {
   cotizacion: Cotizacion
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Opciones del mismo envío que quedarán descartadas al cobrar el anticipo de esta. */
+  opcionesADescartar?: string[]
 }
 
 /**
@@ -33,7 +35,7 @@ type Props = {
  * Cuál de los dos es no lo decide quien abre el diálogo sino lo ya abonado, para
  * que la regla del mínimo no dependa del punto de entrada.
  */
-export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
+export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesADescartar = [] }: Props) {
   const navigate = useNavigate()
   const { toast } = useToast()
   const { usuario } = useAuth()
@@ -205,6 +207,17 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
           </div>
         ) : (
           <div className="space-y-4">
+            {esAnticipo && opcionesADescartar.length > 0 && (
+              <div className="flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-primary">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  El cliente elige la opción {cotizacion.opcion_etiqueta}.{' '}
+                  {opcionesADescartar.length === 1
+                    ? `La opción ${opcionesADescartar[0]} quedará descartada.`
+                    : `Las opciones ${opcionesADescartar.join(', ')} quedarán descartadas.`}
+                </span>
+              </div>
+            )}
             <div className="space-y-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Total cotización</span>

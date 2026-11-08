@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:db": "docker exec -i supabase_db_glazz psql -U postgres -X -q -o /dev/null < supabase/tests/anulacion_ventas.sql && docker exec -i supabase_db_glazz psql -U postgres -X -q -o /dev/null < supabase/tests/anulacion_cotizaciones.sql"
+    "test:db": "docker exec -i supabase_db_glazz psql -U postgres -X -q -o /dev/null < supabase/tests/anulacion_ventas.sql && docker exec -i supabase_db_glazz psql -U postgres -X -q -o /dev/null < supabase/tests/anulacion_cotizaciones.sql && docker exec -i supabase_db_glazz psql -U postgres -X -q -o /dev/null < supabase/tests/opciones_cotizacion.sql"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
