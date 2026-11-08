@@ -17,6 +17,9 @@ import {
 } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { mensajeError } from '@/lib/utils'
+import { ANTICIPO_MIN_PCT } from '@/lib/pagos'
+
+const MIN_PCT = ANTICIPO_MIN_PCT * 100
 
 const schema = z.object({
   nombre: z.string().min(1, 'El nombre es requerido'),
@@ -26,6 +29,15 @@ const schema = z.object({
   ciudad: z.string().optional(),
   telefono: z.string().optional(),
   email: z.string().email('Correo inválido').optional().or(z.literal('')),
+  // Texto del input: vacío = no se muestra en la cotización. El piso es el
+  // mínimo que exige el cobro; el check de la base dice lo mismo.
+  anticipo_solicitado_pct: z
+    .string()
+    .trim()
+    .refine(
+      (v) => v === '' || (/^\d+$/.test(v) && Number(v) >= MIN_PCT && Number(v) <= 100),
+      `Debe ser un número entero entre ${MIN_PCT} y 100`
+    ),
 })
 
 type FormData = z.infer<typeof schema>
@@ -63,6 +75,7 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
       ciudad: empresa.ciudad ?? '',
       telefono: empresa.telefono ?? '',
       email: empresa.email ?? '',
+      anticipo_solicitado_pct: empresa.anticipo_solicitado_pct?.toString() ?? '',
     })
   }, [empresa, reset])
 
@@ -79,6 +92,7 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
           ciudad: data.ciudad || null,
           telefono: data.telefono || null,
           email: data.email || null,
+          anticipo_solicitado_pct: data.anticipo_solicitado_pct ? Number(data.anticipo_solicitado_pct) : null,
         },
       })
       toast({ title: 'Datos de la empresa actualizados', variant: 'success' })
@@ -234,6 +248,31 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
                 <Label>Correo (opcional)</Label>
                 <Input placeholder="contacto@vidriosystem.com" disabled={!esAdmin} {...register('email')} />
                 {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="anticipo-pct">Anticipo solicitado en la cotización (opcional)</Label>
+                <div className="relative">
+                  <Input
+                    id="anticipo-pct"
+                    type="number"
+                    inputMode="numeric"
+                    min={MIN_PCT}
+                    max={100}
+                    step={1}
+                    placeholder="100"
+                    className="pr-8"
+                    disabled={!esAdmin}
+                    {...register('anticipo_solicitado_pct')}
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">%</span>
+                </div>
+                {errors.anticipo_solicitado_pct ? (
+                  <p className="text-xs text-destructive">{errors.anticipo_solicitado_pct.message}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Se muestra en la cotización. Al cobrar, el sistema acepta desde el {MIN_PCT}%.
+                  </p>
+                )}
               </div>
             </div>
 

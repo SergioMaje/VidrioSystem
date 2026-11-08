@@ -10,13 +10,14 @@ import { useCajaActual } from '@/hooks/useCajaSesiones'
 import { useRegistrarAnticipo, useRegistrarAbono, useSaldoCotizacion } from '@/hooks/useVentasCaja'
 import { useAuth } from '@/hooks/useAuth'
 import { useFinancieras } from '@/hooks/useFinancieras'
+import { useConfiguracionEmpresa } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
 import { PistaConfirmar } from '@/components/shared/Kbd'
 import { CamposFinanciera } from '@/components/shared/CamposFinanciera'
 import { InputDinero } from '@/components/shared/InputDinero'
 import { cajaVencida } from '@/lib/caja'
-import { METODO_PAGO_LABEL, anticipoMinimo, cumpleAnticipoMinimo, excedeSaldo } from '@/lib/pagos'
+import { METODO_PAGO_LABEL, anticipoMinimo, anticipoSolicitado, cumpleAnticipoMinimo, excedeSaldo } from '@/lib/pagos'
 import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import type { Cotizacion, MetodoPago, Venta } from '@/types/database'
 
@@ -45,6 +46,12 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
   const abonado = saldoInfo?.total_abonado ?? 0
   const saldo = saldoInfo?.saldo ?? total
   const minimo = anticipoMinimo(total)
+  // Lo que dice la cotización (Configuración). Es solo el monto sugerido: el
+  // cobro sigue aceptando desde el mínimo.
+  // isFetched y no isSuccess: si la consulta falla, se precarga el mínimo igual.
+  const { data: empresa, isFetched: empresaLista } = useConfiguracionEmpresa()
+  const pctSolicitado = empresa?.anticipo_solicitado_pct
+  const sugeridoAnticipo = pctSolicitado ? Math.max(minimo, anticipoSolicitado(pctSolicitado, total)) : minimo
   const esAdmin = usuario?.rol === 'admin'
   // Mientras el saldo no ha cargado se asume anticipo: es el lado que exige el
   // mínimo, así nunca se ofrece un cobro más laxo del que corresponde.
@@ -74,7 +81,8 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
   const esFinanciera = metodoPago === 'financiera'
   const financiera = financieras?.find((f) => f.id === financieraId)
 
-  // Al abrir se precarga el monto habitual: el mínimo en el anticipo, el saldo
+  // Al abrir se precarga el monto habitual: el anticipo que pide la cotización
+  // (o el mínimo, si la vidriería no lo configuró) en el anticipo, el saldo
   // completo cuando se viene a liquidar. Se espera a conocer lo abonado —de eso
   // depende cuál de los dos es— y se hace una sola vez por apertura para no
   // pisar lo que el usuario escriba.
@@ -83,8 +91,8 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
       setInicializado(false)
       return
     }
-    if (inicializado || !saldoListo) return
-    setMonto(String(esAnticipo ? minimo : Math.round(saldo)))
+    if (inicializado || !saldoListo || !empresaLista) return
+    setMonto(String(esAnticipo ? sugeridoAnticipo : Math.round(saldo)))
     setMetodoPago('efectivo')
     setFechaEntrega('')
     setAutorizar(false)
@@ -93,7 +101,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
     setReferencia('')
     setClaveIdempotencia(crypto.randomUUID())
     setInicializado(true)
-  }, [open, inicializado, esAnticipo, minimo, saldo, saldoListo])
+  }, [open, inicializado, esAnticipo, sugeridoAnticipo, saldo, saldoListo, empresaLista])
 
   const cambiarMetodo = (metodo: MetodoPago) => {
     setMetodoPago(metodo)
@@ -103,7 +111,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange }: Props) {
       setAutorizar(false)
       if (!financieraId && financieras?.length === 1) setFinancieraId(financieras[0].id)
     } else if (esFinanciera) {
-      setMonto(String(esAnticipo ? minimo : Math.round(saldo)))
+      setMonto(String(esAnticipo ? sugeridoAnticipo : Math.round(saldo)))
     }
   }
 
