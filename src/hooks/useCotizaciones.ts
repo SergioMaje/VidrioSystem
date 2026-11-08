@@ -41,11 +41,17 @@ export function useCotizacion(id: string) {
       await expirarCotizacionesVencidas()
       const { data, error } = await supabase
         .from('cotizaciones')
-        .select('*, cliente:clientes(*), items:cotizacion_items(*)')
+        .select(
+          '*, cliente:clientes(*), items:cotizacion_items(*), anulado_por_usuario:usuarios!cotizaciones_anulado_por_fkey(nombre, apellido)'
+        )
         .eq('id', id)
         .single()
       if (error) throw error
-      return data as Cotizacion & { items: CotizacionItem[] }
+      return data as Cotizacion & {
+        items: CotizacionItem[]
+        /** Quién anuló la cotización; null si no está anulada. */
+        anulado_por_usuario: { nombre: string; apellido: string } | null
+      }
     },
     enabled: !!id,
   })

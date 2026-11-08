@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,6 +8,8 @@ import { Separator } from '@/components/ui/separator'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
+import { AnularCotizacionDialog } from './AnularCotizacionDialog'
+import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
 import { useCotizacion, useCambiarEstadoCotizacion, useOrdenDeCotizacion } from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
@@ -28,6 +30,7 @@ const estadoConfig: Record<Cotizacion['estado'], { label: string; variant: 'defa
   rechazada: { label: 'Rechazada', variant: 'destructive' },
   vencida: { label: 'Vencida', variant: 'warning' },
   vendida: { label: 'Vendida', variant: 'outline' },
+  anulada: { label: 'Anulada', variant: 'destructive' },
 }
 
 /** Una empresa se identifica con NIT; una persona natural, con cédula. */
@@ -49,8 +52,10 @@ export function CotizacionDetalle() {
 
   const [pagoOpen, setPagoOpen] = useState(false)
   const [aAnular, setAAnular] = useState<Venta | null>(null)
+  const [anularCotizacionOpen, setAnularCotizacionOpen] = useState(false)
   const { usuario } = useAuth()
-  // Cosmético: la regla de que solo un admin anula vive en el RPC anular_venta.
+  // Cosmético: la regla de que solo un admin anula vive en los RPC anular_venta
+  // y anular_cotizacion.
   const esAdmin = usuario?.rol === 'admin'
 
   const handleMarcarEnviada = async () => {
@@ -160,6 +165,9 @@ ${membreteCss}
     .cuenta-banco{font-weight:600}
     .cuenta-num{font-family:"Courier New",monospace}
     .cuenta-tit{font-size:10px;color:#555}
+    .anulada{border:2px solid #b91c1c;color:#b91c1c;font-weight:700;text-align:center;
+      padding:6px;margin-bottom:12px;font-size:13px;letter-spacing:.1em}
+    .anulada span{display:block;font-size:10px;font-weight:400;letter-spacing:0}
     @media print{
       body{padding:0}
       /* El navegador ya aplica los margenes de pagina; duplicarlos empujaba el pie a otra hoja. */
@@ -173,6 +181,8 @@ ${membreteCss}
     numero: cotizacion.numero,
     fecha: `Emitida el ${formatFecha(cotizacion.fecha_emision)}`,
   })}
+  ${cotizacion.estado === 'anulada' ? `
+  <div class="anulada">ANULADA<span>${cotizacion.anulado_at ? `El ${formatFechaHora(cotizacion.anulado_at)}` : ''}${cotizacion.tipo_anulacion ? ` · ${TIPO_ANULACION_LABEL[cotizacion.tipo_anulacion]}` : ''}</span></div>` : ''}
 
   <div class="bloques">
     <div class="bloque">
@@ -234,7 +244,9 @@ ${membreteCss}
   const abonado = saldoInfo?.total_abonado ?? 0
   const saldo = saldoInfo?.saldo ?? cotizacion.total
   const pctAbonado = saldoInfo?.pct_abonado ?? 0
-  const liquidada = estaLiquidada(saldo)
+  const anulada = cotizacion.estado === 'anulada'
+  // Una anulada no tiene nada vigente: su saldo no es una deuda del cliente.
+  const liquidada = !anulada && estaLiquidada(saldo)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -250,8 +262,40 @@ ${membreteCss}
           <Printer className="mr-2 h-4 w-4" />
           Imprimir / PDF
         </Button>
-        <Badge variant={cfg.variant}>{cfg.label}</Badge>
+        <Badge variant={cfg.variant} className={anulada ? 'px-3 py-1 text-sm' : undefined}>{cfg.label}</Badge>
       </div>
+
+      {anulada && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="space-y-0.5">
+            <p className="font-semibold">
+              Cotización anulada
+              {cotizacion.anulado_at && ` el ${formatFechaHora(cotizacion.anulado_at)}`}
+              {cotizacion.anulado_por_usuario &&
+                ` por ${cotizacion.anulado_por_usuario.nombre} ${cotizacion.anulado_por_usuario.apellido}`}
+            </p>
+            {cotizacion.tipo_anulacion && (
+              <p>
+                <span className="font-medium">Motivo:</span> {TIPO_ANULACION_LABEL[cotizacion.tipo_anulacion]}
+                {cotizacion.motivo_anulacion && ` · ${cotizacion.motivo_anulacion}`}
+              </p>
+            )}
+            <p className="text-xs opacity-80">
+              Sus cobros quedaron anulados con su reverso en caja. Ya no se le pueden registrar cobros ni editarla.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {esAdmin && cotizacion.estado === 'vendida' && (
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" className="text-destructive" onClick={() => setAnularCotizacionOpen(true)}>
+            <Ban className="mr-2 h-4 w-4" />
+            Anular cotización
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
@@ -340,11 +384,13 @@ ${membreteCss}
 
       {/* 'aprobada' viene de un flujo anterior que creaba la orden sin cobrar:
           esas cotizaciones también necesitan poder cobrar su anticipo aquí. */}
-      {(cotizacion.estado === 'vendida' || cotizacion.estado === 'aprobada') && (
+      {(cotizacion.estado === 'vendida' || cotizacion.estado === 'aprobada' || anulada) && (
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Pagos</CardTitle>
-            {liquidada ? (
+            {anulada ? (
+              <Badge variant="destructive">Anulada</Badge>
+            ) : liquidada ? (
               <Badge variant="success" className="gap-1">
                 <CheckCircle2 className="h-3 w-3" />
                 Pagada completa
@@ -435,15 +481,22 @@ ${membreteCss}
                 <span className="text-muted-foreground">Abonado</span>
                 <span className="font-mono">{formatCOP(abonado)}</span>
               </div>
-              <div className="flex justify-between font-bold">
-                <span>Saldo pendiente</span>
-                <span className={`font-mono ${liquidada ? 'text-emerald-600' : 'text-destructive'}`}>
-                  {formatCOP(saldo)}
-                </span>
-              </div>
+              {anulada ? (
+                <div className="flex justify-between font-bold text-muted-foreground">
+                  <span>Saldo pendiente</span>
+                  <span>Anulada · {formatCOP(0)} vigente</span>
+                </div>
+              ) : (
+                <div className="flex justify-between font-bold">
+                  <span>Saldo pendiente</span>
+                  <span className={`font-mono ${liquidada ? 'text-emerald-600' : 'text-destructive'}`}>
+                    {formatCOP(saldo)}
+                  </span>
+                </div>
+              )}
             </div>
 
-            {!liquidada && (
+            {!liquidada && !anulada && (
               <p className="text-xs text-muted-foreground">
                 {abonado > 0
                   ? 'La producción ya puede avanzar. El cliente tiene plazo hasta el día de la entrega para abonar el saldo: la orden no se entregará mientras quede pendiente.'
@@ -525,6 +578,11 @@ ${membreteCss}
         onOpenChange={setPagoOpen}
       />
       <AnularVentaDialog venta={aAnular} documento={cotizacion.numero} onClose={() => setAAnular(null)} />
+      <AnularCotizacionDialog
+        cotizacion={cotizacion}
+        open={anularCotizacionOpen}
+        onClose={() => setAnularCotizacionOpen(false)}
+      />
     </div>
   )
 }

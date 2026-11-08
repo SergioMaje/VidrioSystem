@@ -7,6 +7,7 @@ import type {
   Cotizacion,
   CotizacionSaldo,
   OrdenTrabajo,
+  TipoAnulacionCotizacion,
   Usuario,
   Venta,
   VentaMostradorItem,
@@ -448,6 +449,118 @@ export function usePreviaAnulacion(venta: Venta | null) {
       }
 
       return previa
+    },
+  })
+}
+
+/** Un cobro activo de la cotización y la caja donde entró. */
+export type CobroAAnular = {
+  venta: Venta
+  cajaOriginal: PreviaAnulacion['cajaOriginal']
+}
+
+/** Lo que necesita el diálogo de anulación de una cotización completa. */
+export type PreviaAnulacionCotizacion = {
+  /** Cobros activos, del más nuevo al más viejo (el orden en que los anula el RPC). */
+  cobros: CobroAAnular[]
+  cajaAbierta: PreviaAnulacion['cajaAbierta']
+  ordenes: PreviaAnulacion['ordenes']
+  materialConsumido: boolean
+}
+
+/**
+ * Vista previa de `anular_cotizacion`. Igual que usePreviaAnulacion, es solo
+ * informativa: el RPC aplica las reglas.
+ */
+export function usePreviaAnulacionCotizacion(cotizacionId: string | null) {
+  return useQuery({
+    queryKey: ['previa-anulacion-cotizacion', cotizacionId],
+    enabled: !!cotizacionId,
+    queryFn: async (): Promise<PreviaAnulacionCotizacion> => {
+      const id = cotizacionId as string
+      const [ventas, abierta, ordenes] = await Promise.all([
+        supabase
+          .from('ventas')
+          .select('*')
+          .eq('cotizacion_id', id)
+          .is('anulado_at', null)
+          .order('created_at', { ascending: false }),
+        supabase.from('cash_register_sessions').select('id, opened_at').eq('status', 'open').maybeSingle(),
+        supabase.from('ordenes_trabajo').select('id, numero, estado').eq('cotizacion_id', id).neq('estado', 'cancelada'),
+      ])
+      if (ventas.error) throw ventas.error
+      if (abierta.error) throw abierta.error
+      if (ordenes.error) throw ordenes.error
+
+      const cobros = (ventas.data ?? []) as Venta[]
+      const sesionIds = [...new Set(cobros.map((v) => v.session_id))]
+      const sesiones = new Map<string, CobroAAnular['cajaOriginal']>()
+      if (sesionIds.length > 0) {
+        const { data, error } = await supabase
+          .from('cash_register_sessions')
+          .select('id, status, opened_at')
+          .in('id', sesionIds)
+        if (error) throw error
+        for (const s of data ?? []) sesiones.set(s.id, s)
+      }
+
+      let materialConsumido = false
+      const listaOrdenes = ordenes.data ?? []
+      if (listaOrdenes.length > 0) {
+        const { count, error } = await supabase
+          .from('orden_materiales')
+          .select('id', { count: 'exact', head: true })
+          .in('orden_id', listaOrdenes.map((o) => o.id))
+          .eq('estado', 'consumido')
+        if (error) throw error
+        materialConsumido = (count ?? 0) > 0
+      }
+
+      return {
+        cobros: cobros.map((venta) => ({ venta, cajaOriginal: sesiones.get(venta.session_id) ?? null })),
+        cajaAbierta: abierta.data,
+        ordenes: listaOrdenes,
+        materialConsumido,
+      }
+    },
+  })
+}
+
+/**
+ * Anula una cotización vendida completa con el RPC `anular_cotizacion`: anula
+ * todos sus cobros (con sus reversos de caja), cancela la orden pendiente y la
+ * deja en 'anulada', un estado final. Solo admin; la garantía está en el RPC.
+ */
+export function useAnularCotizacion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      cotizacionId,
+      motivo,
+      tipo,
+    }: {
+      cotizacionId: string
+      motivo: string
+      tipo: TipoAnulacionCotizacion
+    }) => {
+      const { data, error } = await supabase.rpc('anular_cotizacion', {
+        p_cotizacion_id: cotizacionId,
+        p_motivo: motivo,
+        p_tipo: tipo,
+      })
+      if (error) throw error
+      return data as unknown as Cotizacion
+    },
+    onSettled: (_data, _err, { cotizacionId }) => {
+      // Los reversos pueden caer en varias cajas: se invalidan todas.
+      invalidarPagos(qc, cotizacionId, undefined)
+      qc.invalidateQueries({ queryKey: ['orden_de_cotizacion', cotizacionId] })
+      qc.invalidateQueries({ queryKey: ['ventas-sesion'] })
+      qc.invalidateQueries({ queryKey: ['ventas-por-desembolsar'] })
+      qc.invalidateQueries({ queryKey: ['gastos-sesion'] })
+      qc.invalidateQueries({ queryKey: ['gastos-periodo'] })
+      qc.invalidateQueries({ queryKey: ['previa-anulacion-cotizacion', cotizacionId] })
+      qc.invalidateQueries({ queryKey: ['previa-anulacion'] })
     },
   })
 }
