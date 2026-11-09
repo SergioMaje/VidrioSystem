@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,7 @@ import { esVentaAnulada, estaLiquidada, textoAnticipoSolicitado, METODO_PAGO_LAB
 import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { abrirYImprimir, descargarImagen, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
 import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
+import type { OrigenNavegacion } from '@/components/shared/EnlaceDocumento'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora, mensajeError } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
@@ -31,6 +32,8 @@ const estadoConfig = ESTADOS_COTIZACION_CONFIG
 export function CotizacionDetalle() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // Si se llegó desde Caja o Reportes, la flecha vuelve allá y no a la lista.
+  const origen = useLocation().state as OrigenNavegacion | null
   const { toast } = useToast()
   const { data: cotizacion, isLoading } = useCotizacion(id ?? '')
   const { data: saldoInfo } = useSaldoCotizacion(id)
@@ -142,7 +145,13 @@ export function CotizacionDetalle() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/cotizaciones')}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate(origen?.desde ?? '/cotizaciones')}
+          title={origen ? `Volver a ${origen.desdeEtiqueta}` : 'Volver a cotizaciones'}
+          aria-label={origen ? `Volver a ${origen.desdeEtiqueta}` : 'Volver a cotizaciones'}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -201,7 +210,7 @@ export function CotizacionDetalle() {
             {elegida ? (
               <>
                 El cliente eligió la{' '}
-                <button type="button" className="font-medium text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/cotizaciones/${elegida.id}`)}>
+                <button type="button" className="font-medium text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/cotizaciones/${elegida.id}`, { state: origen })}>
                   {textoOpcion(elegida)} ({elegida.numero})
                 </button>
                 . Esta opción quedó descartada.
@@ -237,7 +246,7 @@ export function CotizacionDetalle() {
                     <button
                       type="button"
                       disabled={actual}
-                      onClick={() => navigate(`/cotizaciones/${o.id}`)}
+                      onClick={() => navigate(`/cotizaciones/${o.id}`, { state: origen })}
                       className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
                         actual ? 'bg-primary/5' : 'hover:bg-muted/40'
                       }`}
