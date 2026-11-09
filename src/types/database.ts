@@ -595,6 +595,8 @@ export interface MovimientoCaja {
 export type MovimientoCajaConUsuario = MovimientoCaja & {
   usuario: Pick<Usuario, 'nombre' | 'apellido'> | null
   anulado_por_usuario: Pick<Usuario, 'nombre' | 'apellido'> | null
+  /** Solo en los reversos de anulación: el cobro que compensan. */
+  venta: { cotizacion_id: string | null } | null
 }
 
 /** Vista `cotizaciones_saldo`: el saldo se deriva, nunca se almacena. */

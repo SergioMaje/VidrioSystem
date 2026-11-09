@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { VentaConCotizacion } from '@/hooks/useVentasCaja'
 import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
+import { EnlaceDocumento } from '@/components/shared/EnlaceDocumento'
 import {
   CATEGORIA_GASTO_LABEL,
   METODO_PAGO_LABEL,
@@ -34,6 +35,8 @@ type Fila = {
   id: string
   hora: string
   documento: string
+  /** Cotización a la que enlaza el documento: cobros de cotización y sus reversos. */
+  cotizacionId?: string | null
   detalle: string
   metodo: MetodoPago
   cajero: string
@@ -86,6 +89,7 @@ export function DetalleMovimientos({
           id: v.id,
           hora: formatHora(v.created_at),
           documento: origen.numero,
+          cotizacionId: v.cotizacion_id,
           detalle: `${origen.cliente} · ${TIPO_PAGO_LABEL[v.tipo]}`,
           metodo: v.metodo_pago,
           cajero: nombre(v.usuario),
@@ -102,6 +106,7 @@ export function DetalleMovimientos({
     id: m.id,
     hora: formatHora(m.created_at),
     documento: m.concepto,
+    cotizacionId: m.venta?.cotizacion_id,
     detalle: CATEGORIA_GASTO_LABEL[m.categoria],
     metodo: m.metodo_pago,
     cajero: nombre(m.usuario),
@@ -279,7 +284,12 @@ function TablaGrupos({ grupos, onAnular }: { grupos: Grupo[]; onAnular?: (v: Ven
               <tr key={f.id} className={cn('border-b', f.anulada && 'text-muted-foreground')}>
                 <td className="whitespace-nowrap px-3 py-2 tabular-nums">{f.hora}</td>
                 <td className="px-3 py-2">
-                  <span className={cn(f.venta && 'whitespace-nowrap font-mono text-xs', f.anulada && 'line-through')}>{f.documento}</span>
+                  <EnlaceDocumento
+                    cotizacionId={f.cotizacionId}
+                    className={cn(f.venta && 'whitespace-nowrap font-mono text-xs', f.anulada && 'line-through')}
+                  >
+                    {f.documento}
+                  </EnlaceDocumento>
                   {f.anulada && <BadgeAnulada motivo={f.motivoAnulacion ?? null} />}
                   {f.venta?.numero_recibo && (
                     <AccionesRecibo

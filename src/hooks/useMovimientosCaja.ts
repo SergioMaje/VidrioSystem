@@ -9,7 +9,8 @@ import type { CategoriaGasto, MetodoPago, MovimientoCaja, MovimientoCajaConUsuar
 const SELECT_CON_USUARIOS = `
   *,
   usuario:usuarios!caja_movimientos_usuario_id_fkey(nombre, apellido),
-  anulado_por_usuario:usuarios!caja_movimientos_anulado_por_fkey(nombre, apellido)
+  anulado_por_usuario:usuarios!caja_movimientos_anulado_por_fkey(nombre, apellido),
+  venta:ventas!caja_movimientos_venta_id_fkey(cotizacion_id)
 `
 
 /** Gastos del turno, incluidos los anulados: la UI los muestra tachados. */
