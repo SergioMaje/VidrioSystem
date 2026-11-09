@@ -38,7 +38,7 @@ export const NAV_ITEMS: ItemNavegacion[] = [
 export function rutaPadre(pathname: string): string | null {
   const editar = pathname.match(/^\/cotizaciones\/([^/]+)\/editar$/)
   if (editar) return `/cotizaciones/${editar[1]}`
-  const detalle = pathname.match(/^\/(cotizaciones|ordenes|proveedores)\/[^/]+$/)
+  const detalle = pathname.match(/^\/(cotizaciones|ordenes|proveedores|clientes)\/[^/]+$/)
   if (detalle) return `/${detalle[1]}`
   return null
 }
