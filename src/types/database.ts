@@ -84,6 +84,11 @@ export interface ConfiguracionEmpresa {
   logo_path: string | null
   /** % de anticipo que se imprime en la cotización (50–100). Null: no se muestra. */
   anticipo_solicitado_pct: number | null
+  /**
+   * Agradecimiento al final del recibo de pago; {empresa} se reemplaza por el
+   * nombre. Null: el texto por defecto (MENSAJE_RECIBO_DEFECTO en src/lib/recibos.ts).
+   */
+  mensaje_recibo: string | null
   created_at: string
   updated_at: string
 }
@@ -513,6 +518,11 @@ export interface Venta {
   motivo_anulacion: string | null
   /** Generada por el navegador una vez por diálogo de cobro: evita cobrar dos veces. */
   idempotency_key: string | null
+  /**
+   * Número del recibo de pago (RC-0001…), consecutivo por vidriería. Lo asigna
+   * la base al insertar. Null en los cobros anteriores a los recibos.
+   */
+  numero_recibo: string | null
   cotizacion?: Cotizacion
 }
 

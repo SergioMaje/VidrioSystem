@@ -20,6 +20,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { esVentaAnulada, estaLiquidada, textoAnticipoSolicitado, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { abrirYImprimir, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
+import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
@@ -389,6 +390,7 @@ export function CotizacionDetalle() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs font-medium uppercase text-muted-foreground">
+                    <th className="py-2">Recibo</th>
                     <th className="py-2">Fecha</th>
                     <th className="py-2">Tipo</th>
                     <th className="py-2">Método</th>
@@ -405,6 +407,14 @@ export function CotizacionDetalle() {
                       key={pago.id}
                       className={`border-b last:border-0 ${anulada ? 'text-muted-foreground' : ''}`}
                     >
+                      <td className="py-2">
+                        {pago.numero_recibo ? (
+                          <AccionesRecibo ventaId={pago.id} numero={pago.numero_recibo} anulado={anulada} />
+                        ) : (
+                          // Cobro anterior a los recibos: no tiene número.
+                          <span className="text-muted-foreground" title="Cobro registrado antes de los recibos de pago">—</span>
+                        )}
+                      </td>
                       <td className={`py-2 ${anulada ? 'line-through' : ''}`}>{formatFechaHora(pago.created_at)}</td>
                       <td className="py-2">
                         <span className={anulada ? 'line-through' : ''}>{TIPO_PAGO_LABEL[pago.tipo]}</span>

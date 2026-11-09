@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { VentaConCotizacion } from '@/hooks/useVentasCaja'
+import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
 import {
   CATEGORIA_GASTO_LABEL,
   METODO_PAGO_LABEL,
@@ -280,6 +281,14 @@ function TablaGrupos({ grupos, onAnular }: { grupos: Grupo[]; onAnular?: (v: Ven
                 <td className="px-3 py-2">
                   <span className={cn(f.venta && 'whitespace-nowrap font-mono text-xs', f.anulada && 'line-through')}>{f.documento}</span>
                   {f.anulada && <BadgeAnulada motivo={f.motivoAnulacion ?? null} />}
+                  {f.venta?.numero_recibo && (
+                    <AccionesRecibo
+                      ventaId={f.venta.id}
+                      numero={f.venta.numero_recibo}
+                      anulado={f.anulada}
+                      className="flex text-[11px] print:text-muted-foreground print:no-underline"
+                    />
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   {f.detalle}
