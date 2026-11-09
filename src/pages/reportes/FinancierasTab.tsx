@@ -24,6 +24,7 @@ import {
 import type { DesembolsoConDetalle } from '@/hooks/useFinancieras'
 import { fechaISOLocal, formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import type { VentaPorDesembolsar } from '@/types/database'
+import { EnlaceDocumento } from '@/components/shared/EnlaceDocumento'
 
 const SIN_CUENTA = 'sin-cuenta'
 
@@ -201,7 +202,9 @@ export function FinancierasTab({ desde, hasta }: { desde: string; hasta: string 
                         />
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{formatFecha(v.created_at)}</td>
-                      <td className="px-4 py-3 font-mono text-xs font-medium">{v.documento ?? '—'}</td>
+                      <td className="px-4 py-3 font-mono text-xs font-medium">
+                        <EnlaceDocumento cotizacionId={v.cotizacion_id}>{v.documento ?? '—'}</EnlaceDocumento>
+                      </td>
                       <td className="px-4 py-3">{v.cliente ?? 'Público general'}</td>
                       <td className="px-4 py-3">{v.financiera}</td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{v.referencia_financiera ?? '—'}</td>
