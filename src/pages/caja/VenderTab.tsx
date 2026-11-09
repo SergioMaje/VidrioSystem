@@ -8,6 +8,10 @@ import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useToast } from '@/hooks/useToast'
+import { ToastAction } from '@/components/ui/toast'
+import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
+import { cobroDeVentaMostrador } from '@/hooks/useRecibos'
+import { imprimirRecibo } from '@/lib/imprimirRecibo'
 import { useItems } from '@/hooks/useInventario'
 import { useClientes } from '@/hooks/useClientes'
 import { useRegistrarVentaMostrador } from '@/hooks/useVentaMostrador'
@@ -34,6 +38,8 @@ type Linea = {
  */
 export function VenderTab() {
   const { toast } = useToast()
+  const { data: empresa } = useConfiguracionEmpresa()
+  const { data: logo } = useLogoEmpresaDataUri()
   const { data: items, isLoading: cargandoItems } = useItems()
   const { data: clientes } = useClientes()
   const registrarVenta = useRegistrarVentaMostrador()
@@ -103,12 +109,21 @@ export function VenderTab() {
         financieraId: esFinanciera ? financieraId : undefined,
         referenciaFinanciera: esFinanciera ? referencia : undefined,
       })
+      // El cobro se busca ahora y no al hacer clic: la ventana del recibo debe
+      // abrirse en el mismo clic, sin esperas. Si falla, el recibo se
+      // reimprime desde el detalle de la caja.
+      const cobro = await cobroDeVentaMostrador(venta.id).catch(() => null)
       toast({
-        title: `Venta ${venta.numero} registrada`,
+        title: `Venta ${venta.numero} registrada${cobro?.numero_recibo ? ` · ${cobro.numero_recibo}` : ''}`,
         description: esFinanciera
           ? `${formatCOP(venta.total)} a crédito — pendiente de desembolso`
           : formatCOP(venta.total),
         variant: 'success',
+        action: cobro ? (
+          <ToastAction altText="Imprimir recibo" onClick={() => imprimirRecibo(cobro.id, { empresa, logo })}>
+            Imprimir recibo
+          </ToastAction>
+        ) : undefined,
       })
       // Se queda en Vender: lo normal es atender al siguiente cliente.
       setLineas([])

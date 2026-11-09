@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Loader2, ShieldAlert } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ImageDown, Loader2, Printer, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,7 +10,9 @@ import { useCajaActual } from '@/hooks/useCajaSesiones'
 import { useRegistrarAnticipo, useRegistrarAbono, useSaldoCotizacion } from '@/hooks/useVentasCaja'
 import { useAuth } from '@/hooks/useAuth'
 import { useFinancieras } from '@/hooks/useFinancieras'
-import { useConfiguracionEmpresa } from '@/hooks/useConfiguracionEmpresa'
+import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
+import { cobroPorClave } from '@/hooks/useRecibos'
+import { descargarReciboImagen, imprimirRecibo } from '@/lib/imprimirRecibo'
 import { useToast } from '@/hooks/useToast'
 import { useAtajoConfirmar } from '@/hooks/useAtajoConfirmar'
 import { PistaConfirmar } from '@/components/shared/Kbd'
@@ -74,6 +76,21 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
   // `isPending` tarda un render en deshabilitar el botón; este ref corta el
   // segundo clic en el mismo instante.
   const enviando = useRef(false)
+  // Tras cobrar, el diálogo no se cierra: muestra el número de recibo para
+  // imprimirlo en el acto. id null = el cobro entró pero no se pudo releer.
+  const [registrado, setRegistrado] = useState<{ id: string | null; numero: string | null; monto: number } | null>(null)
+  const { data: logoEmpresa } = useLogoEmpresaDataUri()
+  const [descargando, setDescargando] = useState(false)
+  const descargarImagen = async (ventaId: string) => {
+    setDescargando(true)
+    try {
+      await descargarReciboImagen(ventaId, { empresa, logo: logoEmpresa })
+    } catch (err) {
+      toast({ title: mensajeError(err, 'No se pudo descargar el recibo'), variant: 'destructive' })
+    } finally {
+      setDescargando(false)
+    }
+  }
 
   const { data: financieras } = useFinancieras(true)
   // El crédito cubre el total y no se combina: solo se ofrece como primer pago.
@@ -91,6 +108,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
   useEffect(() => {
     if (!open) {
       setInicializado(false)
+      setRegistrado(null)
       return
     }
     if (inicializado || !saldoListo || !empresaLista) return
@@ -168,7 +186,11 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
         })
         toast({ title: 'Abono registrado', variant: 'success' })
       }
-      onOpenChange(false)
+      // El anticipo devuelve la orden y el abono no devuelve nada: el cobro se
+      // busca por la clave con que entró. Si falla, el pago igual quedó; el
+      // recibo se reimprime desde la tabla de pagos.
+      const cobro = await cobroPorClave(claveIdempotencia).catch(() => null)
+      setRegistrado({ id: cobro?.id ?? null, numero: cobro?.numero_recibo ?? null, monto: montoNum })
     } catch (err) {
       toast({
         title: mensajeError(err, 'Error al registrar el pago'),
@@ -181,18 +203,51 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
 
   const saldoResultante = Math.max(0, saldo - montoNum)
   const cajaLista = !!sesionCaja && !cajaVencida(sesionCaja.opened_at)
-  const atajo = useAtajoConfirmar(handleConfirmar, { habilitado: cajaLista && puedeConfirmar, conCtrl: true })
+  const atajo = useAtajoConfirmar(handleConfirmar, { habilitado: !registrado && cajaLista && puedeConfirmar, conCtrl: true })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm" onKeyDown={atajo}>
         <DialogHeader>
           <DialogTitle>
-            {esFinanciera ? 'Venta a crédito de financiera' : esAnticipo ? 'Registrar anticipo' : 'Registrar abono'}
+            {registrado
+              ? 'Pago registrado'
+              : esFinanciera ? 'Venta a crédito de financiera' : esAnticipo ? 'Registrar anticipo' : 'Registrar abono'}
           </DialogTitle>
         </DialogHeader>
 
-        {!cajaLista ? (
+        {registrado ? (
+          <div className="space-y-4">
+            <div className="flex flex-col items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-4 text-center">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+              <p className="font-mono text-lg font-bold">{registrado.numero ?? 'Recibo'}</p>
+              <p className="text-sm text-emerald-800">{formatCOP(registrado.monto)} recibidos</p>
+            </div>
+            {!registrado.id && (
+              <p className="text-xs text-muted-foreground">
+                El pago quedó registrado. Puedes imprimir el recibo desde la tabla de pagos.
+              </p>
+            )}
+            {registrado.id && (
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  autoFocus
+                  onClick={() => imprimirRecibo(registrado.id!, { empresa, logo: logoEmpresa })}
+                >
+                  <Printer className="mr-2 h-4 w-4" />
+                  Imprimir / PDF
+                </Button>
+                <Button variant="outline" disabled={descargando} onClick={() => descargarImagen(registrado.id!)}>
+                  {descargando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageDown className="mr-2 h-4 w-4" />}
+                  Descargar imagen
+                </Button>
+              </div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cerrar</Button>
+            </DialogFooter>
+          </div>
+        ) : !cajaLista ? (
           <div className="space-y-4">
             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
