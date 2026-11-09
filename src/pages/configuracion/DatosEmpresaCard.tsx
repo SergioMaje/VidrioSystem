@@ -18,6 +18,7 @@ import {
 import { useToast } from '@/hooks/useToast'
 import { mensajeError } from '@/lib/utils'
 import { ANTICIPO_MIN_PCT } from '@/lib/pagos'
+import { MENSAJE_RECIBO_DEFECTO, MENSAJE_RECIBO_MAX, textoAgradecimiento } from '@/lib/recibos'
 
 const MIN_PCT = ANTICIPO_MIN_PCT * 100
 
@@ -38,6 +39,8 @@ const schema = z.object({
       (v) => v === '' || (/^\d+$/.test(v) && Number(v) >= MIN_PCT && Number(v) <= 100),
       `Debe ser un número entero entre ${MIN_PCT} y 100`
     ),
+  // Vacío = el agradecimiento por defecto. Mismo largo que el check de la base.
+  mensaje_recibo: z.string().trim().max(MENSAJE_RECIBO_MAX, `Máximo ${MENSAJE_RECIBO_MAX} caracteres`),
 })
 
 type FormData = z.infer<typeof schema>
@@ -61,7 +64,7 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [subiendo, setSubiendo] = useState(false)
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting, isDirty } } = useForm<FormData>({
+  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting, isDirty } } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
 
@@ -76,6 +79,7 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
       telefono: empresa.telefono ?? '',
       email: empresa.email ?? '',
       anticipo_solicitado_pct: empresa.anticipo_solicitado_pct?.toString() ?? '',
+      mensaje_recibo: empresa.mensaje_recibo ?? '',
     })
   }, [empresa, reset])
 
@@ -93,6 +97,7 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
           telefono: data.telefono || null,
           email: data.email || null,
           anticipo_solicitado_pct: data.anticipo_solicitado_pct ? Number(data.anticipo_solicitado_pct) : null,
+          mensaje_recibo: data.mensaje_recibo || null,
         },
       })
       toast({ title: 'Datos de la empresa actualizados', variant: 'success' })
@@ -273,6 +278,27 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
                     Se muestra en la cotización. Al cobrar, el sistema acepta desde el {MIN_PCT}%.
                   </p>
                 )}
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label htmlFor="mensaje-recibo">Mensaje de agradecimiento del recibo (opcional)</Label>
+                <Input
+                  id="mensaje-recibo"
+                  placeholder={MENSAJE_RECIBO_DEFECTO}
+                  maxLength={MENSAJE_RECIBO_MAX}
+                  disabled={!esAdmin}
+                  {...register('mensaje_recibo')}
+                />
+                {errors.mensaje_recibo ? (
+                  <p className="text-xs text-destructive">{errors.mensaje_recibo.message}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Va al final de cada recibo de pago. Escribe {'{empresa}'} donde quieras el nombre de la vidriería.
+                    Vacío: el mensaje por defecto.
+                  </p>
+                )}
+                <p className="rounded-md border border-dashed px-3 py-2 text-center text-sm font-semibold text-primary">
+                  {textoAgradecimiento({ nombre: watch('nombre') ?? empresa?.nombre ?? '', mensaje_recibo: null }, watch('mensaje_recibo'))}
+                </p>
               </div>
             </div>
 
