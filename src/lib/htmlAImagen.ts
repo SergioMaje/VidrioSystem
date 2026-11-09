@@ -9,6 +9,12 @@
  * (una URL http) no se dibujaría.
  */
 
+/** Lado máximo del canvas que dibujan bien todos los navegadores. */
+const MAX_LADO_CANVAS = 16000
+
+/** Ancho de una hoja carta (y media carta) en px CSS: 21,6 cm a 96 dpi. */
+export const ANCHO_CARTA_PX = 816
+
 /** Monta el HTML en un iframe invisible del ancho pedido y espera a que carguen sus imágenes. */
 async function montar(html: string, ancho: number): Promise<HTMLIFrameElement> {
   const iframe = document.createElement('iframe')
@@ -52,14 +58,17 @@ export async function htmlAPng(html: string, ancho: number, escala = 2): Promise
       `<foreignObject x="0" y="0" width="100%" height="100%">${xhtml}</foreignObject></svg>`
     const img = await cargarImagen(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
 
+    // Los navegadores limitan el lado del canvas (Chrome, ~32.000 px; Safari,
+    // menos). Una cotización de muchas páginas baja de resolución en vez de fallar.
+    const factor = Math.min(escala, MAX_LADO_CANVAS / alto)
     const canvas = document.createElement('canvas')
-    canvas.width = ancho * escala
-    canvas.height = alto * escala
+    canvas.width = Math.floor(ancho * factor)
+    canvas.height = Math.floor(alto * factor)
     const ctx = canvas.getContext('2d')!
     // Fondo blanco: un PNG transparente se ve negro en algunos visores (WhatsApp).
     ctx.fillStyle = '#fff'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.scale(escala, escala)
+    ctx.scale(factor, factor)
     ctx.drawImage(img, 0, 0)
 
     return await new Promise<Blob>((res, rej) =>
