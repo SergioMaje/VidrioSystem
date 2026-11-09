@@ -12,6 +12,7 @@ import { CotizacionesPage } from '@/pages/cotizaciones/CotizacionesPage'
 import { CotizacionFormPage } from '@/pages/cotizaciones/CotizacionFormPage'
 import { CotizacionDetalle } from '@/pages/cotizaciones/CotizacionDetalle'
 import { ClientesPage } from '@/pages/clientes/ClientesPage'
+import { ClienteDetalle } from '@/pages/clientes/ClienteDetalle'
 import { OrdenesPage } from '@/pages/ordenes/OrdenesPage'
 import { OrdenDetalle } from '@/pages/ordenes/OrdenDetalle'
 import { ProveedoresPage } from '@/pages/proveedores/ProveedoresPage'
@@ -44,6 +45,7 @@ export function AppRoutes() {
           <Route path="/proveedores" element={<ProveedoresPage />} />
           <Route path="/proveedores/:id" element={<ProveedorDetalle />} />
           <Route path="/clientes" element={<ClientesPage />} />
+          <Route path="/clientes/:id" element={<ClienteDetalle />} />
           <Route path="/ordenes" element={<OrdenesPage />} />
           <Route path="/ordenes/:id" element={<OrdenDetalle />} />
           {/* La venta directa vive ahora dentro de Caja. */}

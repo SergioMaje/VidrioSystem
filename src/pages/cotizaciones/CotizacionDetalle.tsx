@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -307,7 +307,17 @@ export function CotizacionDetalle() {
         <Card>
           <CardHeader><CardTitle className="text-base">Cliente</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <p className="font-medium">{cliente ? `${cliente.nombre} ${cliente.apellido}` : '—'}</p>
+            {cliente ? (
+              <Link
+                to={`/clientes/${cliente.id}`}
+                title="Ver historial del cliente"
+                className="font-medium text-primary underline-offset-2 hover:underline"
+              >
+                {cliente.nombre} {cliente.apellido}
+              </Link>
+            ) : (
+              <p className="font-medium">—</p>
+            )}
             {cliente?.empresa && <p className="text-muted-foreground">{cliente.empresa}</p>}
             {cliente?.documento && <p className="text-muted-foreground">{etiquetaDocumento(cliente.tipo)} {cliente.documento}</p>}
             {cliente?.telefono && <p>{cliente.telefono}</p>}

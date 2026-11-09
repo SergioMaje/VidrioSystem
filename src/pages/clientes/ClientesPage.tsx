@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, Plus, Building2, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,7 @@ import { useClientes } from '@/hooks/useClientes'
 import type { Cliente } from '@/types/database'
 
 export function ClientesPage() {
+  const navigate = useNavigate()
   const [busqueda, setBusqueda] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editCliente, setEditCliente] = useState<Cliente | null>(null)
@@ -67,7 +69,12 @@ export function ClientesPage() {
                 </thead>
                 <tbody>
                   {filtrados.map((cliente) => (
-                    <tr key={cliente.id} className="border-b transition-colors hover:bg-muted/30">
+                    <tr
+                      key={cliente.id}
+                      className="cursor-pointer border-b transition-colors hover:bg-muted/30"
+                      onClick={() => navigate(`/clientes/${cliente.id}`)}
+                      title="Ver historial del cliente"
+                    >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           {cliente.tipo === 'juridico' ? <Building2 className="h-4 w-4 text-muted-foreground" /> : <User className="h-4 w-4 text-muted-foreground" />}
@@ -85,7 +92,7 @@ export function ClientesPage() {
                       <td className="px-4 py-3 text-muted-foreground">{cliente.email ?? '—'}</td>
                       <td className="px-4 py-3">{cliente.ciudad ?? '—'}</td>
                       <td className="px-4 py-3">
-                        <Button variant="ghost" size="sm" onClick={() => { setEditCliente(cliente); setFormOpen(true) }}>
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setEditCliente(cliente); setFormOpen(true) }}>
                           Editar
                         </Button>
                       </td>

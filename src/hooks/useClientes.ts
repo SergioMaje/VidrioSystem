@@ -56,7 +56,11 @@ export function useEditarCliente() {
       const { error } = await supabase.from('clientes').update(data).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['clientes'] }),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['clientes'] })
+      // La ficha del cliente (`useCliente`) usa su propia clave.
+      qc.invalidateQueries({ queryKey: ['cliente', id] })
+    },
   })
 }
 
