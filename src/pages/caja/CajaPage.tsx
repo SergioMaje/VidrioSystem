@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, DollarSign } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,9 +15,15 @@ import { MovimientosTab } from './MovimientosTab'
 import { ResumenVentasSesion } from './ResumenVentasSesion'
 import { VenderTab } from './VenderTab'
 
+const TABS = ['vender', 'movimientos', 'turno']
+
 export function CajaPage() {
   const { data: sesion, isLoading: cargandoSesion } = useCajaActual()
   const [cerrarOpen, setCerrarOpen] = useState(false)
+  // La pestaña va en la URL: al volver de una cotización se abre la misma.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = TABS.includes(searchParams.get('tab') ?? '') ? (searchParams.get('tab') as string) : 'vender'
+  const cambiarTab = (t: string) => setSearchParams(t === 'vender' ? {} : { tab: t }, { replace: true })
 
   if (cargandoSesion) return <LoadingSpinner className="py-20" />
 
@@ -88,7 +94,7 @@ export function CajaPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="vender">
+      <Tabs value={tab} onValueChange={cambiarTab}>
         <TabsList>
           <TabsTrigger value="vender">Vender</TabsTrigger>
           <TabsTrigger value="movimientos">Movimientos</TabsTrigger>

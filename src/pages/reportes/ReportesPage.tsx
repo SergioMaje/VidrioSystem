@@ -17,6 +17,7 @@ import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
 import { useDesembolsos } from '@/hooks/useFinancieras'
 import { ResumenVentasSesion } from '@/pages/caja/ResumenVentasSesion'
+import { EnlaceDocumento } from '@/components/shared/EnlaceDocumento'
 import { EncabezadoTurno } from '@/pages/caja/cierre/EncabezadoTurno'
 import { BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { FinancierasTab } from './FinancierasTab'
@@ -682,7 +683,7 @@ export function ReportesPage() {
                           <tr key={v.id} className="border-b last:border-0">
                             <td className="px-4 py-3 text-muted-foreground">{formatFechaHora(v.created_at)}</td>
                             <td className="px-4 py-3 font-mono text-xs">
-                              {origenDeVenta(v).numero}
+                              <EnlaceDocumento cotizacionId={v.cotizacion_id}>{origenDeVenta(v).numero}</EnlaceDocumento>
                               <BadgeAnulada motivo={v.motivo_anulacion} />
                             </td>
                             <td className="px-4 py-3">{METODO_PAGO_LABEL[v.metodo_pago]}</td>
@@ -732,7 +733,9 @@ export function ReportesPage() {
                         return (
                         <tr key={v.id} className="border-b last:border-0 hover:bg-muted/30">
                           <td className="px-4 py-3 text-muted-foreground">{formatFechaHora(v.created_at)}</td>
-                          <td className="px-4 py-3 font-mono text-xs font-medium">{origen.numero}</td>
+                          <td className="px-4 py-3 font-mono text-xs font-medium">
+                            <EnlaceDocumento cotizacionId={v.cotizacion_id}>{origen.numero}</EnlaceDocumento>
+                          </td>
                           <td className="px-4 py-3">{origen.cliente}</td>
                           <td className="px-4 py-3 text-muted-foreground">{TIPO_PAGO_LABEL[v.tipo]}</td>
                           <td className="px-4 py-3 text-center">

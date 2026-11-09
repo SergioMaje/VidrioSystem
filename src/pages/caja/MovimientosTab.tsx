@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { EnlaceDocumento } from '@/components/shared/EnlaceDocumento'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
@@ -121,6 +122,11 @@ export function MovimientosTab({ sesion }: { sesion: CashRegisterSession }) {
                           {m.concepto}
                           {reverso && !m.afecta_efectivo && (
                             <span className="ml-2 text-xs text-muted-foreground">(sin salida de efectivo)</span>
+                          )}
+                          {reverso && m.venta?.cotizacion_id && (
+                            <EnlaceDocumento cotizacionId={m.venta.cotizacion_id} className="block text-xs">
+                              Ver cotización
+                            </EnlaceDocumento>
                           )}
                           {anulado && (
                             /* El motivo vive junto a la fila: sin él, un gasto tachado
