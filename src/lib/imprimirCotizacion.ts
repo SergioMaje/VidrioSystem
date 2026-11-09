@@ -1,4 +1,5 @@
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
+import { ANCHO_CARTA_PX, descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
 import { anticipoSolicitado, textoAnticipoSolicitado } from '@/lib/pagos'
 import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
@@ -297,4 +298,14 @@ export function abrirYImprimir(html: string) {
   win.document.close()
   win.focus()
   setTimeout(() => win.print(), 400)
+}
+
+/**
+ * Descarga como imagen PNG el mismo documento que se imprime (una cotización
+ * o el envío completo), para mandarlo por WhatsApp. Una cotización de varias
+ * páginas sale como una sola imagen larga.
+ */
+export async function descargarImagen(html: string, nombreArchivo: string) {
+  const png = await htmlAPng(html, ANCHO_CARTA_PX)
+  descargarBlob(png, `${nombreArchivo}.png`)
 }

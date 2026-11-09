@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
@@ -19,9 +19,9 @@ import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/hooks/useAuth'
 import { esVentaAnulada, estaLiquidada, textoAnticipoSolicitado, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
-import { abrirYImprimir, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
+import { abrirYImprimir, descargarImagen, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
 import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
-import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
+import { formatCantidad, formatCOP, formatFecha, formatFechaHora, mensajeError } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
 import type { Cliente, Venta } from '@/types/database'
@@ -46,6 +46,7 @@ export function CotizacionDetalle() {
   const [pagoOpen, setPagoOpen] = useState(false)
   const [aAnular, setAAnular] = useState<Venta | null>(null)
   const [anularCotizacionOpen, setAnularCotizacionOpen] = useState(false)
+  const [descargando, setDescargando] = useState(false)
   const { usuario } = useAuth()
   // Cosmético: la regla de que solo un admin anula vive en los RPC anular_venta
   // y anular_cotizacion.
@@ -73,13 +74,16 @@ export function CotizacionDetalle() {
 
   const contextoImpresion = () => ({ empresa, logo: logoEmpresa, cuentas: cuentasPago ?? [] })
 
+  // El mismo HTML sirve para imprimir (o guardar como PDF) y para la imagen.
+  const htmlEstaCotizacion = () => cotizacion && htmlCotizacion(
+    cotizacion,
+    { abonado: saldoInfo?.total_abonado ?? 0, saldo: saldoInfo?.saldo ?? cotizacion.total },
+    contextoImpresion(),
+  )
+
   const imprimir = () => {
-    if (!cotizacion) return
-    abrirYImprimir(htmlCotizacion(
-      cotizacion,
-      { abonado: saldoInfo?.total_abonado ?? 0, saldo: saldoInfo?.saldo ?? cotizacion.total },
-      contextoImpresion(),
-    ))
+    const html = htmlEstaCotizacion()
+    if (html) abrirYImprimir(html)
   }
 
   // Si el cliente ya eligió, las descartadas no se vuelven a ofrecer.
@@ -88,9 +92,26 @@ export function CotizacionDetalle() {
     !(o.estado === 'descartada' && opcionesGrupo!.some((x) => x.estado === 'vendida'))
   )
 
+  const htmlDelEnvio = () =>
+    cotizacion && opcionesImprimibles.length > 0
+      ? htmlEnvio(opcionesImprimibles, cotizacion.cliente as Cliente | undefined, contextoImpresion())
+      : null
+
   const imprimirEnvio = () => {
-    if (!cotizacion || opcionesImprimibles.length === 0) return
-    abrirYImprimir(htmlEnvio(opcionesImprimibles, cotizacion.cliente as Cliente | undefined, contextoImpresion()))
+    const html = htmlDelEnvio()
+    if (html) abrirYImprimir(html)
+  }
+
+  const descargar = async (html: string | null | undefined, nombreArchivo: string) => {
+    if (!html) return
+    setDescargando(true)
+    try {
+      await descargarImagen(html, nombreArchivo)
+    } catch (err) {
+      toast({ title: mensajeError(err, 'No se pudo descargar la imagen'), variant: 'destructive' })
+    } finally {
+      setDescargando(false)
+    }
   }
 
   if (isLoading) return <LoadingSpinner className="py-20" />
@@ -114,6 +135,9 @@ export function CotizacionDetalle() {
     .filter((o) => ['borrador', 'enviada', 'vencida', 'aprobada'].includes(o.estado))
     .map((o) => o.opcion_etiqueta ?? '')
   const abierta = cotizacion.estado === 'borrador' || cotizacion.estado === 'enviada'
+  const envioCompleto = opcionesImprimibles.length > 1
+  // El envío se nombra por su número base: COT-123-B → COT-123.
+  const numeroEnvio = cotizacion.numero.replace(/-[A-Z]$/, '')
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -133,28 +157,40 @@ export function CotizacionDetalle() {
             Creada el {formatFechaHora(cotizacion.created_at)}
           </p>
         </div>
-        {opcionesImprimibles.length > 1 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Printer className="mr-2 h-4 w-4" />
-                Imprimir / PDF
-                <ChevronDown className="ml-1 h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={imprimirEnvio}>
-                Todo el envío ({opcionesImprimibles.length} opciones)
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={imprimir}>Solo la opción {cotizacion.opcion_etiqueta}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : (
-          <Button variant="outline" size="sm" onClick={imprimir}>
-            <Printer className="mr-2 h-4 w-4" />
-            Imprimir / PDF
-          </Button>
-        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" disabled={descargando}>
+              {descargando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+              {descargando ? 'Generando imagen…' : 'Imprimir / Descargar'}
+              <ChevronDown className="ml-1 h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {envioCompleto ? (
+              <>
+                <DropdownMenuLabel>Todo el envío ({opcionesImprimibles.length} opciones)</DropdownMenuLabel>
+                <DropdownMenuItem onClick={imprimirEnvio}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Imprimir / PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => descargar(htmlDelEnvio(), `Cotizacion-${numeroEnvio}`)}>
+                  <ImageDown className="mr-2 h-4 w-4" />
+                  Descargar imagen
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Solo la opción {cotizacion.opcion_etiqueta}</DropdownMenuLabel>
+              </>
+            ) : null}
+            <DropdownMenuItem onClick={imprimir}>
+              <Printer className="mr-2 h-4 w-4" />
+              Imprimir / PDF
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => descargar(htmlEstaCotizacion(), `Cotizacion-${cotizacion.numero}`)}>
+              <ImageDown className="mr-2 h-4 w-4" />
+              Descargar imagen
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Badge variant={cfg.variant} className={anulada ? 'px-3 py-1 text-sm' : undefined}>{cfg.label}</Badge>
       </div>
 

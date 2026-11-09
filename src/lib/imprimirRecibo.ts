@@ -6,7 +6,7 @@ import { numeroALetras } from '@/lib/numeroALetras'
 import { textoAgradecimiento } from '@/lib/recibos'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import { obtenerDatosRecibo, type DatosRecibo } from '@/hooks/useRecibos'
-import { descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
+import { ANCHO_CARTA_PX, descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
 import type { Cliente, ConfiguracionEmpresa } from '@/types/database'
 
 /**
@@ -198,9 +198,6 @@ export async function imprimirRecibo(ventaId: string, ctx: ContextoRecibo) {
   }
 }
 
-/** Ancho de la media carta en px CSS (21,6 cm a 96 dpi). */
-const ANCHO_MEDIA_CARTA = 816
-
 /**
  * Descarga el recibo como imagen PNG, para mandarlo por WhatsApp sin pasar por
  * el PDF. Es el mismo documento que se imprime. Lanza el error para que quien
@@ -208,7 +205,7 @@ const ANCHO_MEDIA_CARTA = 816
  */
 export async function descargarReciboImagen(ventaId: string, ctx: ContextoRecibo) {
   const datos = await obtenerDatosRecibo(ventaId)
-  const png = await htmlAPng(htmlRecibo(datos, ctx), ANCHO_MEDIA_CARTA)
+  const png = await htmlAPng(htmlRecibo(datos, ctx), ANCHO_CARTA_PX)
   const numero = datos.venta.numero_recibo ?? 'sin-numero'
   descargarBlob(png, `Recibo-${numero}.png`)
 }
