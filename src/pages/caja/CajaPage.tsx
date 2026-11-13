@@ -95,7 +95,7 @@ export function CajaPage() {
       </div>
 
       <Tabs value={tab} onValueChange={cambiarTab}>
-        <TabsList>
+        <TabsList data-pestanas-flechas>
           <TabsTrigger value="vender">Vender</TabsTrigger>
           <TabsTrigger value="movimientos">Movimientos</TabsTrigger>
           <TabsTrigger value="turno">Turno</TabsTrigger>

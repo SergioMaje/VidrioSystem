@@ -50,7 +50,7 @@ export function ProveedorDetalle() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/proveedores')}>
+        <Button data-volver variant="ghost" size="sm" onClick={() => navigate('/proveedores')}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Volver
         </Button>

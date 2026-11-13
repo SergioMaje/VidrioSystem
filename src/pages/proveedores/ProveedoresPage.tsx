@@ -12,6 +12,7 @@ import { ProveedorFormDialog } from './ProveedorFormDialog'
 import { useProveedores, useEliminarProveedor } from '@/hooks/useInventario'
 import { useToast } from '@/hooks/useToast'
 import type { Proveedor } from '@/types/database'
+import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 export function ProveedoresPage() {
   const navigate = useNavigate()
@@ -50,6 +51,7 @@ export function ProveedoresPage() {
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            data-busqueda
             placeholder="Buscar por nombre, NIT o contacto..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
@@ -90,7 +92,8 @@ export function ProveedoresPage() {
                   {filtrados.map((proveedor) => (
                     <tr
                       key={proveedor.id}
-                      className="cursor-pointer border-b transition-colors hover:bg-muted/30"
+                      {...FILA_NAVEGABLE}
+                      className={`cursor-pointer border-b transition-colors hover:bg-muted/30 ${filaNavegableClase}`}
                       onClick={() => navigate(`/proveedores/${proveedor.id}`)}
                     >
                       <td className="px-4 py-3">

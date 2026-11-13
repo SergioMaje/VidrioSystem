@@ -17,6 +17,7 @@ import { useItems, useCategorias } from '@/hooks/useInventario'
 import { formatCantidad, formatCOP } from '@/lib/utils'
 import { medidasFisicas } from '@/lib/materiales'
 import type { ItemInventario } from '@/types/database'
+import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 export function InventarioPage() {
   // El dashboard entra aquí con ?stock=bajo (y a veces ?q=<nombre>) al pulsar
@@ -54,6 +55,7 @@ export function InventarioPage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              data-busqueda
               placeholder="Buscar por nombre o código..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
@@ -143,7 +145,8 @@ export function InventarioPage() {
                   {filtrados.map((item) => (
                     <tr
                       key={item.id}
-                      className="cursor-pointer border-b transition-colors hover:bg-muted/30"
+                      {...FILA_NAVEGABLE}
+                      className={`cursor-pointer border-b transition-colors hover:bg-muted/30 ${filaNavegableClase}`}
                       onClick={() => setItemSeleccionado(item)}
                     >
                       <td className="px-4 py-3 font-mono text-xs">{item.codigo}</td>

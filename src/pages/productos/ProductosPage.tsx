@@ -71,7 +71,7 @@ export function ProductosPage() {
       </div>
 
       <Tabs defaultValue="plantillas">
-        <TabsList>
+        <TabsList data-pestanas-flechas>
           <TabsTrigger value="plantillas">Plantillas BOM</TabsTrigger>
           {esAdmin && (
             <TabsTrigger value="referencias">Referencias</TabsTrigger>

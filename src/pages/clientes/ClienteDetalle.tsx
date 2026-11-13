@@ -24,6 +24,7 @@ import { etiquetaDocumento } from '@/lib/imprimirCotizacion'
 import { estaLiquidada } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
 import type { Cotizacion, CotizacionSaldo, VentaMostrador } from '@/types/database'
+import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 const TABS = ['cotizaciones', 'trabajos', 'mostrador']
 
@@ -71,7 +72,7 @@ export function ClienteDetalle() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/clientes')} title="Volver a clientes">
+        <Button data-volver variant="ghost" size="sm" onClick={() => navigate('/clientes')} title="Volver a clientes">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Volver
         </Button>
@@ -124,7 +125,7 @@ export function ClienteDetalle() {
       </div>
 
       <Tabs value={tab} onValueChange={cambiarTab}>
-        <TabsList>
+        <TabsList data-pestanas-flechas>
           <TabsTrigger value="cotizaciones">Cotizaciones</TabsTrigger>
           <TabsTrigger value="trabajos">Trabajos</TabsTrigger>
           {tieneMostrador && <TabsTrigger value="mostrador">Mostrador</TabsTrigger>}
@@ -213,7 +214,7 @@ function TablaCotizaciones({
                   // Solo una vendida tiene un saldo que el cliente deba.
                   const saldo = c.estado === 'vendida' ? saldos?.get(c.id)?.saldo : undefined
                   return (
-                    <tr key={c.id} className="cursor-pointer border-b transition-colors hover:bg-muted/30" onClick={() => onAbrir(c.id)}>
+                    <tr key={c.id} {...FILA_NAVEGABLE} className={`cursor-pointer border-b transition-colors hover:bg-muted/30 ${filaNavegableClase}`} onClick={() => onAbrir(c.id)}>
                       <td className={TH}>
                         <p className="font-medium text-primary">{c.numero}</p>
                         {opcion && <p className="text-xs text-muted-foreground">{opcion}</p>}
@@ -291,7 +292,7 @@ function TablaTrabajos({
                       const estado = ESTADOS_ORDEN_CONFIG[o.estado]
                       const entrega = o.fecha_entrega_real ?? o.fecha_entrega_estimada
                       return (
-                        <tr key={o.id} className="cursor-pointer border-b transition-colors hover:bg-muted/30" onClick={() => onAbrir(o.id)}>
+                        <tr key={o.id} {...FILA_NAVEGABLE} className={`cursor-pointer border-b transition-colors hover:bg-muted/30 ${filaNavegableClase}`} onClick={() => onAbrir(o.id)}>
                           <td className={`${TH} font-medium text-primary`}>{o.numero}</td>
                           <td className={`${TH} text-muted-foreground`}>{o.cotizacion?.numero ?? '—'}</td>
                           <td className={TH}><Badge variant={estado.variant}>{estado.label}</Badge></td>

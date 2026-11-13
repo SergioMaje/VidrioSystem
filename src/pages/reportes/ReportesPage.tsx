@@ -297,7 +297,7 @@ export function ReportesPage() {
   return (
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={cambiarTab}>
-        <TabsList className="h-auto flex-wrap">
+        <TabsList data-pestanas-flechas className="h-auto flex-wrap">
           <TabsTrigger value="inventario">Inventario valorizado</TabsTrigger>
           <TabsTrigger value="ventas">Ventas por período</TabsTrigger>
           <TabsTrigger value="ingresos">Ingresos</TabsTrigger>

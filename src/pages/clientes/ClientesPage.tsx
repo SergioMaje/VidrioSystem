@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { ClienteFormDialog } from './ClienteFormDialog'
 import { useClientes } from '@/hooks/useClientes'
 import type { Cliente } from '@/types/database'
+import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 export function ClientesPage() {
   const navigate = useNavigate()
@@ -35,6 +36,7 @@ export function ClientesPage() {
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            data-busqueda
             placeholder="Buscar cliente..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
@@ -71,7 +73,8 @@ export function ClientesPage() {
                   {filtrados.map((cliente) => (
                     <tr
                       key={cliente.id}
-                      className="cursor-pointer border-b transition-colors hover:bg-muted/30"
+                      {...FILA_NAVEGABLE}
+                      className={`cursor-pointer border-b transition-colors hover:bg-muted/30 ${filaNavegableClase}`}
                       onClick={() => navigate(`/clientes/${cliente.id}`)}
                       title="Ver historial del cliente"
                     >
