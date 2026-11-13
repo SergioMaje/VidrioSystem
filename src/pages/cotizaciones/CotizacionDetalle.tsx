@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2 } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2, Star, ListChecks } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -10,22 +10,27 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { AnularCotizacionDialog } from './AnularCotizacionDialog'
+import { ElegirOpcionesDialog } from './ElegirOpcionesDialog'
+import { IconoTipoCategoria } from '@/components/shared/IconoTipoCategoria'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
-import { useCotizacion, useCambiarEstadoCotizacion, useOrdenDeCotizacion, useOpcionesDelGrupo } from '@/hooks/useCotizaciones'
+import {
+  useCotizacion, useCambiarEstadoCotizacion, useOrdenDeCotizacion, useOpcionesDelGrupo, useCategoriasDelEnvio,
+  useEleccionDelPedido,
+} from '@/hooks/useCotizaciones'
 import { useSaldoCotizacion, usePagosCotizacion } from '@/hooks/useVentasCaja'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/hooks/useAuth'
 import { esVentaAnulada, estaLiquidada, textoAnticipoSolicitado, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
-import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
+import { codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, TIPO_CATEGORIA_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { abrirYImprimir, descargarImagen, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
 import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
 import type { OrigenNavegacion } from '@/components/shared/EnlaceDocumento'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora, mensajeError } from '@/lib/utils'
 import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
-import type { Cliente, Venta } from '@/types/database'
+import type { Cliente, Cotizacion, Venta } from '@/types/database'
 
 const estadoConfig = ESTADOS_COTIZACION_CONFIG
 
@@ -40,6 +45,11 @@ export function CotizacionDetalle() {
   const { data: pagos } = usePagosCotizacion(id)
   const { data: orden } = useOrdenDeCotizacion(id)
   const { data: opcionesGrupo } = useOpcionesDelGrupo(cotizacion?.grupo_id)
+  const { data: categoriasEnvio } = useCategoriasDelEnvio(cotizacion?.grupo_id)
+  // Si esta cotización es un pedido armado por elección, las opciones que lo forman.
+  const { data: eleccion } = useEleccionDelPedido(id)
+  // Si es una opción y el cliente ya eligió, el pedido de esa elección.
+  const { data: pedido } = useCotizacion(cotizacion?.pedido_id ?? '')
   // Se cargan aqui y no dentro de imprimir(), que es sincrono y no puede esperar la query.
   const { data: cuentasPago } = useCuentasPagoEmpresa(true)
   const { data: empresa } = useConfiguracionEmpresa()
@@ -50,6 +60,9 @@ export function CotizacionDetalle() {
   const [aAnular, setAAnular] = useState<Venta | null>(null)
   const [anularCotizacionOpen, setAnularCotizacionOpen] = useState(false)
   const [descargando, setDescargando] = useState(false)
+  const [elegirOpen, setElegirOpen] = useState(false)
+  // Recién armado desde "Cliente eligió…": se cobra su anticipo aquí mismo.
+  const [pedidoCreado, setPedidoCreado] = useState<Cotizacion | null>(null)
   const { usuario } = useAuth()
   // Cosmético: la regla de que solo un admin anula vive en los RPC anular_venta
   // y anular_cotizacion.
@@ -82,6 +95,7 @@ export function CotizacionDetalle() {
     cotizacion,
     { abonado: saldoInfo?.total_abonado ?? 0, saldo: saldoInfo?.saldo ?? cotizacion.total },
     contextoImpresion(),
+    (eleccion ?? []).map((o) => textoOpcion(o, o.categoria) ?? o.numero),
   )
 
   const imprimir = () => {
@@ -92,12 +106,12 @@ export function CotizacionDetalle() {
   // Si el cliente ya eligió, las descartadas no se vuelven a ofrecer.
   const opcionesImprimibles = (opcionesGrupo ?? []).filter((o) =>
     o.estado !== 'anulada' &&
-    !(o.estado === 'descartada' && opcionesGrupo!.some((x) => x.estado === 'vendida'))
+    !(o.estado === 'descartada' && opcionesGrupo!.some((x) => x.estado === 'vendida' || x.pedido_id))
   )
 
   const htmlDelEnvio = () =>
     cotizacion && opcionesImprimibles.length > 0
-      ? htmlEnvio(opcionesImprimibles, cotizacion.cliente as Cliente | undefined, contextoImpresion())
+      ? htmlEnvio(opcionesImprimibles, cotizacion.cliente as Cliente | undefined, contextoImpresion(), categoriasEnvio ?? [])
       : null
 
   const imprimirEnvio = () => {
@@ -130,7 +144,16 @@ export function CotizacionDetalle() {
   const liquidada = !anulada && estaLiquidada(saldo)
   // Ni una anulada ni una descartada le piden anticipo al cliente.
   const pctAnticipo = anulada || cotizacion.estado === 'descartada' ? null : empresa?.anticipo_solicitado_pct
-  const opcion = textoOpcion(cotizacion)
+  const categorias = categoriasEnvio ?? []
+  const categoriaActual = categorias.find((c) => c.id === cotizacion.categoria_id) ?? null
+  // Opción de un envío por categorías: no se cobra sola, se cobra el pedido.
+  const porCategoria = !!cotizacion.categoria_id
+  const opcion = textoOpcion(cotizacion, categoriaActual)
+  /** "B", o "2B" en un envío por categorías. */
+  const codigoDe = (o: Pick<Cotizacion, 'categoria_id' | 'opcion_etiqueta'>) => {
+    const cat = categorias.find((c) => c.id === o.categoria_id)
+    return cat ? codigoOpcion(cat.orden, o.opcion_etiqueta ?? '') : o.opcion_etiqueta ?? ''
+  }
   const hermanas = (opcionesGrupo ?? []).filter((o) => o.id !== cotizacion.id)
   const elegida = (opcionesGrupo ?? []).find((o) => o.estado === 'vendida')
   // Las que el RPC descartará al cobrar el anticipo de esta.
@@ -140,7 +163,7 @@ export function CotizacionDetalle() {
   const abierta = cotizacion.estado === 'borrador' || cotizacion.estado === 'enviada'
   const envioCompleto = opcionesImprimibles.length > 1
   // El envío se nombra por su número base: COT-123-B → COT-123.
-  const numeroEnvio = cotizacion.numero.replace(/-[A-Z]$/, '')
+  const numeroEnvio = numeroBaseEnvio(cotizacion.numero)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -187,7 +210,7 @@ export function CotizacionDetalle() {
                   Descargar imagen
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel>Solo la opción {cotizacion.opcion_etiqueta}</DropdownMenuLabel>
+                <DropdownMenuLabel>Solo la opción {codigoDe(cotizacion)}</DropdownMenuLabel>
               </>
             ) : null}
             <DropdownMenuItem onClick={imprimir}>
@@ -203,7 +226,21 @@ export function CotizacionDetalle() {
         <Badge variant={cfg.variant} className={anulada ? 'px-3 py-1 text-sm' : undefined}>{cfg.label}</Badge>
       </div>
 
-      {cotizacion.estado === 'descartada' && (
+      {cotizacion.pedido_id && (
+        <div className="flex items-start gap-2 rounded-md border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          <ListChecks className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            {cotizacion.estado === 'aprobada' ? 'El cliente eligió esta opción. ' : 'El cliente no tomó esta opción. '}
+            Su elección quedó en el pedido{' '}
+            <button type="button" className="font-medium text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/cotizaciones/${cotizacion.pedido_id}`, { state: origen })}>
+              {pedido?.numero ?? 'ver pedido'}
+            </button>
+            , donde se cobra el anticipo.
+          </p>
+        </div>
+      )}
+
+      {cotizacion.estado === 'descartada' && !cotizacion.pedido_id && (
         <div className="flex items-start gap-2 rounded-md border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
           <Layers className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
@@ -222,7 +259,40 @@ export function CotizacionDetalle() {
         </div>
       )}
 
-      {opcionesGrupo && opcionesGrupo.length > 1 && (
+      {eleccion && eleccion.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ListChecks className="h-4 w-4" />
+              Elección del cliente
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">Este pedido reúne las opciones que el cliente eligió de su cotización.</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ul className="divide-y">
+              {eleccion.map((o) => (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/cotizaciones/${o.id}`, { state: origen })}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
+                  >
+                    {o.categoria && <IconoTipoCategoria tipo={o.categoria.tipo} className="h-4 w-4 shrink-0" />}
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium">{o.categoria?.nombre}</span>
+                      <span className="text-muted-foreground"> · {textoOpcion(o)}</span>
+                      <span className="block font-mono text-xs text-muted-foreground">{o.numero}</span>
+                    </span>
+                    <span className="font-mono">{formatCOP(o.total)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {opcionesGrupo && (opcionesGrupo.length > 1 || porCategoria) && (
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -230,43 +300,67 @@ export function CotizacionDetalle() {
               Opciones de este envío
             </CardTitle>
             {abierta && (
-              <Button variant="outline" size="sm" onClick={() => navigate(`/cotizaciones/nueva?agregarA=${cotizacion.id}`)}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/cotizaciones/nueva?agregarA=${cotizacion.id}`)}
+                title={categoriaActual ? `La opción nueva entra en "${categoriaActual.nombre}"` : undefined}
+              >
                 <Plus className="mr-2 h-4 w-4" />
-                Agregar opción
+                {categoriaActual ? `Agregar opción a ${categoriaActual.nombre}` : 'Agregar opción'}
               </Button>
             )}
           </CardHeader>
           <CardContent className="p-0">
-            <ul className="divide-y">
-              {opcionesGrupo.map((o) => {
-                const actual = o.id === cotizacion.id
-                const cfgOpcion = estadoConfig[o.estado]
-                return (
-                  <li key={o.id}>
-                    <button
-                      type="button"
-                      disabled={actual}
-                      onClick={() => navigate(`/cotizaciones/${o.id}`, { state: origen })}
-                      className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
-                        actual ? 'bg-primary/5' : 'hover:bg-muted/40'
-                      }`}
-                    >
-                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                        actual ? 'bg-primary text-primary-foreground' : 'bg-muted'
-                      }`}>
-                        {o.opcion_etiqueta}
-                      </span>
-                      <span className="flex-1 min-w-0">
-                        <span className={actual ? 'font-medium' : ''}>{o.opcion_nombre || `Opción ${o.opcion_etiqueta}`}</span>
-                        <span className="block font-mono text-xs text-muted-foreground">{o.numero}</span>
-                      </span>
-                      <span className="font-mono">{formatCOP(o.total)}</span>
-                      <Badge variant={cfgOpcion.variant}>{cfgOpcion.label}</Badge>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
+            {(categorias.length > 0
+              ? categorias.map((cat) => ({ cat, opciones: opcionesGrupo.filter((o) => o.categoria_id === cat.id) }))
+              : [{ cat: null, opciones: opcionesGrupo }]
+            ).map(({ cat, opciones }) => (
+              <div key={cat?.id ?? 'todas'}>
+                {cat && (
+                  <p
+                    className="flex items-center gap-2 border-l-4 border-t bg-muted/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide"
+                    style={{ borderLeftColor: TIPO_CATEGORIA_CONFIG[cat.tipo].color }}
+                  >
+                    <IconoTipoCategoria tipo={cat.tipo} className="h-3.5 w-3.5" />
+                    {cat.nombre}
+                  </p>
+                )}
+                <ul className="divide-y">
+                  {opciones.map((o) => {
+                    const actual = o.id === cotizacion.id
+                    const cfgOpcion = estadoConfig[o.estado]
+                    return (
+                      <li key={o.id}>
+                        <button
+                          type="button"
+                          disabled={actual}
+                          onClick={() => navigate(`/cotizaciones/${o.id}`, { state: origen })}
+                          className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                            actual ? 'bg-primary/5' : 'hover:bg-muted/40'
+                          }`}
+                        >
+                          <span className={`flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full px-1 text-xs font-bold ${
+                            actual ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                          }`}>
+                            {codigoDe(o)}
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className={`flex items-center gap-1 ${actual ? 'font-medium' : ''}`}>
+                              {o.opcion_nombre || `Opción ${o.opcion_etiqueta}`}
+                              {o.recomendada && <Star className="h-3 w-3 fill-amber-400 text-amber-500" aria-label="Recomendada" />}
+                            </span>
+                            <span className="block font-mono text-xs text-muted-foreground">{o.numero}</span>
+                          </span>
+                          <span className="font-mono">{formatCOP(o.total)}</span>
+                          <Badge variant={cfgOpcion.variant}>{cfgOpcion.label}</Badge>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
@@ -412,7 +506,7 @@ export function CotizacionDetalle() {
 
       {/* 'aprobada' viene de un flujo anterior que creaba la orden sin cobrar:
           esas cotizaciones también necesitan poder cobrar su anticipo aquí. */}
-      {(cotizacion.estado === 'vendida' || cotizacion.estado === 'aprobada' || anulada) && (
+      {(cotizacion.estado === 'vendida' || cotizacion.estado === 'aprobada' || anulada) && !porCategoria && (
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Pagos</CardTitle>
@@ -595,11 +689,13 @@ export function CotizacionDetalle() {
             ) : (
               <Button
                 className="flex-1"
-                onClick={() => setPagoOpen(true)}
+                onClick={() => (porCategoria ? setElegirOpen(true) : setPagoOpen(true))}
                 disabled={cambiarEstado.isPending}
               >
                 <ShoppingCart className="mr-2 h-4 w-4" />
-                {cotizacion.grupo_id ? 'Cliente eligió esta opción — Registrar anticipo' : 'Cliente aprobó — Registrar anticipo'}
+                {porCategoria
+                  ? 'Cliente eligió… — Armar pedido'
+                  : cotizacion.grupo_id ? 'Cliente eligió esta opción — Registrar anticipo' : 'Cliente aprobó — Registrar anticipo'}
               </Button>
             )}
             <Button
@@ -613,7 +709,9 @@ export function CotizacionDetalle() {
           </div>
           {cotizacion.estado === 'borrador' && (
             <p className="text-xs text-muted-foreground">
-              {cotizacion.grupo_id
+              {porCategoria
+                ? 'Marca el envío como enviado al cliente para registrar lo que elija de cada categoría.'
+                : cotizacion.grupo_id
                 ? 'Marca el envío como enviado al cliente para poder registrar el anticipo de la opción que elija.'
                 : 'Marca la cotización como enviada al cliente para poder registrar el anticipo.'}
             </p>
@@ -627,6 +725,33 @@ export function CotizacionDetalle() {
         onOpenChange={setPagoOpen}
         opcionesADescartar={aDescartar}
       />
+      {porCategoria && cotizacion.grupo_id && opcionesGrupo && (
+        <ElegirOpcionesDialog
+          open={elegirOpen}
+          onOpenChange={setElegirOpen}
+          grupoId={cotizacion.grupo_id}
+          categorias={categorias}
+          opciones={opcionesGrupo}
+          preseleccion={cotizacion.id}
+          onPedidoCreado={(p) => {
+            setElegirOpen(false)
+            setPedidoCreado(p)
+          }}
+        />
+      )}
+      {/* Al cerrar el cobro (o cancelarlo) se va al pedido: ahí queda su saldo. */}
+      {pedidoCreado && (
+        <RegistrarPagoDialog
+          cotizacion={pedidoCreado}
+          open
+          onOpenChange={(abierto) => {
+            if (abierto) return
+            const destino = pedidoCreado.id
+            setPedidoCreado(null)
+            navigate(`/cotizaciones/${destino}`, { state: origen })
+          }}
+        />
+      )}
       <AnularVentaDialog venta={aAnular} documento={cotizacion.numero} onClose={() => setAAnular(null)} />
       <AnularCotizacionDialog
         cotizacion={cotizacion}
