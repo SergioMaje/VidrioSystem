@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ConfiguradorProducto, type EdicionItem } from '@/pages/productos/ConfiguradorProducto'
 import { ItemLibreForm } from '@/pages/productos/ItemLibreForm'
-import { PanelCotizacion, type ItemCotizacion, type ResumenOpcion } from '@/pages/productos/PanelCotizacion'
+import { PanelCotizacion, type ItemCotizacion } from '@/pages/productos/PanelCotizacion'
+import { OpcionesEnvioCard, type CategoriaForm, type ResumenOpcion } from './OpcionesEnvioCard'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useCrearCotizacion, useCotizacion, useActualizarCotizacion, useAgregarOpcion } from '@/hooks/useCotizaciones'
 import { useReferencias } from '@/hooks/useReferencias'
@@ -10,7 +11,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useCambiosSinGuardar } from '@/providers/cambiosSinGuardar'
 import { PageLoader } from '@/components/shared/LoadingSpinner'
-import { calcularTotales, etiquetaDeIndice, MAX_OPCIONES } from '@/lib/cotizaciones'
+import { calcularTotales, codigoOpcion, etiquetaDeIndice, MAX_OPCIONES } from '@/lib/cotizaciones'
 import { hoyBogota, mensajeError, sumarDias } from '@/lib/utils'
 
 type ModoItem = 'referencia' | 'libre'
@@ -21,10 +22,31 @@ type OpcionForm = {
   items: ItemCotizacion[]
   descuentoPct: number
   ivaPct: number
+  /** Índice en `categorias`; null si el envío no está dividido. */
+  categoria: number | null
+  recomendada: boolean
 }
 
 const vencimientoPorDefecto = () => sumarDias(hoyBogota(), 7)
-const opcionVacia = (): OpcionForm => ({ nombre: '', items: [], descuentoPct: 0, ivaPct: 19 })
+const opcionVacia = (categoria: number | null = null, base?: Pick<OpcionForm, 'descuentoPct' | 'ivaPct'>): OpcionForm => ({
+  nombre: '',
+  items: [],
+  descuentoPct: base?.descuentoPct ?? 0,
+  ivaPct: base?.ivaPct ?? 19,
+  categoria,
+  recomendada: false,
+})
+const categoriaVacia = (): CategoriaForm => ({ nombre: '', tipo: 'otro' })
+
+/** Letra de cada opción: dentro de su categoría, o en todo el envío. */
+function letrasDeOpciones(opciones: Pick<OpcionForm, 'categoria'>[]) {
+  const contador = new Map<number | null, number>()
+  return opciones.map((o) => {
+    const n = contador.get(o.categoria) ?? 0
+    contador.set(o.categoria, n + 1)
+    return etiquetaDeIndice(n)
+  })
+}
 
 export function CotizacionFormPage() {
   const { id } = useParams<{ id?: string }>()
@@ -48,6 +70,7 @@ export function CotizacionFormPage() {
   const [fechaInicial] = useState(vencimientoPorDefecto)
   const [fechaVencimiento, setFechaVencimiento] = useState(fechaInicial)
   const [notas, setNotas] = useState('')
+  const [categorias, setCategorias] = useState<CategoriaForm[]>([])
   const [opciones, setOpciones] = useState<OpcionForm[]>(() => [opcionVacia()])
   const [activa, setActiva] = useState(0)
   const [edicionItem, setEdicionItem] = useState<EdicionItem | null>(null)
@@ -55,6 +78,12 @@ export function CotizacionFormPage() {
 
   const opcion = opciones[activa] ?? opciones[0]
   const items = opcion.items
+  const porCategoria = categorias.length > 0
+  // La opción que se trabaja sola pertenece a un envío por categorías: su
+  // descuento e IVA son los del envío.
+  const opcionSueltaConCategoria = modoEdicion
+    ? !!cotizacionExistente?.categoria_id
+    : modoAgregar && !!envioOrigen?.categoria_id
 
   /** Aplica un cambio solo a la opción que se está editando. */
   const actualizarActiva = (fn: (o: OpcionForm) => OpcionForm) =>
@@ -77,6 +106,8 @@ export function CotizacionFormPage() {
         nombre: cotizacionExistente.opcion_nombre ?? '',
         descuentoPct: cotizacionExistente.descuento_pct,
         ivaPct: cotizacionExistente.iva_pct,
+        categoria: null,
+        recomendada: cotizacionExistente.recomendada,
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         items: cotizacionExistente.items.map(({ id, cotizacion_id, ...rest }) => rest),
       }])
@@ -84,12 +115,16 @@ export function CotizacionFormPage() {
     }
   }, [modoEdicion, cotizacionExistente])
 
-  // Al agregar una opción, cliente, vencimiento y notas vienen del envío y no se editan.
+  // Al agregar una opción, cliente, vencimiento y notas vienen del envío y no se
+  // editan. Con categorías, también el descuento y el IVA.
   useEffect(() => {
     if (modoAgregar && envioOrigen) {
       setClienteId(envioOrigen.cliente_id)
       setFechaVencimiento(envioOrigen.fecha_vencimiento || vencimientoPorDefecto())
       setNotas(envioOrigen.notas || '')
+      if (envioOrigen.categoria_id) {
+        setOpciones([opcionVacia(null, { descuentoPct: envioOrigen.descuento_pct, ivaPct: envioOrigen.iva_pct })])
+      }
     }
   }, [modoAgregar, envioOrigen])
 
@@ -103,32 +138,48 @@ export function CotizacionFormPage() {
         clienteId: envioOrigen.cliente_id,
         fechaVencimiento: envioOrigen.fecha_vencimiento || fechaInicial,
         notas: envioOrigen.notas || '',
-        opciones: [opcionVacia()],
+        categorias: [],
+        opciones: [envioOrigen.categoria_id
+          ? opcionVacia(null, { descuentoPct: envioOrigen.descuento_pct, ivaPct: envioOrigen.iva_pct })
+          : opcionVacia()],
       })
     }
     if (!modoEdicion) {
-      return JSON.stringify({ clienteId: '', fechaVencimiento: fechaInicial, notas: '', opciones: [opcionVacia()] })
+      return JSON.stringify({ clienteId: '', fechaVencimiento: fechaInicial, notas: '', categorias: [], opciones: [opcionVacia()] })
     }
     if (!cotizacionExistente) return null
     return JSON.stringify({
       clienteId: cotizacionExistente.cliente_id,
       fechaVencimiento: cotizacionExistente.fecha_vencimiento || fechaInicial,
       notas: cotizacionExistente.notas || '',
+      categorias: [],
       opciones: [{
         nombre: cotizacionExistente.opcion_nombre ?? '',
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        items: cotizacionExistente.items.map(({ id, cotizacion_id, ...rest }) => rest),
         descuentoPct: cotizacionExistente.descuento_pct,
         ivaPct: cotizacionExistente.iva_pct,
+        categoria: null,
+        recomendada: cotizacionExistente.recomendada,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        items: cotizacionExistente.items.map(({ id, cotizacion_id, ...rest }) => rest),
       }],
     })
   }, [modoAgregar, envioOrigen, modoEdicion, cotizacionExistente, fechaInicial])
-  const actual = JSON.stringify({ clienteId, fechaVencimiento, notas, opciones })
+  const actual = JSON.stringify({ clienteId, fechaVencimiento, notas, categorias, opciones })
   useCambiosSinGuardar(inicial !== null && actual !== inicial)
+
+  const letras = letrasDeOpciones(opciones)
+  const codigoDe = (idx: number) => {
+    const cat = opciones[idx].categoria
+    return cat === null ? letras[idx] : codigoOpcion(cat, letras[idx])
+  }
 
   const handleAgregarItem = (item: ItemCotizacion) => {
     actualizarActiva((o) => ({ ...o, items: [...o.items, item] }))
-    toast({ title: opciones.length > 1 ? `Producto agregado a la opción ${etiquetaDeIndice(activa)}` : 'Producto agregado a la cotización' })
+    toast({
+      title: opciones.length > 1 || porCategoria
+        ? `Producto agregado a la opción ${codigoDe(activa)}`
+        : 'Producto agregado a la cotización',
+    })
   }
 
   const handleUpdateItem = (idx: number, field: 'cantidad' | 'precio_unitario', value: number) => {
@@ -183,30 +234,81 @@ export function CotizacionFormPage() {
     setEdicionItem(null)
   }
 
-  const agregarOpcionVacia = () => {
-    if (opciones.length >= MAX_OPCIONES) return
-    setOpciones((prev) => [...prev, opcionVacia()])
+  const cuantasEn = (categoria: number | null) => opciones.filter((o) => o.categoria === categoria).length
+
+  const agregarOpcionVacia = (categoria: number | null = opcion.categoria) => {
+    if (cuantasEn(categoria) >= MAX_OPCIONES) return
+    setOpciones((prev) => [...prev, opcionVacia(categoria, opcion)])
     seleccionarOpcion(opciones.length)
   }
 
   // Lo normal es cambiar solo el vidrio o el color: se parte de una copia.
   const duplicarOpcion = () => {
-    if (opciones.length >= MAX_OPCIONES) return
-    setOpciones((prev) => [...prev, { ...structuredClone(prev[activa]), nombre: '' }])
+    if (cuantasEn(opcion.categoria) >= MAX_OPCIONES) return
+    setOpciones((prev) => [...prev, { ...structuredClone(prev[activa]), nombre: '', recomendada: false }])
     seleccionarOpcion(opciones.length)
   }
 
   const eliminarOpcion = () => {
     if (opciones.length <= 1) return
+    // La que queda activa es la anterior de la misma categoría, si la hay.
+    const anteriores = opciones.slice(0, activa).map((o, i) => (o.categoria === opcion.categoria ? i : -1))
+    const anterior = Math.max(...anteriores, -1)
     setOpciones((prev) => prev.filter((_, i) => i !== activa))
-    seleccionarOpcion(Math.max(0, activa - 1))
+    seleccionarOpcion(Math.max(0, anterior === -1 ? activa - 1 : anterior))
   }
 
+  const cambiarRecomendada = (valor: boolean) =>
+    // Una recomendada por categoría (o por envío, si no está dividido).
+    setOpciones((prev) => prev.map((o, i) => ({
+      ...o,
+      recomendada: i === activa ? valor : o.categoria === opcion.categoria ? (valor ? false : o.recomendada) : o.recomendada,
+    })))
+
+  // Las opciones que ya hay quedan en la primera categoría. Descuento e IVA
+  // pasan a ser del envío: se toman los de la opción activa.
+  const dividirPorCategorias = () => {
+    setCategorias([categoriaVacia()])
+    setOpciones((prev) => prev.map((o) => ({ ...o, categoria: 0, descuentoPct: opcion.descuentoPct, ivaPct: opcion.ivaPct })))
+  }
+
+  const quitarDivision = () => {
+    setCategorias([])
+    setOpciones((prev) => prev.map((o) => ({ ...o, categoria: null })))
+  }
+
+  const agregarCategoria = () => {
+    setCategorias((prev) => [...prev, categoriaVacia()])
+    setOpciones((prev) => [...prev, opcionVacia(categorias.length, opcion)])
+    seleccionarOpcion(opciones.length)
+  }
+
+  const eliminarCategoria = (c: number) => {
+    if (categorias.length <= 1) return
+    const quedan = opciones
+      .filter((o) => o.categoria !== c)
+      .map((o) => ({ ...o, categoria: o.categoria !== null && o.categoria > c ? o.categoria - 1 : o.categoria }))
+    setCategorias((prev) => prev.filter((_, i) => i !== c))
+    setOpciones(quedan)
+    seleccionarOpcion(0)
+  }
+
+  const cambiarCategoria = (c: number, cambio: Partial<CategoriaForm>) =>
+    setCategorias((prev) => prev.map((cat, i) => (i === c ? { ...cat, ...cambio } : cat)))
+
+  // Con categorías, descuento e IVA son del envío: cambian en todas las opciones.
+  const cambiarDescuentoIva = (campo: 'descuentoPct' | 'ivaPct', valor: number) =>
+    porCategoria
+      ? setOpciones((prev) => prev.map((o) => ({ ...o, [campo]: valor })))
+      : actualizarActiva((o) => ({ ...o, [campo]: valor }))
+
   const resumenOpciones: ResumenOpcion[] = opciones.map((o, i) => ({
-    etiqueta: etiquetaDeIndice(i),
+    codigo: codigoDe(i),
     nombre: o.nombre,
     total: calcularTotales(o.items, o.descuentoPct, o.ivaPct).total,
     cantidadItems: o.items.length,
+    categoria: o.categoria,
+    recomendada: o.recomendada,
   }))
 
   const handleGuardar = async (estado: 'borrador' | 'enviada') => {
@@ -214,11 +316,16 @@ export function CotizacionFormPage() {
       toast({ title: 'Selecciona un cliente', variant: 'destructive' })
       return
     }
+    const sinNombre = categorias.findIndex((c) => !c.nombre.trim())
+    if (sinNombre !== -1) {
+      toast({ title: `Ponle nombre a la categoría ${sinNombre + 1} (p. ej. "Puerta principal")`, variant: 'destructive' })
+      return
+    }
     const vacia = opciones.findIndex((o) => o.items.length === 0)
     if (vacia !== -1) {
       toast({
         title: opciones.length > 1
-          ? `La opción ${etiquetaDeIndice(vacia)} no tiene productos: agrégale alguno o elimínala`
+          ? `La opción ${codigoDe(vacia)} no tiene productos: agrégale alguno o elimínala`
           : 'Agrega al menos un producto',
         variant: 'destructive',
       })
@@ -243,6 +350,7 @@ export function CotizacionFormPage() {
           iva_pct: opcion.ivaPct,
           notas: notas || undefined,
           opcion_nombre: cotizacionExistente.grupo_id ? opcion.nombre : undefined,
+          recomendada: cotizacionExistente.grupo_id ? opcion.recomendada : undefined,
           items: opcion.items,
         })
         toast({
@@ -257,7 +365,13 @@ export function CotizacionFormPage() {
           origenId: agregarA,
           usuario_id: usuario.id,
           estado,
-          opcion: { nombre: opcion.nombre, descuento_pct: opcion.descuentoPct, iva_pct: opcion.ivaPct, items: opcion.items },
+          opcion: {
+            nombre: opcion.nombre,
+            descuento_pct: opcion.descuentoPct,
+            iva_pct: opcion.ivaPct,
+            recomendada: opcion.recomendada,
+            items: opcion.items,
+          },
         })
         toast({ title: `Opción ${nueva.opcion_etiqueta} agregada al envío`, variant: 'success' })
         navigate(`/cotizaciones/${nueva.id}`)
@@ -268,14 +382,19 @@ export function CotizacionFormPage() {
           estado,
           fecha_vencimiento: fechaVencimiento,
           notas: notas || undefined,
+          categorias: porCategoria ? categorias : undefined,
           opciones: opciones.map((o) => ({
             nombre: o.nombre,
             descuento_pct: o.descuentoPct,
             iva_pct: o.ivaPct,
+            categoria: o.categoria ?? undefined,
+            recomendada: o.recomendada,
             items: o.items,
           })),
         })
-        const sufijo = opciones.length > 1 ? ` con ${opciones.length} opciones` : ''
+        const sufijo = porCategoria
+          ? ` con ${categorias.length} ${categorias.length === 1 ? 'categoría' : 'categorías'} y ${opciones.length} opciones`
+          : opciones.length > 1 ? ` con ${opciones.length} opciones` : ''
         toast({ title: (estado === 'borrador' ? 'Borrador guardado' : 'Cotización enviada') + sufijo, variant: 'success' })
         navigate('/cotizaciones')
       }
@@ -296,13 +415,15 @@ export function CotizacionFormPage() {
     )
   }
 
-  // Encabezado de la opción cuando se trabaja una sola: al editar una opción de
-  // un envío, o al agregar una nueva.
-  const etiquetaFija = modoEdicion
+  // Encabezado de la opción. Al editar una opción de un envío, o al agregar una
+  // nueva, se trabaja una sola.
+  const trabajaUna = modoEdicion || modoAgregar
+  const etiquetaOpcion = modoEdicion
     ? cotizacionExistente?.opcion_etiqueta ?? null
     : modoAgregar
       ? 'nueva'
-      : null
+      : opciones.length > 1 || porCategoria ? codigoDe(activa) : null
+  const esOpcionDeEnvio = modoEdicion ? !!cotizacionExistente?.grupo_id : modoAgregar || opciones.length > 1 || porCategoria
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
@@ -339,23 +460,38 @@ export function CotizacionFormPage() {
         onUpdateItem={handleUpdateItem}
         onRemoveItem={handleRemoveItem}
         descuentoPct={opcion.descuentoPct}
-        onDescuentoChange={(v) => actualizarActiva((o) => ({ ...o, descuentoPct: v }))}
+        onDescuentoChange={(v) => cambiarDescuentoIva('descuentoPct', v)}
         ivaPct={opcion.ivaPct}
-        onIvaChange={(v) => actualizarActiva((o) => ({ ...o, ivaPct: v }))}
+        onIvaChange={(v) => cambiarDescuentoIva('ivaPct', v)}
         onGuardar={handleGuardar}
         isPending={crearCotizacion.isPending || actualizarCotizacion.isPending || agregarOpcion.isPending}
         modoEdicion={modoEdicion}
         editandoIdx={edicionItem?.idx ?? null}
         onEditarItem={handleEditarItem}
-        opciones={modoEdicion || modoAgregar ? undefined : resumenOpciones}
-        opcionActiva={activa}
-        onSeleccionarOpcion={seleccionarOpcion}
-        onAgregarOpcion={agregarOpcionVacia}
-        onDuplicarOpcion={duplicarOpcion}
-        onEliminarOpcion={eliminarOpcion}
+        tarjetaOpciones={trabajaUna ? undefined : (
+          <OpcionesEnvioCard
+            categorias={categorias}
+            opciones={resumenOpciones}
+            activa={activa}
+            onSeleccionar={seleccionarOpcion}
+            onAgregarVacia={(c) => agregarOpcionVacia(c ?? opcion.categoria)}
+            onDuplicar={duplicarOpcion}
+            onEliminar={eliminarOpcion}
+            onDividir={dividirPorCategorias}
+            onQuitarDivision={quitarDivision}
+            onAgregarCategoria={agregarCategoria}
+            onEliminarCategoria={eliminarCategoria}
+            onCambiarCategoria={cambiarCategoria}
+          />
+        )}
+        etiquetaOpcion={etiquetaOpcion}
+        pideNombre={esOpcionDeEnvio}
+        cantidadOpciones={trabajaUna ? 1 : opciones.length}
+        recomendada={opcion.recomendada}
+        onRecomendadaChange={esOpcionDeEnvio ? cambiarRecomendada : undefined}
+        descuentoDelEnvio={opcionSueltaConCategoria ? 'bloqueado' : porCategoria ? 'editable' : null}
         nombreOpcion={opcion.nombre}
         onNombreOpcionChange={(v) => actualizarActiva((o) => ({ ...o, nombre: v }))}
-        etiquetaFija={etiquetaFija}
         datosEnvioBloqueados={modoAgregar}
       />
     </div>
