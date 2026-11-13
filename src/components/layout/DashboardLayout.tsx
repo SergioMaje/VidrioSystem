@@ -1,11 +1,11 @@
 import { Outlet } from 'react-router-dom'
-import { Kbd } from '@/components/shared/Kbd'
 import { useAtajosGlobales } from '@/hooks/useAtajosGlobales'
 import { useAuth } from '@/hooks/useAuth'
 import { CambiosSinGuardarProvider } from '@/providers/CambiosSinGuardarProvider'
 import { Sidebar } from './Sidebar'
 import { Navbar } from './Navbar'
 import { CajaPendienteBanner } from './CajaPendienteBanner'
+import { AyudaAtajosDialog } from './AyudaAtajosDialog'
 
 export function DashboardLayout() {
   return (
@@ -25,18 +25,9 @@ export function DashboardLayout() {
   )
 }
 
-/** Escucha los atajos y muestra "G…" mientras espera la segunda letra. */
+/** Escucha los atajos de toda la app y monta su ayuda (tecla ?). */
 function AtajosGlobales() {
   const { usuario } = useAuth()
-  const esperandoLetra = useAtajosGlobales(usuario?.rol === 'admin')
-  return (
-    <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-50">
-      {esperandoLetra && (
-        <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground shadow-lg">
-          <Kbd className="text-foreground">G</Kbd>
-          <span>…elige una sección</span>
-        </div>
-      )}
-    </div>
-  )
+  const { ayudaAbierta, setAyudaAbierta } = useAtajosGlobales(usuario?.rol === 'admin')
+  return <AyudaAtajosDialog open={ayudaAbierta} onOpenChange={setAyudaAbierta} />
 }

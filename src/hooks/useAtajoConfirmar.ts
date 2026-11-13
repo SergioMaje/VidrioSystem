@@ -59,5 +59,8 @@ export function useAtajoConfirmar(
   )
 }
 
+const ES_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+
 /** Texto de la pista del atajo, según la plataforma. */
-export const ATAJO_CTRL = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? '⌘' : 'Ctrl'
+export const ATAJO_CTRL = ES_MAC ? '⌘' : 'Ctrl'
+export const ATAJO_ALT = ES_MAC ? '⌥' : 'Alt'
