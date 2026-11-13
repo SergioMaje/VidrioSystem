@@ -11,7 +11,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useCambiosSinGuardar } from '@/providers/cambiosSinGuardar'
 import { PageLoader } from '@/components/shared/LoadingSpinner'
-import { calcularTotales, codigoOpcion, etiquetaDeIndice, MAX_OPCIONES } from '@/lib/cotizaciones'
+import { calcularTotales, codigoOpcion, etiquetaDeIndice, MAX_OPCIONES, numeroBaseEnvio } from '@/lib/cotizaciones'
 import { hoyBogota, mensajeError, sumarDias } from '@/lib/utils'
 
 type ModoItem = 'referencia' | 'libre'
@@ -373,10 +373,10 @@ export function CotizacionFormPage() {
             items: opcion.items,
           },
         })
-        toast({ title: `Opción ${nueva.opcion_etiqueta} agregada al envío`, variant: 'success' })
+        toast({ title: `Opción ${nueva.numero} agregada al envío`, variant: 'success' })
         navigate(`/cotizaciones/${nueva.id}`)
       } else {
-        await crearCotizacion.mutateAsync({
+        const creada = await crearCotizacion.mutateAsync({
           cliente_id: clienteId,
           usuario_id: usuario.id,
           estado,
@@ -395,7 +395,12 @@ export function CotizacionFormPage() {
         const sufijo = porCategoria
           ? ` con ${categorias.length} ${categorias.length === 1 ? 'categoría' : 'categorías'} y ${opciones.length} opciones`
           : opciones.length > 1 ? ` con ${opciones.length} opciones` : ''
-        toast({ title: (estado === 'borrador' ? 'Borrador guardado' : 'Cotización enviada') + sufijo, variant: 'success' })
+        // El número lo asigna la base: se muestra para que el vendedor lo pueda dictar o buscar.
+        const numero = numeroBaseEnvio(creada.numero)
+        toast({
+          title: (estado === 'borrador' ? `Borrador ${numero} guardado` : `Cotización ${numero} enviada`) + sufijo,
+          variant: 'success',
+        })
         navigate('/cotizaciones')
       }
     } catch (error) {
