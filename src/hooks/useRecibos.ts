@@ -1,18 +1,32 @@
 import { supabase } from '@/lib/supabase'
-import type { Cliente, Cotizacion, OrdenTrabajo, Venta, VentaMostrador, VentaMostradorItem } from '@/types/database'
+import type { OpcionElegida } from '@/hooks/useCotizaciones'
+import type {
+  Cliente, Cotizacion, CotizacionItem, EnvioCategoria, OrdenTrabajo, Venta, VentaMostrador, VentaMostradorItem,
+} from '@/types/database'
 
 type Persona = { nombre: string; apellido: string }
 
 /** Todo lo que imprime un recibo de pago. */
 export interface DatosRecibo {
   venta: Venta & {
-    usuario: Persona | null
     anulado_por_usuario: Persona | null
     financiera: { nombre: string } | null
   }
-  /** Cobro de una cotización: el trabajo y cómo iba el saldo al momento del recibo. */
+  /**
+   * Cobro de una cotización: la opción confirmada con sus ítems, y cómo iba el
+   * saldo al momento del recibo.
+   */
   cotizacion: {
-    datos: Pick<Cotizacion, 'id' | 'numero' | 'total' | 'opcion_etiqueta' | 'opcion_nombre'> & { cliente: Cliente | null }
+    datos: Pick<
+      Cotizacion,
+      'id' | 'numero' | 'subtotal' | 'descuento_pct' | 'iva_pct' | 'total' | 'opcion_etiqueta' | 'opcion_nombre'
+    > & {
+      cliente: Cliente | null
+      categoria: Pick<EnvioCategoria, 'nombre'> | null
+      items: CotizacionItem[]
+    }
+    /** Si es un pedido armado por categorías, lo que el cliente eligió de cada parte. */
+    eleccion: OpcionElegida[]
     orden: Pick<OrdenTrabajo, 'numero' | 'fecha_entrega_estimada'> | null
     /** Lo cobrado antes de este recibo, sin lo que ya estaba anulado en ese momento. */
     pagosAnteriores: number
@@ -36,7 +50,7 @@ export async function obtenerDatosRecibo(ventaId: string): Promise<DatosRecibo> 
     .from('ventas')
     // El hint de FK es obligatorio: ventas tiene dos FK a usuarios.
     .select(
-      '*, usuario:usuarios!ventas_usuario_id_fkey(nombre, apellido), anulado_por_usuario:usuarios!ventas_anulado_por_fkey(nombre, apellido), financiera:financieras(nombre)'
+      '*, anulado_por_usuario:usuarios!ventas_anulado_por_fkey(nombre, apellido), financiera:financieras(nombre)'
     )
     .eq('id', ventaId)
     .single()
@@ -44,12 +58,21 @@ export async function obtenerDatosRecibo(ventaId: string): Promise<DatosRecibo> 
   const v = venta as unknown as DatosRecibo['venta']
 
   if (v.cotizacion_id) {
-    const [cot, orden, previos] = await Promise.all([
+    const [cot, eleccion, orden, previos] = await Promise.all([
+      // La cotización cobrada es la opción confirmada: al cobrarla, las demás del envío se descartan.
       supabase
         .from('cotizaciones')
-        .select('id, numero, total, opcion_etiqueta, opcion_nombre, cliente:clientes(*)')
+        .select(
+          'id, numero, subtotal, descuento_pct, iva_pct, total, opcion_etiqueta, opcion_nombre, cliente:clientes(*), categoria:envio_categorias(nombre), items:cotizacion_items(*)'
+        )
         .eq('id', v.cotizacion_id)
         .single(),
+      // Igual que useEleccionDelPedido: vacío si no es un pedido armado por categorías.
+      supabase
+        .from('cotizaciones')
+        .select('id, numero, estado, opcion_etiqueta, opcion_nombre, total, categoria_id, categoria:envio_categorias(nombre, tipo, orden)')
+        .eq('pedido_id', v.cotizacion_id)
+        .eq('estado', 'aprobada'),
       // La orden viva; si solo hay una cancelada, esa.
       supabase
         .from('ordenes_trabajo')
@@ -63,6 +86,7 @@ export async function obtenerDatosRecibo(ventaId: string): Promise<DatosRecibo> 
         .lt('created_at', v.created_at),
     ])
     if (cot.error) throw cot.error
+    if (eleccion.error) throw eleccion.error
     if (orden.error) throw orden.error
     if (previos.error) throw previos.error
 
@@ -78,6 +102,9 @@ export async function obtenerDatosRecibo(ventaId: string): Promise<DatosRecibo> 
       venta: v,
       cotizacion: {
         datos: cot.data as unknown as NonNullable<DatosRecibo['cotizacion']>['datos'],
+        eleccion: (eleccion.data as unknown as OpcionElegida[]).sort(
+          (a, b) => (a.categoria?.orden ?? 0) - (b.categoria?.orden ?? 0)
+        ),
         orden: ordenViva ? { numero: ordenViva.numero, fecha_entrega_estimada: ordenViva.fecha_entrega_estimada } : null,
         pagosAnteriores,
       },

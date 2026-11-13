@@ -1,7 +1,7 @@
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { METODO_PAGO_LABEL, estaLiquidada } from '@/lib/pagos'
 import { textoOpcion } from '@/lib/cotizaciones'
-import { etiquetaDocumento } from '@/lib/imprimirCotizacion'
+import { etiquetaDocumento, tablaItemsCss, tablaItemsHtml, totalesFilasHtml } from '@/lib/imprimirCotizacion'
 import { numeroALetras } from '@/lib/numeroALetras'
 import { textoAgradecimiento } from '@/lib/recibos'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
@@ -10,8 +10,10 @@ import { ANCHO_CARTA_PX, descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
 import type { Cliente, ConfiguracionEmpresa } from '@/types/database'
 
 /**
- * Recibo de pago: la versión imprimible de un cobro (una fila de `ventas`).
- * Media carta, para imprimir o guardar como PDF y mandarlo por WhatsApp.
+ * Recibo de pago: la versión imprimible de un cobro (una fila de `ventas`),
+ * para imprimir o guardar como PDF y mandarlo por WhatsApp. El cobro de una
+ * cotización va en carta porque lleva el detalle del trabajo; el de mostrador,
+ * en media carta.
  */
 
 export interface ContextoRecibo {
@@ -33,35 +35,40 @@ ${membreteCss}
     .dim{color:#555;font-weight:400}
     .productos{margin-top:2px;font-weight:400}
     .productos li{list-style:none}
-    /* Cuadro de saldo y firma lado a lado: la media carta no da para apilarlos. */
-    .pie{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-top:6px}
+${tablaItemsCss}
+    /* Detalle del trabajo: la opción confirmada, como aparece en la cotización. */
+    .detalle{margin:4px 0 10px}
+    .detalle h2{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+    .detalle .dim{font-size:10px}
+    .detalle .eleccion{border:1px solid #999;padding:5px 9px;margin-bottom:8px}
+    .pie{display:flex;justify-content:flex-start;margin-top:6px}
     .saldo{width:250px;border:1px solid #999;padding:6px 9px}
     .saldo .row{display:flex;justify-content:space-between;padding:1.5px 0}
     .saldo .este{font-weight:700}
     .saldo .final{border-top:1px solid #999;margin-top:3px;padding-top:4px;font-weight:700;font-size:12px}
     .saldo .pagado{margin-top:4px;text-align:center;font-weight:700;color:#047857}
-    .firma{width:220px;text-align:center;padding-top:34px}
-    .firma .linea{border-top:1px solid #000;padding-top:3px}
-    .firma .quien{font-size:10px;color:#555}
     /* El agradecimiento cierra el recibo: centrado y con el único color del documento. */
     .gracias{margin-top:14px;padding-top:8px;border-top:1px dashed #999;text-align:center;
       font-size:13px;font-weight:700;color:#1d4ed8}
     .anulado{border:2px solid #b91c1c;color:#b91c1c;font-weight:700;text-align:center;
       padding:5px;margin-bottom:10px;font-size:13px;letter-spacing:.1em}
     .anulado span{display:block;font-size:10px;font-weight:400;letter-spacing:0}
-    @media print{
-      body{padding:0}
-      /* Media carta: 21,6 × 14 cm. */
-      @page{size:21.6cm 14cm;margin:1cm}
-    }`
+    @media print{body{padding:0}}`
 
-function documento(titulo: string, cuerpo: string) {
+/** Media carta (21,6 × 14 cm) o carta. */
+const PAGINA = {
+  media_carta: '@media print{@page{size:21.6cm 14cm;margin:1cm}}',
+  carta: '@media print{@page{size:letter;margin:1.2cm}}',
+}
+
+function documento(titulo: string, cuerpo: string, pagina: keyof typeof PAGINA) {
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8"/>
   <title>${escapar(titulo)}</title>
   <style>${css}
+    ${PAGINA[pagina]}
   </style>
 </head>
 <body>
@@ -89,7 +96,7 @@ function conceptoHtml({ venta, cotizacion, mostrador }: DatosRecibo) {
       saldo_final: 'Saldo final de la cotización',
       contado: 'Pago total de la cotización',
     }[venta.tipo]
-    const opcion = textoOpcion(cotizacion.datos)
+    const opcion = textoOpcion(cotizacion.datos, cotizacion.datos.categoria)
     const partes = [
       `${accion} ${cotizacion.datos.numero}`,
       opcion,
@@ -117,22 +124,41 @@ function formaDePago({ venta }: DatosRecibo) {
   return METODO_PAGO_LABEL[venta.metodo_pago]
 }
 
-/** Valor del trabajo, lo pagado antes, este pago y lo que queda. Solo para cotizaciones. */
+/**
+ * Lo que se le vendió al cliente, igual que en la cotización: la elección por
+ * categorías (si es un pedido), la tabla de ítems y los totales.
+ */
+function detalleHtml({ cotizacion }: DatosRecibo) {
+  if (!cotizacion) return ''
+  const { datos, eleccion } = cotizacion
+  const eleccionHtml = eleccion.length === 0 ? '' : `
+    <div class="eleccion">${eleccion.map((o) => `<div>✓ ${escapar(textoOpcion(o, o.categoria) ?? o.numero)}</div>`).join('')}</div>`
+  return `
+  <div class="detalle">
+    <h2>Detalle del trabajo</h2>
+    ${eleccionHtml}
+    ${tablaItemsHtml(datos.items ?? [])}
+    <div class="totales">${totalesFilasHtml(datos)}</div>
+  </div>`
+}
+
+/** Lo pagado antes, este pago y lo que queda. Solo para cotizaciones; el total va en el detalle. */
 function saldoHtml({ venta, cotizacion }: DatosRecibo) {
-  if (!cotizacion) return '<div></div>'
+  if (!cotizacion) return ''
   const total = cotizacion.datos.total
   const anteriores = cotizacion.pagosAnteriores
   const abonado = anteriores + venta.monto
   const saldo = Math.max(0, total - abonado)
   return `
+  <div class="pie">
     <div class="saldo">
-      <div class="row"><span>Valor del trabajo</span><span>${formatCOP(total)}</span></div>
       <div class="row"><span>Pagos anteriores</span><span>${formatCOP(anteriores)}</span></div>
       <div class="row este"><span>Este pago</span><span>${formatCOP(venta.monto)}</span></div>
       <div class="row"><span>Total abonado</span><span>${formatCOP(abonado)}</span></div>
       <div class="row final"><span>Saldo pendiente</span><span>${formatCOP(saldo)}</span></div>
       ${estaLiquidada(total - abonado) ? '<div class="pagado">Trabajo pagado en su totalidad</div>' : ''}
-    </div>`
+    </div>
+  </div>`
 }
 
 export function htmlRecibo(datos: DatosRecibo, ctx: ContextoRecibo) {
@@ -160,17 +186,12 @@ export function htmlRecibo(datos: DatosRecibo, ctx: ContextoRecibo) {
     <dt>Forma de pago</dt><dd>${formaDePago(datos)}</dd>
   </dl>
 
-  <div class="pie">
-    ${saldoHtml(datos)}
-    <div class="firma">
-      <div class="linea">Recibió</div>
-      <div class="quien">${escapar(nombrePersona(venta.usuario))}</div>
-    </div>
-  </div>
+  ${detalleHtml(datos)}
+  ${saldoHtml(datos)}
 
   <div class="gracias">${escapar(textoAgradecimiento(ctx.empresa))}</div>`
 
-  return documento(`Recibo ${numero}`, cuerpo)
+  return documento(`Recibo ${numero}`, cuerpo, cotizacion ? 'carta' : 'media_carta')
 }
 
 /**
