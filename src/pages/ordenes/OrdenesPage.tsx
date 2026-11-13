@@ -14,6 +14,7 @@ import { estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
 import { ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
 import type { OrdenTrabajo } from '@/types/database'
+import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 export function OrdenesPage() {
   const navigate = useNavigate()
@@ -51,6 +52,7 @@ export function OrdenesPage() {
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            data-busqueda
             placeholder="Buscar por número o cliente..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
@@ -99,7 +101,8 @@ export function OrdenesPage() {
                     return (
                       <tr
                         key={orden.id}
-                        className="cursor-pointer border-b transition-colors hover:bg-muted/30"
+                        {...FILA_NAVEGABLE}
+                        className={`cursor-pointer border-b transition-colors hover:bg-muted/30 ${filaNavegableClase}`}
                         onClick={() => navigate(`/ordenes/${orden.id}`)}
                       >
                         <td className="px-4 py-3 font-mono text-xs font-medium">{orden.numero}</td>

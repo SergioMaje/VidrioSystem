@@ -4,6 +4,7 @@ import { LogOut, Menu, X, Layers } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Kbd } from '@/components/shared/Kbd'
+import { ATAJO_ALT } from '@/hooks/useAtajoConfirmar'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 import { NAV_ITEMS } from './navegacion'
@@ -31,15 +32,14 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
       <nav className="flex-1 space-y-1 px-3 py-4">
         {NAV_ITEMS
           .filter(({ soloAdmin }) => !soloAdmin || usuario?.rol === 'admin')
-          .map(({ to, label, icon: Icon, atajo }) => (
+          .map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
             onClick={onClose}
-            title={`Atajo: G luego ${atajo}`}
             className={({ isActive }) =>
               cn(
-                'group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
+                'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
                 isActive || location.pathname.startsWith(to)
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -48,14 +48,17 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
           >
             <Icon className="h-4 w-4 shrink-0" />
             {label}
-            {/* Pista del atajo al pasar el mouse; solo en escritorio, donde hay teclado. */}
-            <span className="ml-auto hidden gap-0.5 lg:group-hover:flex">
-              <Kbd>G</Kbd>
-              <Kbd>{atajo}</Kbd>
-            </span>
           </NavLink>
         ))}
       </nav>
+
+      {/* Pista de los atajos; solo en escritorio, donde hay teclado. */}
+      <p className="hidden items-center gap-1 px-4 pb-3 text-xs text-muted-foreground lg:flex">
+        <Kbd>{ATAJO_ALT}</Kbd><Kbd>↑↓</Kbd>
+        <span className="mr-2">secciones</span>
+        <Kbd>?</Kbd>
+        <span>atajos</span>
+      </p>
 
       <Separator />
 

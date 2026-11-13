@@ -316,7 +316,7 @@ export function OrdenDetalle() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/ordenes')}>
+        <Button data-volver variant="ghost" size="icon" onClick={() => navigate('/ordenes')}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">

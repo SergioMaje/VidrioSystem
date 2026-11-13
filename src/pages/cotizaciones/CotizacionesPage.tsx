@@ -13,6 +13,7 @@ import { useSaldos } from '@/hooks/useVentasCaja'
 import { estaLiquidada } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
 import { ESTADOS_COTIZACION_CONFIG } from '@/lib/cotizaciones'
+import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 const estadoConfig = ESTADOS_COTIZACION_CONFIG
 
@@ -59,6 +60,7 @@ export function CotizacionesPage() {
           <div className="relative max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              data-busqueda
               placeholder="Buscar por número o cliente..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
@@ -114,7 +116,8 @@ export function CotizacionesPage() {
                     return (
                       <tr
                         key={cot.id}
-                        className="cursor-pointer border-b transition-colors hover:bg-muted/30"
+                        {...FILA_NAVEGABLE}
+                        className={`cursor-pointer border-b transition-colors hover:bg-muted/30 ${filaNavegableClase}`}
                         onClick={() => navigate(`/cotizaciones/${cot.id}`)}
                       >
                         <td className="px-4 py-3">

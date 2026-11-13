@@ -14,6 +14,7 @@ import { getSaludo, formatFecha, formatCantidad, formatCOP, diasHasta } from '@/
 import { ESTADOS_ORDEN_CONFIG, ESTADOS_ACTIVOS } from '@/lib/estadosOrden'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import type { OrdenTrabajo } from '@/types/database'
+import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 const MESES_ESP = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
@@ -361,7 +362,8 @@ export function DashboardPage() {
                 {morosas.slice(0, 6).map((m) => (
                   <div
                     key={m.cotizacion_id}
-                    className="flex cursor-pointer items-center justify-between py-3 transition-colors hover:bg-muted/30"
+                    {...FILA_NAVEGABLE}
+                    className={`flex cursor-pointer items-center justify-between py-3 transition-colors hover:bg-muted/30 ${filaNavegableClase}`}
                     onClick={() => navigate(`/cotizaciones/${m.cotizacion_id}`)}
                   >
                     <div>
@@ -454,7 +456,8 @@ export function DashboardPage() {
                 return (
                   <div
                     key={orden.id}
-                    className="flex cursor-pointer items-center justify-between py-3 transition-colors hover:bg-muted/30"
+                    {...FILA_NAVEGABLE}
+                    className={`flex cursor-pointer items-center justify-between py-3 transition-colors hover:bg-muted/30 ${filaNavegableClase}`}
                     onClick={() => navigate(`/ordenes/${orden.id}`)}
                   >
                     <div>
