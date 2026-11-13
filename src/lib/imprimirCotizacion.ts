@@ -1,11 +1,17 @@
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { ANCHO_CARTA_PX, descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
 import { anticipoSolicitado, textoAnticipoSolicitado } from '@/lib/pagos'
-import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
+import {
+  codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, rangoTotales, TIPO_CATEGORIA_CONFIG, textoOpcion,
+  type TipoCategoria,
+} from '@/lib/cotizaciones'
+import { resumenOpciones } from '@/lib/opciones'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
-import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
+import { detalleMedidasPorLado, medidasDeItem, nombreColorPerfil } from '@/lib/produccion'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
-import type { Cliente, ConfiguracionEmpresa, Cotizacion, CotizacionItem, CuentaPagoEmpresa } from '@/types/database'
+import type {
+  Cliente, ConfiguracionEmpresa, Cotizacion, CotizacionItem, CuentaPagoEmpresa, EnvioCategoria,
+} from '@/types/database'
 
 /**
  * Documentos de cotización para imprimir o guardar como PDF: una cotización
@@ -84,6 +90,41 @@ ${membreteCss}
     .opcion .titulo{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
     .opcion .titulo strong{font-size:13px}
     .opcion .titulo span{font-size:10px;color:#555}
+    /* Envío por categorías: un encabezado de color por parte y sus opciones en tarjetas.
+       --c y --f son el color y el fondo del tipo; el texto sigue en negro para que se
+       lea igual impreso en blanco y negro. */
+    .partes-intro{font-size:10.5px;color:#333;margin-bottom:4px}
+    .cat{margin-top:14px}
+    .cat-cab{display:flex;align-items:center;gap:7px;padding:5px 9px;border-left:5px solid var(--c);
+      background:var(--f);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+      page-break-after:avoid;break-after:avoid}
+    .cat-cab svg{width:16px;height:16px;flex-shrink:0}
+    .cat-cab .sub{margin-left:auto;font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;color:#333}
+    .tarjetas{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:10px}
+    .tarjeta{position:relative;border:1px solid #bbb;border-radius:6px;padding:10px 10px 8px;
+      display:flex;flex-direction:column;gap:4px;page-break-inside:avoid;break-inside:avoid}
+    .tarjeta.reco{border:2px solid var(--c)}
+    .tarjeta .cinta{position:absolute;top:-8px;right:8px;background:var(--c);color:#fff;font-size:8.5px;
+      font-weight:700;padding:2px 6px;border-radius:3px;letter-spacing:.04em;text-transform:uppercase}
+    .tarjeta .cab{display:flex;align-items:center;gap:7px}
+    .tarjeta .letra{width:24px;height:24px;border-radius:50%;background:var(--f);border:1.5px solid var(--c);
+      display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
+    .tarjeta .nombre{font-weight:700;font-size:11.5px;line-height:1.2}
+    .tarjeta .det{font-size:9.5px;color:#444;flex:1}
+    .tarjeta .precio{font-size:15px;font-weight:700;margin-top:2px}
+    .tarjeta .dif{font-size:9px;color:#555}
+    .tarjeta .num{font-size:8.5px;color:#777}
+    .eleccion{margin-top:16px;border:1.5px solid #000;border-radius:6px;padding:10px 12px;page-break-inside:avoid;
+      display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:start}
+    .eleccion h2{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px}
+    .eleccion .rango{font-size:15px;font-weight:700}
+    .eleccion .nota{font-size:9.5px;color:#555;margin-top:2px}
+    .eleccion .marcar{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:10.5px;
+      border-top:1px solid #ddd;padding-top:7px}
+    .eleccion .marcar b{display:inline-block;min-width:40px;border-bottom:1px solid #000;margin-left:4px}
+    .detalle-titulo{margin-top:22px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+      padding-bottom:3px;border-bottom:1.5px solid #000;page-break-after:avoid;break-after:avoid}
+    .cat .opcion{margin-top:10px;padding-top:6px;border-top:1px solid #999}
     @media print{
       body{padding:0}
       /* El navegador ya aplica los margenes de pagina; duplicarlos empujaba el pie a otra hoja. */
@@ -186,11 +227,15 @@ function pieHtml(notas: string | null, cuentas: CuentaPagoEmpresa[]) {
   return `<div class="pie${notasHtml && cuentasHtml ? '' : ' una'}">${notasHtml}${cuentasHtml}</div>`
 }
 
-/** Una cotización sola: la impresión de siempre. */
+/**
+ * Una cotización sola: la impresión de siempre. Si es un pedido armado por la
+ * elección del cliente, `eleccion` lista lo que eligió de cada parte.
+ */
 export function htmlCotizacion(
   cot: CotizacionConItems,
   cobros: { abonado: number; saldo: number },
   ctx: ContextoImpresion,
+  eleccion: string[] = [],
 ) {
   const opcion = textoOpcion(cot)
   const cuerpo = `
@@ -215,6 +260,8 @@ export function htmlCotizacion(
       </dl>
     </div>
   </div>
+  ${eleccion.length > 0 ? `
+  <div class="caja" style="margin-bottom:12px"><h2>Su elección</h2>${eleccion.map((e) => `<div>✓ ${escapar(e)}</div>`).join('')}</div>` : ''}
 
   ${tablaItemsHtml(cot.items ?? [])}
   ${cierreHtml(cot, ctx.empresa?.anticipo_solicitado_pct, cobros.abonado, cobros.saldo)}
@@ -228,9 +275,17 @@ export function htmlCotizacion(
  * cada opción. Cliente, vencimiento, notas y medios de pago van una sola vez
  * porque son del envío.
  */
-export function htmlEnvio(opciones: CotizacionConItems[], cliente: Cliente | undefined, ctx: ContextoImpresion) {
+export function htmlEnvio(
+  opciones: CotizacionConItems[],
+  cliente: Cliente | undefined,
+  ctx: ContextoImpresion,
+  categorias: EnvioCategoria[] = [],
+) {
+  if (categorias.length > 0 && opciones.some((o) => o.categoria_id)) {
+    return htmlEnvioPorCategorias(opciones, cliente, ctx, categorias)
+  }
   const primera = opciones[0]
-  const numeroEnvio = primera.numero.replace(/-[A-Z]$/, '')
+  const numeroEnvio = numeroBaseEnvio(primera.numero)
   const pctAnticipo = ctx.empresa?.anticipo_solicitado_pct
   const titulo = (o: Cotizacion) => `Opción ${o.opcion_etiqueta}${o.opcion_nombre ? ` – ${o.opcion_nombre}` : ''}`
 
@@ -248,7 +303,7 @@ export function htmlEnvio(opciones: CotizacionConItems[], cliente: Cliente | und
       <tbody>${opciones.map((o) => `
         <tr>
           <td class="letra">${escapar(o.opcion_etiqueta ?? '')}</td>
-          <td>${escapar(o.opcion_nombre ?? `Opción ${o.opcion_etiqueta}`)} <span class="dim">(${escapar(o.numero)})</span></td>
+          <td>${escapar(o.opcion_nombre ?? `Opción ${o.opcion_etiqueta}`)}${o.recomendada ? ' <strong>★ Recomendada</strong>' : ''} <span class="dim">(${escapar(o.numero)})</span></td>
           <td class="right">${o.items.length}</td>
           ${pctAnticipo ? `<td class="right">${formatCOP(anticipoSolicitado(pctAnticipo, o.total))}</td>` : ''}
           <td class="right"><strong>${formatCOP(o.total)}</strong></td>
@@ -286,6 +341,143 @@ export function htmlEnvio(opciones: CotizacionConItems[], cliente: Cliente | und
 
   ${comparativo}
   ${secciones}
+
+  ${pieHtml(primera.notas, ctx.cuentas)}`
+  return documento(`Cotización ${numeroEnvio}`, cuerpo)
+}
+
+/** Trazos de cada tipo, en SVG en línea: los emojis no salen igual en todos los equipos ni en la imagen. */
+const TRAZOS_TIPO: Record<TipoCategoria, string> = {
+  puerta: '<rect x="5" y="2" width="14" height="20" rx="1"/><circle cx="15.5" cy="12" r="1"/>',
+  ventana: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18M3 12h18"/>',
+  division: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18"/>',
+  espejo: '<rect x="5" y="2" width="14" height="20" rx="7"/><path d="M9.5 8.5l3-3M9.5 12.5l5-5"/>',
+  otro: '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
+}
+
+const iconoTipo = (tipo: TipoCategoria) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="${TIPO_CATEGORIA_CONFIG[tipo].color}" stroke-width="1.8" ` +
+  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRAZOS_TIPO[tipo]}</svg>`
+
+const coloresTipo = (tipo: TipoCategoria) =>
+  `--c:${TIPO_CATEGORIA_CONFIG[tipo].color};--f:${TIPO_CATEGORIA_CONFIG[tipo].fondo}`
+
+/** Una o dos líneas con lo que distingue la opción: materiales, color y medidas del primer ítem. */
+function detalleTarjeta(items: CotizacionItem[]) {
+  const primero = items[0]
+  if (!primero) return ''
+  // Un color fuera del catálogo vuelve como código hexadecimal: no le dice nada al cliente.
+  const color = nombreColorPerfil(primero.color_perfil)
+  const partes = [
+    ...resumenOpciones(primero.opciones),
+    color && !color.startsWith('#') ? color : null,
+    primero.ancho_cm && primero.alto_cm ? `${primero.ancho_cm} × ${primero.alto_cm} cm` : null,
+  ].filter(Boolean) as string[]
+  const texto = partes.length > 0 ? partes.join(' · ') : primero.descripcion
+  const recortado = texto.length > 110 ? `${texto.slice(0, 107)}…` : texto
+  const mas = items.length > 1 ? ` <strong>+${items.length - 1} ${items.length === 2 ? 'ítem' : 'ítems'}</strong>` : ''
+  return `${escapar(recortado)}${mas}`
+}
+
+/**
+ * Envío dividido en partes (p. ej. una puerta y una ventana). Arriba, cada
+ * parte con sus opciones en tarjetas y un recuadro para que el cliente indique
+ * su elección; después, el detalle de cada opción.
+ */
+function htmlEnvioPorCategorias(
+  opciones: CotizacionConItems[],
+  cliente: Cliente | undefined,
+  ctx: ContextoImpresion,
+  categorias: EnvioCategoria[],
+) {
+  const primera = opciones[0]
+  const numeroEnvio = numeroBaseEnvio(primera.numero)
+  const pctAnticipo = ctx.empresa?.anticipo_solicitado_pct
+  const partes = categorias
+    .map((cat) => ({ cat, opciones: opciones.filter((o) => o.categoria_id === cat.id) }))
+    .filter((p) => p.opciones.length > 0)
+  const rango = rangoTotales(partes.map((p) => p.opciones.map((o) => o.total)))
+  const codigo = (cat: EnvioCategoria, o: Cotizacion) => codigoOpcion(cat.orden, o.opcion_etiqueta ?? '')
+
+  const tarjetas = partes.map(({ cat, opciones: deEsta }) => {
+    const minimo = Math.min(...deEsta.map((o) => o.total))
+    const variasOpciones = deEsta.length > 1
+    return `
+  <div class="cat" style="${coloresTipo(cat.tipo)}">
+    <div class="cat-cab">${iconoTipo(cat.tipo)}${escapar(cat.nombre)}<span class="sub">${
+      variasOpciones ? `${deEsta.length} opciones · elija una` : '1 opción'
+    }</span></div>
+    <div class="tarjetas">${deEsta.map((o) => `
+      <div class="tarjeta${o.recomendada ? ' reco' : ''}">
+        ${o.recomendada ? '<span class="cinta">★ Recomendada</span>' : ''}
+        <div class="cab">
+          <span class="letra">${escapar(o.opcion_etiqueta ?? '')}</span>
+          <span class="nombre">${escapar(o.opcion_nombre ?? `Opción ${o.opcion_etiqueta}`)}</span>
+        </div>
+        <div class="det">${detalleTarjeta(o.items)}</div>
+        <div class="precio">${formatCOP(o.total)}</div>
+        ${variasOpciones ? `<div class="dif">${
+          o.total - minimo > 0.5 ? `+ ${formatCOP(o.total - minimo)} frente a la más económica` : 'La más económica'
+        }</div>` : ''}
+        <div class="num">Opción ${escapar(codigo(cat, o))} · ${escapar(o.numero)}</div>
+      </div>`).join('')}
+    </div>
+  </div>`
+  }).join('')
+
+  const eleccion = `
+  <div class="eleccion">
+    <div>
+      <h2>${rango.min === rango.max ? 'Total' : 'Total según su elección'}</h2>
+      <div class="rango">${rango.min === rango.max ? formatCOP(rango.min) : `Desde ${formatCOP(rango.min)} hasta ${formatCOP(rango.max)}`}</div>
+      <p class="nota">Si toma todas las partes. Puede tomar solo algunas.</p>
+    </div>
+    <div>
+      ${pctAnticipo ? `<h2>Anticipo</h2><div><strong>${pctAnticipo}%</strong> del pedido elegido</div>` : ''}
+      ${primera.fecha_vencimiento ? `<p class="nota">Precios válidos hasta el ${formatFecha(primera.fecha_vencimiento)}</p>` : ''}
+    </div>
+    <div class="marcar">
+      <span>Indíquenos su elección:</span>
+      ${partes.map(({ cat }) => `<span>${escapar(cat.nombre)}<b></b></span>`).join('')}
+    </div>
+  </div>`
+
+  const detalle = partes.map(({ cat, opciones: deEsta }) => `
+  <div class="cat" style="${coloresTipo(cat.tipo)}">
+    <div class="cat-cab">${iconoTipo(cat.tipo)}${escapar(cat.nombre)}</div>
+    ${deEsta.map((o) => `
+    <div class="opcion">
+      <div class="titulo"><strong>Opción ${escapar(o.opcion_etiqueta ?? '')}${o.opcion_nombre ? ` – ${escapar(o.opcion_nombre)}` : ''}</strong><span>${escapar(o.numero)} · IVA ${o.iva_pct}%</span></div>
+      ${tablaItemsHtml(o.items)}
+      ${cierreHtml(o, null)}
+    </div>`).join('')}
+  </div>`).join('')
+
+  const cuerpo = `
+  ${membreteHtml(ctx.empresa, ctx.logo, {
+    titulo: `Cotización · ${partes.length} ${partes.length === 1 ? 'parte' : 'partes'}, ${opciones.length} opciones`,
+    numero: numeroEnvio,
+    fecha: `Emitida el ${formatFecha(primera.fecha_emision)}`,
+  })}
+
+  <div class="bloques">
+    ${clienteHtml(cliente)}
+    <div class="bloque">
+      <h2>Datos de la cotización</h2>
+      <dl class="campos">
+        <dt>Partes</dt><dd>${partes.map((p) => escapar(p.cat.nombre)).join(', ')}</dd>
+        <dt>Emisión</dt><dd>${formatFecha(primera.fecha_emision)}</dd>
+        <dt>Vence</dt><dd>${primera.fecha_vencimiento ? formatFecha(primera.fecha_vencimiento) : '—'}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <p class="partes-intro">Para cada parte le ofrecemos varias opciones. Elija una por parte, o solo las partes que le interesen.</p>
+  ${tarjetas}
+  ${eleccion}
+
+  <div class="detalle-titulo">Detalle de cada opción</div>
+  ${detalle}
 
   ${pieHtml(primera.notas, ctx.cuentas)}`
   return documento(`Cotización ${numeroEnvio}`, cuerpo)

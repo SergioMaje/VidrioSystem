@@ -203,6 +203,18 @@ export interface Cliente {
  */
 export type TipoAnulacionCotizacion = 'desistimiento' | 'error'
 
+/** Parte de un envío de cotización: agrupa opciones alternativas (p. ej. tres puertas). */
+export interface EnvioCategoria {
+  id: string
+  grupo_id: string
+  nombre: string
+  /** Define el ícono y el color en el documento. */
+  tipo: TipoProducto['nombre']
+  /** Desde 0; el código de la opción usa orden + 1 (1A, 2B…). */
+  orden: number
+  created_at: string
+}
+
 export interface Cotizacion {
   id: string
   numero: string
@@ -219,6 +231,15 @@ export interface Cotizacion {
   opcion_etiqueta: string | null
   /** Nombre corto para el cliente, p. ej. "Templado 5 mm". Opcional. */
   opcion_nombre: string | null
+  /** Categoría del envío (p. ej. "Puerta principal"). Null si el envío no está dividido. */
+  categoria_id: string | null
+  /** La vidriería recomienda esta opción dentro de su categoría. */
+  recomendada: boolean
+  /**
+   * Pedido armado cuando el cliente eligió una opción por categoría
+   * (`consolidar_eleccion_envio`). Lo llevan las opciones, no el pedido.
+   */
+  pedido_id: string | null
   fecha_emision: string
   fecha_vencimiento: string | null
   /** Cuándo el cliente aprobó (pagó el anticipo y pasó a 'vendida'). Null hasta entonces. */
