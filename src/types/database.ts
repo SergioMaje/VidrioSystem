@@ -312,7 +312,10 @@ export interface CotizacionItem {
   lado_medicion: LadoMedicion | null
   lado_corredizo: LadoCorredizo | null
   opciones: OpcionCotizacion[]
+  /** Especificaciones para producción: salen en la orden, no en la cotización. */
   notas: string | null
+  /** Notas del producto para el cliente: salen en la cotización. */
+  notas_cotizacion: string | null
   plantilla?: PlantillaProducto
   referencia?: ReferenciaProducto
 }
