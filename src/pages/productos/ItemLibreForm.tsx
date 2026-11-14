@@ -40,6 +40,7 @@ export function ItemLibreForm({
   const [cantidad, setCantidad] = useState('1')
   const [precioUnitario, setPrecioUnitario] = useState('')
   const [notas, setNotas] = useState('')
+  const [notasCotizacion, setNotasCotizacion] = useState('')
 
   const limpiar = () => {
     setDescripcion('')
@@ -48,6 +49,7 @@ export function ItemLibreForm({
     setCantidad('1')
     setPrecioUnitario('')
     setNotas('')
+    setNotasCotizacion('')
   }
 
   // Al entrar en edición se precarga el ítem; al salir, el formulario vuelve a
@@ -64,6 +66,7 @@ export function ItemLibreForm({
     setCantidad(String(item.cantidad))
     setPrecioUnitario(String(Math.round(item.precio_unitario)))
     setNotas(item.notas ?? '')
+    setNotasCotizacion(item.notas_cotizacion ?? '')
   }, [edicion])
 
   const ancho = parseFloat(anchoCm) || 0
@@ -99,6 +102,7 @@ export function ItemLibreForm({
     lado_corredizo: null,
     opciones: [],
     notas: notas.trim() || null,
+    notas_cotizacion: notasCotizacion.trim() || null,
   })
 
   const guardarItem = () => {
@@ -211,6 +215,20 @@ export function ItemLibreForm({
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
             />
+            <p className="text-xs text-muted-foreground">Para producción: salen en la orden, no en la cotización.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="notas-cotizacion-libre">Notas</Label>
+            <textarea
+              id="notas-cotizacion-libre"
+              className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              rows={2}
+              placeholder="Incluye instalación, entrega en 8 días hábiles..."
+              value={notasCotizacion}
+              onChange={(e) => setNotasCotizacion(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Para el cliente: salen en la cotización, debajo de este ítem.</p>
           </div>
 
           <Separator />

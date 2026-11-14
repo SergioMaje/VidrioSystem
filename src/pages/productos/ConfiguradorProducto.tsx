@@ -127,6 +127,7 @@ export function ConfiguradorProducto({
   const [colorPerfil, setColorPerfil] = useState('#9CA3AF')
   const [referenciaId, setReferenciaId] = useState<string>('')
   const [especificaciones, setEspecificaciones] = useState('')
+  const [notasCotizacion, setNotasCotizacion] = useState('')
 
   // Se guardan crudos, tal como los dicta quien mide. La normalización al marco
   // canónico (exterior) ocurre solo al dibujar, en ladoCorredizoExterior().
@@ -220,6 +221,7 @@ export function ConfiguradorProducto({
     if (it.lado_medicion) setLadoMedicion(it.lado_medicion)
     if (it.lado_corredizo) setLadoCorredizo(it.lado_corredizo)
     setEspecificaciones(it.notas ?? '')
+    setNotasCotizacion(it.notas_cotizacion ?? '')
     setChapaItemId(it.opciones?.find((o) => o.rol === 'chapa')?.item_id ?? NINGUNO)
     setPeliculaItemId(it.opciones?.find((o) => o.rol === 'pelicula')?.item_id ?? NINGUNO)
     vidrioPendienteRef.current = {
@@ -333,6 +335,7 @@ export function ConfiguradorProducto({
       lado_corredizo: esCorrediza ? ladoCorredizo : null,
       opciones,
       notas: especificaciones.trim() || null,
+      notas_cotizacion: notasCotizacion.trim() || null,
     }
   }
 
@@ -347,6 +350,7 @@ export function ConfiguradorProducto({
     // Los lados no se resetean: el lado de medición es constante para una obra
     // entera, y mantenerlo pegajoso entre ítems evita errores de reingreso.
     setEspecificaciones('')
+    setNotasCotizacion('')
   }
 
   const imprimir = () => {
@@ -845,6 +849,7 @@ export function ConfiguradorProducto({
         <Card>
           <CardHeader>
             <CardTitle>Especificaciones adicionales</CardTitle>
+            <p className="text-sm text-muted-foreground">Para producción: salen en la orden, no en la cotización.</p>
           </CardHeader>
           <CardContent>
             <textarea
@@ -852,6 +857,23 @@ export function ConfiguradorProducto({
               onChange={(e) => setEspecificaciones(e.target.value)}
               placeholder="Ej: Vidrio templado 6mm, bisagras ocultas, sellado con silicona neutra, acabado satinado..."
               rows={4}
+              className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Notas</CardTitle>
+            <p className="text-sm text-muted-foreground">Para el cliente: salen en la cotización, debajo de este producto.</p>
+          </CardHeader>
+          <CardContent>
+            <textarea
+              aria-label="Notas para la cotización"
+              value={notasCotizacion}
+              onChange={(e) => setNotasCotizacion(e.target.value)}
+              placeholder="Ej: Incluye instalación, entrega en 8 días hábiles..."
+              rows={3}
               className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </CardContent>

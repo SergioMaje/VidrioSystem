@@ -301,7 +301,14 @@ export function PanelCotizacion({
                     </div>
                   )}
                   {item.notas && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{item.notas}</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      <span className="font-medium">Especificaciones:</span> {item.notas}
+                    </p>
+                  )}
+                  {item.notas_cotizacion && (
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      <span className="font-medium">Notas:</span> {item.notas_cotizacion}
+                    </p>
                   )}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">

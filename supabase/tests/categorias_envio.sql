@@ -63,8 +63,9 @@ begin
     ('COT-TESTCAT-' || k, pg_temp.id('cliente'), 'enviada', p_valor, 10, 19,
      p_valor * 0.9 * 1.19, pg_temp.id('grupo'), pg_temp.id(p_cat), p_etiqueta, 'Opción ' || k)
   returning id into v;
-  insert into public.cotizacion_items (cotizacion_id, descripcion, cantidad, precio_unitario, precio_total)
-  values (v, 'Ítem ' || k, 1, p_valor, p_valor);
+  insert into public.cotizacion_items
+    (cotizacion_id, descripcion, cantidad, precio_unitario, precio_total, notas, notas_cotizacion)
+  values (v, 'Ítem ' || k, 1, p_valor, p_valor, 'Especificación ' || k, 'Nota ' || k);
   return pg_temp.guardar('o' || k, v);
 end $$;
 
@@ -184,6 +185,10 @@ select pg_temp.afirmar(
   (select array_agg(descripcion order by descripcion) from public.cotizacion_items
     where cotizacion_id = pg_temp.id('pedido')) = array['Ítem 1B', 'Ítem 2A'],
   'el pedido lleva los ítems de las opciones elegidas');
+select pg_temp.afirmar(
+  (select array_agg(notas || ' / ' || notas_cotizacion order by descripcion) from public.cotizacion_items
+    where cotizacion_id = pg_temp.id('pedido')) = array['Especificación 1B / Nota 1B', 'Especificación 2A / Nota 2A'],
+  'el pedido conserva las especificaciones y las notas de cada ítem');
 select pg_temp.afirmar(pg_temp.estado('o1B') = 'aprobada', '1B elegida queda aprobada');
 select pg_temp.afirmar(pg_temp.estado('o2A') = 'aprobada', '2A elegida queda aprobada');
 select pg_temp.afirmar(pg_temp.estado('o1A') = 'descartada', '1A queda descartada');
