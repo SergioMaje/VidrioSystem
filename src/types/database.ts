@@ -218,6 +218,8 @@ export interface EnvioCategoria {
 export interface Cotizacion {
   id: string
   numero: string
+  /** El 18 de COT-00018-B: consecutivo por vidriería, compartido por las opciones del envío. Null en las cotizaciones con número anterior (COT-<milisegundos>). */
+  consecutivo: number | null
   cliente_id: string
   usuario_id: string
   /** 'descartada': el cliente eligió otra opción del mismo envío. */

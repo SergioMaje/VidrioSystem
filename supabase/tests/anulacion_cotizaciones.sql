@@ -73,10 +73,10 @@ with x as (
 
 -- Cotizaciones de 1.000 en 'enviada'.
 with x as (
-  insert into public.cotizaciones (numero, cliente_id, estado, subtotal, total)
-  select 'COT-TESTA-' || k, pg_temp.id('cliente'), 'enviada', 1000, 1000
+  insert into public.cotizaciones (notas, cliente_id, estado, subtotal, total)
+  select k, pg_temp.id('cliente'), 'enviada', 1000, 1000
   from (values ('desist'), ('error'), ('prod'), ('consumo'), ('nunca')) v(k)
-  returning id, substring(numero from 11) as k
+  returning id, notas as k
 ) select pg_temp.guardar(k, id) from x;
 
 with x as (

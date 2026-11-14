@@ -77,10 +77,10 @@ with x as (
 ) select pg_temp.guardar('cliente', id) from x;
 
 with x as (
-  insert into public.cotizaciones (numero, cliente_id, estado, subtotal, total)
-  select 'COT-TESTRC-' || k, pg_temp.id('cliente'), 'enviada', 1000, 1000
+  insert into public.cotizaciones (notas, cliente_id, estado, subtotal, total)
+  select k, pg_temp.id('cliente'), 'enviada', 1000, 1000
   from (values ('uno'), ('dos')) v(k)
-  returning id, substring(numero from 12) as k
+  returning id, notas as k
 ) select pg_temp.guardar(k, id) from x;
 
 with x as (

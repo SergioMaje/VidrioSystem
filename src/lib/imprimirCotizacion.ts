@@ -31,6 +31,24 @@ export interface ContextoImpresion {
   cuentas: CuentaPagoEmpresa[]
 }
 
+/**
+ * Tabla de ítems y bloque de totales. Lo comparten la cotización y el recibo de
+ * pago, para que el cliente vea el trabajo igual en los dos documentos.
+ */
+export const tablaItemsCss = `
+    table{width:100%;border-collapse:collapse}
+    th{text-align:left;padding:4px 6px;font-size:9px;text-transform:uppercase;
+      letter-spacing:.05em;border-bottom:1.5px solid #000;border-top:1px solid #000}
+    td{padding:4px 6px;border-bottom:1px solid #ddd;vertical-align:top}
+    tr{page-break-inside:avoid}
+    .right{text-align:right;white-space:nowrap}
+    /* Especificaciones del producto, debajo de su descripcion y en la misma celda. */
+    .specs{margin-top:3px;font-size:10px;font-weight:400;color:#333;border-left:2px solid #999;padding-left:6px}
+    .totales{margin-top:8px;margin-left:auto;width:230px}
+    .totales .row{display:flex;justify-content:space-between;padding:2px 0}
+    /* Doble filete sobre el total: convencion de documento contable. */
+    .totales .total{border-top:3px double #000;margin-top:3px;padding-top:5px;font-weight:700;font-size:13px}`
+
 const css = `
     *{box-sizing:border-box;margin:0;padding:0}
     /* print-color-adjust: sin esto el navegador descarta los fondos al imprimir y un logo
@@ -47,20 +65,9 @@ ${membreteCss}
     .campos dt{color:#555;white-space:nowrap}
     .campos dd{font-weight:600;word-break:break-word}
     .razon{font-weight:700;font-size:12px;margin-bottom:3px}
-    table{width:100%;border-collapse:collapse}
-    th{text-align:left;padding:4px 6px;font-size:9px;text-transform:uppercase;
-      letter-spacing:.05em;border-bottom:1.5px solid #000;border-top:1px solid #000}
-    td{padding:4px 6px;border-bottom:1px solid #ddd;vertical-align:top}
-    tr{page-break-inside:avoid}
-    .right{text-align:right;white-space:nowrap}
+${tablaItemsCss}
     /* Las medidas van junto a la descripcion: una linea menos por item. */
     .dim{color:#555;font-size:10px}
-    /* Especificaciones del producto, debajo de su descripcion y en la misma celda. */
-    .specs{margin-top:3px;font-size:10px;color:#333;border-left:2px solid #999;padding-left:6px}
-    .totales{margin-top:8px;margin-left:auto;width:230px}
-    .totales .row{display:flex;justify-content:space-between;padding:2px 0}
-    /* Doble filete sobre el total: convencion de documento contable. */
-    .totales .total{border-top:3px double #000;margin-top:3px;padding-top:5px;font-weight:700;font-size:13px}
     .totales .abonado{margin-top:3px}
     .totales .saldo{border-top:1px solid #999;margin-top:2px;padding-top:3px;font-weight:700}
     /* Notas y cuentas comparten fila: ahorra un bloque completo de alto. */
@@ -165,7 +172,7 @@ function clienteHtml(cli: Cliente | undefined) {
     </div>`
 }
 
-function tablaItemsHtml(items: CotizacionItem[]) {
+export function tablaItemsHtml(items: CotizacionItem[]) {
   const filas = items.map((item) => {
     const porLado = detalleMedidasPorLado(medidasDeItem(item))
     return `
@@ -189,10 +196,19 @@ function tablaItemsHtml(items: CotizacionItem[]) {
   </table>`
 }
 
-/** Totales con el anticipo solicitado a la izquierda, y abonado/saldo si ya hubo cobros. */
-function cierreHtml(cot: Cotizacion, pctAnticipo: number | null | undefined, abonado = 0, saldo = cot.total) {
+/** Subtotal, descuento, IVA y total de la cotización. */
+export function totalesFilasHtml(cot: Pick<Cotizacion, 'subtotal' | 'descuento_pct' | 'iva_pct' | 'total'>) {
   const descuentoValor = cot.subtotal * (cot.descuento_pct / 100)
   const ivaValor = cot.total - cot.subtotal * (1 - cot.descuento_pct / 100)
+  return `
+    <div class="row"><span>Subtotal</span><span>${formatCOP(cot.subtotal)}</span></div>
+    ${cot.descuento_pct > 0 ? `<div class="row"><span>Descuento (${cot.descuento_pct}%)</span><span>-${formatCOP(descuentoValor)}</span></div>` : ''}
+    <div class="row"><span>IVA (${cot.iva_pct}%)</span><span>${formatCOP(ivaValor)}</span></div>
+    <div class="row total"><span>Total</span><span>${formatCOP(cot.total)}</span></div>`
+}
+
+/** Totales con el anticipo solicitado a la izquierda, y abonado/saldo si ya hubo cobros. */
+function cierreHtml(cot: Cotizacion, pctAnticipo: number | null | undefined, abonado = 0, saldo = cot.total) {
   // Lo que la vidriería pide de anticipo (Configuración). Una anulada o una
   // descartada ya no piden nada.
   const anticipo = !pctAnticipo || cot.estado === 'anulada' || cot.estado === 'descartada' ? '' : `
@@ -201,10 +217,7 @@ function cierreHtml(cot: Cotizacion, pctAnticipo: number | null | undefined, abo
   <div class="cierre">
   ${anticipo}
   <div class="totales">
-    <div class="row"><span>Subtotal</span><span>${formatCOP(cot.subtotal)}</span></div>
-    ${cot.descuento_pct > 0 ? `<div class="row"><span>Descuento (${cot.descuento_pct}%)</span><span>-${formatCOP(descuentoValor)}</span></div>` : ''}
-    <div class="row"><span>IVA (${cot.iva_pct}%)</span><span>${formatCOP(ivaValor)}</span></div>
-    <div class="row total"><span>Total</span><span>${formatCOP(cot.total)}</span></div>
+    ${totalesFilasHtml(cot)}
     ${abonado > 0 ? `
     <div class="row abonado"><span>Abonado</span><span>-${formatCOP(abonado)}</span></div>
     <div class="row saldo"><span>Saldo pendiente</span><span>${formatCOP(saldo)}</span></div>` : ''}

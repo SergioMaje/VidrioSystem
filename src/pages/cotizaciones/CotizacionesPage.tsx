@@ -12,7 +12,7 @@ import { useCotizaciones } from '@/hooks/useCotizaciones'
 import { useSaldos } from '@/hooks/useVentasCaja'
 import { estaLiquidada } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
-import { ESTADOS_COTIZACION_CONFIG } from '@/lib/cotizaciones'
+import { consecutivoBuscado, ESTADOS_COTIZACION_CONFIG } from '@/lib/cotizaciones'
 import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 const estadoConfig = ESTADOS_COTIZACION_CONFIG
@@ -34,10 +34,15 @@ export function CotizacionesPage() {
   const { data: cotizaciones, isLoading } = useCotizaciones()
   const { data: saldos } = useSaldos()
 
+  // "18" o "cot18" buscan la COT-00018: esa va primero, antes que los números
+  // anteriores (COT-1794…) que por casualidad contienen "18".
+  const buscado = consecutivoBuscado(busqueda)
+
   const filtradas = cotizaciones?.filter((c) => {
     const cliente = c.cliente as { nombre: string; apellido: string } | undefined
     const q = busqueda.toLowerCase()
     const coincide =
+      (buscado != null && c.consecutivo === buscado) ||
       c.numero.toLowerCase().includes(q) ||
       (c.opcion_nombre?.toLowerCase().includes(q) ?? false) ||
       (cliente ? `${cliente.nombre} ${cliente.apellido}`.toLowerCase().includes(q) : false)
@@ -51,7 +56,9 @@ export function CotizacionesPage() {
         : estadoFiltro === 'por_cobrar' ? c.estado === 'vendida' && !!saldo && !estaLiquidada(saldo.saldo)
         : c.estado === estadoFiltro
     return coincide && coincideEstado
-  }) ?? []
+  }).sort((a, b) =>
+    buscado == null ? 0 : Number(b.consecutivo === buscado) - Number(a.consecutivo === buscado)
+  ) ?? []
 
   return (
     <div className="space-y-4">
@@ -121,7 +128,7 @@ export function CotizacionesPage() {
                         onClick={() => navigate(`/cotizaciones/${cot.id}`)}
                       >
                         <td className="px-4 py-3">
-                          <span className="font-mono text-xs font-medium">{cot.numero}</span>
+                          <span className="font-mono text-sm font-semibold">{cot.numero}</span>
                           {cot.opcion_etiqueta && (
                             <span className="mt-0.5 block text-[11px] text-muted-foreground">
                               Opción {cot.opcion_etiqueta}{cot.opcion_nombre ? ` · ${cot.opcion_nombre}` : ''}
