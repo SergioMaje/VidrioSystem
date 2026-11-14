@@ -1,13 +1,12 @@
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { ANCHO_CARTA_PX, descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
-import { anticipoSolicitado, textoAnticipoSolicitado } from '@/lib/pagos'
+import { textoAnticipoSolicitado } from '@/lib/pagos'
 import {
   codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, rangoTotales, TIPO_CATEGORIA_CONFIG, textoOpcion,
   type TipoCategoria,
 } from '@/lib/cotizaciones'
-import { resumenOpciones } from '@/lib/opciones'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
-import { detalleMedidasPorLado, medidasDeItem, nombreColorPerfil } from '@/lib/produccion'
+import { detalleMedidasPorLado, medidasDeItem } from '@/lib/produccion'
 import { formatCantidad, formatCOP, formatFecha, formatFechaHora } from '@/lib/utils'
 import type {
   Cliente, ConfiguracionEmpresa, Cotizacion, CotizacionItem, CuentaPagoEmpresa, EnvioCategoria,
@@ -66,6 +65,8 @@ ${membreteCss}
 ${tablaItemsCss}
     /* Las medidas van junto a la descripcion: una linea menos por item. */
     .dim{color:#555;font-size:10px}
+    /* Notas del producto para el cliente, debajo de su descripcion. */
+    .nota-item{margin-top:3px;font-size:10px;color:#333;border-left:2px solid #999;padding-left:6px}
     .totales .abonado{margin-top:3px}
     .totales .saldo{border-top:1px solid #999;margin-top:2px;padding-top:3px;font-weight:700}
     /* Notas y cuentas comparten fila: ahorra un bloque completo de alto. */
@@ -88,18 +89,10 @@ ${tablaItemsCss}
     .anulada{border:2px solid #b91c1c;color:#b91c1c;font-weight:700;text-align:center;
       padding:6px;margin-bottom:12px;font-size:13px;letter-spacing:.1em}
     .anulada span{display:block;font-size:10px;font-weight:400;letter-spacing:0}
-    /* Envío con varias opciones: cuadro comparativo y una sección por opción. */
-    .comparativo{margin-bottom:14px;page-break-inside:avoid}
-    .comparativo h2,.opcion h2{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
-    .comparativo .elige{font-size:10px;color:#555;margin-top:5px}
-    .comparativo td.letra{font-weight:700;width:1%;white-space:nowrap}
-    .opcion{margin-top:16px;padding-top:10px;border-top:1.5px solid #000}
-    .opcion .titulo{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
-    .opcion .titulo strong{font-size:13px}
-    .opcion .titulo span{font-size:10px;color:#555}
-    /* Envío por categorías: un encabezado de color por parte y sus opciones en tarjetas.
-       --c y --f son el color y el fondo del tipo; el texto sigue en negro para que se
-       lea igual impreso en blanco y negro. */
+    /* Envío con opciones: un encabezado de color por parte (gris si no hay categorías)
+       y sus opciones en tarjetas con todos los productos. --c y --f son el color y el
+       fondo del tipo; el texto sigue en negro para que se lea igual impreso en blanco
+       y negro. */
     .partes-intro{font-size:10.5px;color:#333;margin-bottom:4px}
     .cat{margin-top:14px}
     .cat-cab{display:flex;align-items:center;gap:7px;padding:5px 9px;border-left:5px solid var(--c);
@@ -117,7 +110,11 @@ ${tablaItemsCss}
     .tarjeta .letra{width:24px;height:24px;border-radius:50%;background:var(--f);border:1.5px solid var(--c);
       display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
     .tarjeta .nombre{font-weight:700;font-size:11.5px;line-height:1.2}
-    .tarjeta .det{font-size:9.5px;color:#444;flex:1}
+    .tarjeta .items{list-style:none;flex:1;display:flex;flex-direction:column;gap:5px;font-size:9.5px;margin-top:2px}
+    .tarjeta .items li+li{border-top:1px dotted #bbb;padding-top:5px}
+    .tarjeta .desc{line-height:1.3}
+    .tarjeta .dim{font-size:9px}
+    .tarjeta .nota-item{border-left-color:var(--c);font-size:9px;margin-top:2px}
     .tarjeta .precio{font-size:15px;font-weight:700;margin-top:2px}
     .tarjeta .dif{font-size:9px;color:#555}
     .tarjeta .num{font-size:8.5px;color:#777}
@@ -129,9 +126,6 @@ ${tablaItemsCss}
     .eleccion .marcar{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:10.5px;
       border-top:1px solid #ddd;padding-top:7px}
     .eleccion .marcar b{display:inline-block;min-width:40px;border-bottom:1px solid #000;margin-left:4px}
-    .detalle-titulo{margin-top:22px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
-      padding-bottom:3px;border-bottom:1.5px solid #000;page-break-after:avoid;break-after:avoid}
-    .cat .opcion{margin-top:10px;padding-top:6px;border-top:1px solid #999}
     @media print{
       body{padding:0}
       /* El navegador ya aplica los margenes de pagina; duplicarlos empujaba el pie a otra hoja. */
@@ -170,7 +164,17 @@ function clienteHtml(cli: Cliente | undefined) {
     </div>`
 }
 
-export function tablaItemsHtml(items: CotizacionItem[]) {
+/** Notas del producto para el cliente, respetando sus saltos de línea. */
+const notaItemHtml = (item: CotizacionItem) =>
+  item.notas_cotizacion?.trim()
+    ? `<div class="nota-item">${escapar(item.notas_cotizacion.trim()).replace(/\n/g, '<br/>')}</div>`
+    : ''
+
+/**
+ * `conNotas` agrega las notas de cada producto para el cliente; el recibo no las
+ * lleva. Las especificaciones (`notas`) son de producción y no salen aquí.
+ */
+export function tablaItemsHtml(items: CotizacionItem[], { conNotas = false } = {}) {
   const filas = items.map((item) => {
     const porLado = detalleMedidasPorLado(medidasDeItem(item))
     return `
@@ -178,6 +182,7 @@ export function tablaItemsHtml(items: CotizacionItem[]) {
         <td>
           ${escapar(item.descripcion)}${item.ancho_cm && item.alto_cm ? ` <span class="dim">(${item.ancho_cm} × ${item.alto_cm} cm)</span>` : ''}
           ${porLado ? `<br/><span class="dim">${escapar(porLado)}</span>` : ''}
+          ${conNotas ? notaItemHtml(item) : ''}
         </td>
         <td class="right">${formatCantidad(item.cantidad)}</td>
         <td class="right">${formatCOP(item.precio_unitario)}</td>
@@ -276,7 +281,7 @@ export function htmlCotizacion(
   ${eleccion.length > 0 ? `
   <div class="caja" style="margin-bottom:12px"><h2>Su elección</h2>${eleccion.map((e) => `<div>✓ ${escapar(e)}</div>`).join('')}</div>` : ''}
 
-  ${tablaItemsHtml(cot.items ?? [])}
+  ${tablaItemsHtml(cot.items ?? [], { conNotas: true })}
   ${cierreHtml(cot, ctx.empresa?.anticipo_solicitado_pct, cobros.abonado, cobros.saldo)}
 
   ${pieHtml(cot.notas, ctx.cuentas)}`
@@ -284,9 +289,12 @@ export function htmlCotizacion(
 }
 
 /**
- * Un envío con varias opciones: cuadro comparativo arriba y luego el detalle de
- * cada opción. Cliente, vencimiento, notas y medios de pago van una sola vez
- * porque son del envío.
+ * Un envío con varias opciones, para que el cliente elija. Cada opción va en
+ * una tarjeta con todos sus productos, sus notas y el total; no hay un detalle
+ * aparte. Si el envío está dividido en partes (p. ej. una puerta y una
+ * ventana), cada parte lleva su encabezado y el cliente elige una opción por
+ * parte. Cliente, vencimiento, notas y medios de pago van una sola vez porque
+ * son del envío.
  */
 export function htmlEnvio(
   opciones: CotizacionConItems[],
@@ -294,70 +302,17 @@ export function htmlEnvio(
   ctx: ContextoImpresion,
   categorias: EnvioCategoria[] = [],
 ) {
-  if (categorias.length > 0 && opciones.some((o) => o.categoria_id)) {
-    return htmlEnvioPorCategorias(opciones, cliente, ctx, categorias)
-  }
-  const primera = opciones[0]
-  const numeroEnvio = numeroBaseEnvio(primera.numero)
-  const pctAnticipo = ctx.empresa?.anticipo_solicitado_pct
-  const titulo = (o: Cotizacion) => `Opción ${o.opcion_etiqueta}${o.opcion_nombre ? ` – ${o.opcion_nombre}` : ''}`
-
-  const comparativo = `
-  <div class="comparativo">
-    <h2>Resumen de opciones</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Opción</th><th>Descripción</th><th class="right">Ítems</th>
-          ${pctAnticipo ? `<th class="right">Anticipo (${pctAnticipo}%)</th>` : ''}
-          <th class="right">Total</th>
-        </tr>
-      </thead>
-      <tbody>${opciones.map((o) => `
-        <tr>
-          <td class="letra">${escapar(o.opcion_etiqueta ?? '')}</td>
-          <td>${escapar(o.opcion_nombre ?? `Opción ${o.opcion_etiqueta}`)}${o.recomendada ? ' <strong>★ Recomendada</strong>' : ''} <span class="dim">(${escapar(o.numero)})</span></td>
-          <td class="right">${o.items.length}</td>
-          ${pctAnticipo ? `<td class="right">${formatCOP(anticipoSolicitado(pctAnticipo, o.total))}</td>` : ''}
-          <td class="right"><strong>${formatCOP(o.total)}</strong></td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-    <p class="elige">Elija una de las opciones. Al confirmar, indíquenos la letra de la opción elegida.</p>
-  </div>`
-
-  const secciones = opciones.map((o) => `
-  <div class="opcion">
-    <div class="titulo"><strong>${escapar(titulo(o))}</strong><span>${escapar(o.numero)} · IVA ${o.iva_pct}%</span></div>
-    ${tablaItemsHtml(o.items)}
-    ${cierreHtml(o, pctAnticipo)}
-  </div>`).join('')
-
-  const cuerpo = `
-  ${membreteHtml(ctx.empresa, ctx.logo, {
-    titulo: `Cotización · ${opciones.length} opciones`,
-    numero: numeroEnvio,
-    fecha: `Emitida el ${formatFecha(primera.fecha_emision)}`,
-  })}
-
-  <div class="bloques">
-    ${clienteHtml(cliente)}
-    <div class="bloque">
-      <h2>Datos de la cotización</h2>
-      <dl class="campos">
-        <dt>Opciones</dt><dd>${opciones.map((o) => o.opcion_etiqueta).join(', ')}</dd>
-        <dt>Emisión</dt><dd>${formatFecha(primera.fecha_emision)}</dd>
-        <dt>Vence</dt><dd>${primera.fecha_vencimiento ? formatFecha(primera.fecha_vencimiento) : '—'}</dd>
-      </dl>
-    </div>
-  </div>
-
-  ${comparativo}
-  ${secciones}
-
-  ${pieHtml(primera.notas, ctx.cuentas)}`
-  return documento(`Cotización ${numeroEnvio}`, cuerpo)
+  const porCategorias = categorias.length > 0 && opciones.some((o) => o.categoria_id)
+  const partes: Parte[] = porCategorias
+    ? categorias
+      .map((cat) => ({ cat, opciones: opciones.filter((o) => o.categoria_id === cat.id) }))
+      .filter((p) => p.opciones.length > 0)
+    : [{ cat: null, opciones }]
+  return htmlEnvioEnTarjetas(partes, opciones, cliente, ctx)
 }
+
+/** Una parte del envío y sus opciones. Sin categorías, el envío es una sola parte. */
+type Parte = { cat: EnvioCategoria | null; opciones: CotizacionConItems[] }
 
 /** Trazos de cada tipo, en SVG en línea: los emojis no salen igual en todos los equipos ni en la imagen. */
 const TRAZOS_TIPO: Record<TipoCategoria, string> = {
@@ -372,54 +327,55 @@ const iconoTipo = (tipo: TipoCategoria) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="${TIPO_CATEGORIA_CONFIG[tipo].color}" stroke-width="1.8" ` +
   `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRAZOS_TIPO[tipo]}</svg>`
 
-const coloresTipo = (tipo: TipoCategoria) =>
-  `--c:${TIPO_CATEGORIA_CONFIG[tipo].color};--f:${TIPO_CATEGORIA_CONFIG[tipo].fondo}`
-
-/** Una o dos líneas con lo que distingue la opción: materiales, color y medidas del primer ítem. */
-function detalleTarjeta(items: CotizacionItem[]) {
-  const primero = items[0]
-  if (!primero) return ''
-  // Un color fuera del catálogo vuelve como código hexadecimal: no le dice nada al cliente.
-  const color = nombreColorPerfil(primero.color_perfil)
-  const partes = [
-    ...resumenOpciones(primero.opciones),
-    color && !color.startsWith('#') ? color : null,
-    primero.ancho_cm && primero.alto_cm ? `${primero.ancho_cm} × ${primero.alto_cm} cm` : null,
-  ].filter(Boolean) as string[]
-  const texto = partes.length > 0 ? partes.join(' · ') : primero.descripcion
-  const recortado = texto.length > 110 ? `${texto.slice(0, 107)}…` : texto
-  const mas = items.length > 1 ? ` <strong>+${items.length - 1} ${items.length === 2 ? 'ítem' : 'ítems'}</strong>` : ''
-  return `${escapar(recortado)}${mas}`
-}
+/** Color y fondo del tipo; un envío sin categorías va en gris. */
+const coloresParte = (cat: EnvioCategoria | null) =>
+  cat
+    ? `--c:${TIPO_CATEGORIA_CONFIG[cat.tipo].color};--f:${TIPO_CATEGORIA_CONFIG[cat.tipo].fondo}`
+    : '--c:#374151;--f:#f3f4f6'
 
 /**
- * Envío dividido en partes (p. ej. una puerta y una ventana). Arriba, cada
- * parte con sus opciones en tarjetas y un recuadro para que el cliente indique
- * su elección; después, el detalle de cada opción.
+ * Todos los productos de la opción: descripción completa, medidas, cantidad y
+ * notas. Sin precio por producto: la tarjeta lleva el total de la opción.
  */
-function htmlEnvioPorCategorias(
+function itemsTarjetaHtml(items: CotizacionItem[]) {
+  return `<ul class="items">${items.map((item) => {
+    // Las del configurador ya traen las medidas en la descripción.
+    const medidas = item.ancho_cm && item.alto_cm && !item.descripcion.includes(`${item.ancho_cm}×${item.alto_cm}`)
+      ? `${item.ancho_cm} × ${item.alto_cm} cm`
+      : null
+    const porLado = detalleMedidasPorLado(medidasDeItem(item))
+    const datos = [medidas, porLado, `Cant. ${formatCantidad(item.cantidad)}`].filter(Boolean) as string[]
+    return `
+        <li>
+          <div class="desc">${escapar(item.descripcion)}</div>
+          <div class="dim">${escapar(datos.join(' · '))}</div>
+          ${notaItemHtml(item)}
+        </li>`
+  }).join('')}
+      </ul>`
+}
+
+function htmlEnvioEnTarjetas(
+  partes: Parte[],
   opciones: CotizacionConItems[],
   cliente: Cliente | undefined,
   ctx: ContextoImpresion,
-  categorias: EnvioCategoria[],
 ) {
   const primera = opciones[0]
   const numeroEnvio = numeroBaseEnvio(primera.numero)
   const pctAnticipo = ctx.empresa?.anticipo_solicitado_pct
-  const partes = categorias
-    .map((cat) => ({ cat, opciones: opciones.filter((o) => o.categoria_id === cat.id) }))
-    .filter((p) => p.opciones.length > 0)
+  const conPartes = partes.some((p) => p.cat)
   const rango = rangoTotales(partes.map((p) => p.opciones.map((o) => o.total)))
-  const codigo = (cat: EnvioCategoria, o: Cotizacion) => codigoOpcion(cat.orden, o.opcion_etiqueta ?? '')
+  const codigo = (cat: EnvioCategoria | null, o: Cotizacion) =>
+    cat ? codigoOpcion(cat.orden, o.opcion_etiqueta ?? '') : (o.opcion_etiqueta ?? '')
 
   const tarjetas = partes.map(({ cat, opciones: deEsta }) => {
     const minimo = Math.min(...deEsta.map((o) => o.total))
     const variasOpciones = deEsta.length > 1
+    const sub = variasOpciones ? `${deEsta.length} opciones · elija una` : '1 opción'
     return `
-  <div class="cat" style="${coloresTipo(cat.tipo)}">
-    <div class="cat-cab">${iconoTipo(cat.tipo)}${escapar(cat.nombre)}<span class="sub">${
-      variasOpciones ? `${deEsta.length} opciones · elija una` : '1 opción'
-    }</span></div>
+  <div class="cat" style="${coloresParte(cat)}">
+    <div class="cat-cab">${cat ? `${iconoTipo(cat.tipo)}${escapar(cat.nombre)}` : 'Opciones'}<span class="sub">${sub}</span></div>
     <div class="tarjetas">${deEsta.map((o) => `
       <div class="tarjeta${o.recomendada ? ' reco' : ''}">
         ${o.recomendada ? '<span class="cinta">★ Recomendada</span>' : ''}
@@ -427,12 +383,12 @@ function htmlEnvioPorCategorias(
           <span class="letra">${escapar(o.opcion_etiqueta ?? '')}</span>
           <span class="nombre">${escapar(o.opcion_nombre ?? `Opción ${o.opcion_etiqueta}`)}</span>
         </div>
-        <div class="det">${detalleTarjeta(o.items)}</div>
+        ${itemsTarjetaHtml(o.items)}
         <div class="precio">${formatCOP(o.total)}</div>
         ${variasOpciones ? `<div class="dif">${
           o.total - minimo > 0.5 ? `+ ${formatCOP(o.total - minimo)} frente a la más económica` : 'La más económica'
         }</div>` : ''}
-        <div class="num">Opción ${escapar(codigo(cat, o))} · ${escapar(o.numero)}</div>
+        <div class="num">Opción ${escapar(codigo(cat, o))} · ${escapar(o.numero)} · IVA ${o.iva_pct}% incluido</div>
       </div>`).join('')}
     </div>
   </div>`
@@ -443,7 +399,7 @@ function htmlEnvioPorCategorias(
     <div>
       <h2>${rango.min === rango.max ? 'Total' : 'Total según su elección'}</h2>
       <div class="rango">${rango.min === rango.max ? formatCOP(rango.min) : `Desde ${formatCOP(rango.min)} hasta ${formatCOP(rango.max)}`}</div>
-      <p class="nota">Si toma todas las partes. Puede tomar solo algunas.</p>
+      ${conPartes ? '<p class="nota">Si toma todas las partes. Puede tomar solo algunas.</p>' : ''}
     </div>
     <div>
       ${pctAnticipo ? `<h2>Anticipo</h2><div><strong>${pctAnticipo}%</strong> del pedido elegido</div>` : ''}
@@ -451,24 +407,19 @@ function htmlEnvioPorCategorias(
     </div>
     <div class="marcar">
       <span>Indíquenos su elección:</span>
-      ${partes.map(({ cat }) => `<span>${escapar(cat.nombre)}<b></b></span>`).join('')}
+      ${conPartes
+        ? partes.map(({ cat }) => `<span>${escapar(cat?.nombre ?? '')}<b></b></span>`).join('')
+        : '<span>Opción<b></b></span>'}
     </div>
   </div>`
 
-  const detalle = partes.map(({ cat, opciones: deEsta }) => `
-  <div class="cat" style="${coloresTipo(cat.tipo)}">
-    <div class="cat-cab">${iconoTipo(cat.tipo)}${escapar(cat.nombre)}</div>
-    ${deEsta.map((o) => `
-    <div class="opcion">
-      <div class="titulo"><strong>Opción ${escapar(o.opcion_etiqueta ?? '')}${o.opcion_nombre ? ` – ${escapar(o.opcion_nombre)}` : ''}</strong><span>${escapar(o.numero)} · IVA ${o.iva_pct}%</span></div>
-      ${tablaItemsHtml(o.items)}
-      ${cierreHtml(o, null)}
-    </div>`).join('')}
-  </div>`).join('')
+  const titulo = conPartes
+    ? `Cotización · ${partes.length} ${partes.length === 1 ? 'parte' : 'partes'}, ${opciones.length} opciones`
+    : `Cotización · ${opciones.length} opciones`
 
   const cuerpo = `
   ${membreteHtml(ctx.empresa, ctx.logo, {
-    titulo: `Cotización · ${partes.length} ${partes.length === 1 ? 'parte' : 'partes'}, ${opciones.length} opciones`,
+    titulo,
     numero: numeroEnvio,
     fecha: `Emitida el ${formatFecha(primera.fecha_emision)}`,
   })}
@@ -478,19 +429,20 @@ function htmlEnvioPorCategorias(
     <div class="bloque">
       <h2>Datos de la cotización</h2>
       <dl class="campos">
-        <dt>Partes</dt><dd>${partes.map((p) => escapar(p.cat.nombre)).join(', ')}</dd>
+        ${conPartes
+          ? `<dt>Partes</dt><dd>${partes.map((p) => escapar(p.cat?.nombre ?? '')).join(', ')}</dd>`
+          : `<dt>Opciones</dt><dd>${opciones.map((o) => escapar(o.opcion_etiqueta ?? '')).join(', ')}</dd>`}
         <dt>Emisión</dt><dd>${formatFecha(primera.fecha_emision)}</dd>
         <dt>Vence</dt><dd>${primera.fecha_vencimiento ? formatFecha(primera.fecha_vencimiento) : '—'}</dd>
       </dl>
     </div>
   </div>
 
-  <p class="partes-intro">Para cada parte le ofrecemos varias opciones. Elija una por parte, o solo las partes que le interesen.</p>
+  <p class="partes-intro">${conPartes
+    ? 'Para cada parte le ofrecemos varias opciones. Elija una por parte, o solo las partes que le interesen.'
+    : 'Le ofrecemos varias opciones. Elija la que prefiera.'}</p>
   ${tarjetas}
   ${eleccion}
-
-  <div class="detalle-titulo">Detalle de cada opción</div>
-  ${detalle}
 
   ${pieHtml(primera.notas, ctx.cuentas)}`
   return documento(`Cotización ${numeroEnvio}`, cuerpo)
