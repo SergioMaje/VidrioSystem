@@ -455,9 +455,6 @@ export function CotizacionDetalle() {
                     {detalleMedidasPorLado(medidasDeItem(item)) && (
                       <p className="text-xs text-amber-700">{detalleMedidasPorLado(medidasDeItem(item))}</p>
                     )}
-                    {item.notas?.trim() && (
-                      <p className="mt-1 whitespace-pre-line border-l-2 pl-2 text-xs text-muted-foreground">{item.notas.trim()}</p>
-                    )}
                   </td>
                   <td className="px-4 py-3 text-right font-mono">{formatCantidad(item.cantidad)}</td>
                   <td className="px-4 py-3 text-right font-mono">{formatCOP(item.precio_unitario)}</td>
