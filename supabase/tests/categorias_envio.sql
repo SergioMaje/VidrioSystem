@@ -117,7 +117,7 @@ select pg_temp.debe_fallar(format(
   $q$insert into public.cotizaciones (numero, cliente_id, subtotal, total, grupo_id, categoria_id, opcion_etiqueta)
      values ('COT-TESTCAT-X', %L, 1, 1, %L, %L, 'A')$q$,
   pg_temp.id('cliente'), pg_temp.id('grupo'), pg_temp.id('puerta')),
-  'cotizaciones_grupo_etiqueta_unica');
+  'ya tiene la opción');
 -- La categoría tiene que ser del mismo envío.
 select pg_temp.debe_fallar(format(
   $q$insert into public.cotizaciones (numero, cliente_id, subtotal, total, grupo_id, categoria_id, opcion_etiqueta)
@@ -168,7 +168,9 @@ with x as (
 reset role;
 
 select pg_temp.afirmar(
-  (select numero from public.cotizaciones where id = pg_temp.id('pedido')) = 'COT-TESTCAT',
+  (select p.numero = regexp_replace(o.numero, '-[0-9]*[A-Z]$', '') and p.consecutivo = o.consecutivo
+     from public.cotizaciones p, public.cotizaciones o
+    where p.id = pg_temp.id('pedido') and o.id = pg_temp.id('o1A')),
   'el pedido toma el número base del envío');
 select pg_temp.afirmar(pg_temp.estado('pedido') = 'aprobada', 'el pedido queda aprobado');
 select pg_temp.afirmar(

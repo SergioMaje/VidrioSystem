@@ -41,8 +41,22 @@ export function textoOpcion(
   return categoria ? `${categoria.nombre} · ${base}` : base
 }
 
-/** Número del envío sin el sufijo de la opción: COT-123-B y COT-123-2B → COT-123. */
+/**
+ * Número del envío sin el sufijo de la opción: COT-00018-B y COT-00018-2B →
+ * COT-00018. Sirve igual con el formato anterior (COT-1794…-B → COT-1794…).
+ */
 export const numeroBaseEnvio = (numero: string) => numero.replace(/-[0-9]*[A-Z]$/, '')
+
+/**
+ * El consecutivo que busca el usuario: "18", "cot18", "COT-00018" o "COT-00018-B"
+ * → 18. Null si lo escrito no es un número de cotización.
+ */
+export function consecutivoBuscado(texto: string): number | null {
+  const m = texto.trim().toLowerCase().match(/^(?:cot)?[-\s]*0*(\d{1,12})(?:-\d*[a-z])?$/)
+  if (!m) return null
+  const n = Number(m[1])
+  return n > 0 ? n : null
+}
 
 /** Código corto de una opción con categoría: la B de la segunda categoría es "2B". */
 export const codigoOpcion = (orden: number, etiqueta: string) => `${orden + 1}${etiqueta}`

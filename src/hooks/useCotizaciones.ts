@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { TOLERANCIA } from '@/lib/pagos'
 import { formatCOP, hoyBogota } from '@/lib/utils'
 import {
-  calcularTotales, codigoOpcion, etiquetaDeIndice, MAX_OPCIONES, numeroBaseEnvio, siguienteEtiqueta,
+  calcularTotales, etiquetaDeIndice, MAX_OPCIONES, siguienteEtiqueta,
   type TipoCategoria,
 } from '@/lib/cotizaciones'
 import type { Cotizacion, CotizacionItem, EnvioCategoria, OrdenTrabajo } from '@/types/database'
@@ -142,12 +142,16 @@ async function insertarItems(porCotizacion: { cotizacionId: string; items: Opcio
 
 /**
  * Crea una cotización suelta, o un envío con varias opciones si `opciones`
- * trae más de una. Cada opción es una cotización completa (COT-<ts>-A, -B…)
+ * trae más de una. Cada opción es una cotización completa (COT-00018-A, -B…)
  * enlazada por `grupo_id`: al cobrar una, la base descarta las demás.
  *
  * Con `categorias`, las letras van por categoría y el número lleva su posición
- * (COT-<ts>-1A, -1B, -2A…). El cliente elige una por categoría y la elección
+ * (COT-00018-1A, -1B, -2A…). El cliente elige una por categoría y la elección
  * se cobra como un pedido aparte (`useConsolidarEleccion`).
+ *
+ * El número lo asigna la base (trigger trg_zz_asignar_numero_cotizacion,
+ * migración 20261113120000): consecutivo por vidriería, compartido por las
+ * opciones del envío.
  */
 export function useCrearCotizacion() {
   const qc = useQueryClient()
@@ -177,7 +181,6 @@ export function useCrearCotizacion() {
         throw new Error(`Máximo ${MAX_OPCIONES} opciones ${porCategoria ? 'por categoría' : 'por envío'}`)
       }
 
-      const base = `COT-${Date.now()}`
       const agrupada = porCategoria || input.opciones.length > 1
       const grupoId = agrupada ? crypto.randomUUID() : null
 
@@ -195,9 +198,8 @@ export function useCrearCotizacion() {
       const filas = input.opciones.map((opcion, idx) => {
         const { subtotal, total } = calcularTotales(opcion.items, opcion.descuento_pct, opcion.iva_pct)
         const etiqueta = agrupada ? etiquetaDeIndice(posiciones[idx]) : null
-        const sufijo = etiqueta && (porCategoria ? codigoOpcion(opcion.categoria!, etiqueta) : etiqueta)
+        // Sin número: la base asigna el consecutivo (COT-00018, -A, -1A…).
         return {
-          numero: sufijo ? `${base}-${sufijo}` : base,
           cliente_id: input.cliente_id,
           usuario_id: input.usuario_id,
           estado: input.estado ?? 'borrador',
@@ -219,13 +221,15 @@ export function useCrearCotizacion() {
       const { data: cotizaciones, error } = await supabase.from('cotizaciones').insert(filas).select()
       if (error) throw error
 
-      // Se empareja por número y no por posición: el orden de la respuesta no
-      // está garantizado.
-      const porNumero = new Map((cotizaciones as Cotizacion[]).map((c) => [c.numero, c]))
+      // Se empareja por categoría y letra, que identifican la opción dentro del
+      // envío, y no por posición: el orden de la respuesta no está garantizado.
+      // El número no sirve porque lo asigna la base.
+      const clave = (c: Pick<Cotizacion, 'categoria_id' | 'opcion_etiqueta'>) => `${c.categoria_id ?? ''}|${c.opcion_etiqueta ?? ''}`
+      const porClave = new Map((cotizaciones as Cotizacion[]).map((c) => [clave(c), c]))
       await insertarItems(
-        filas.map((fila, idx) => ({ cotizacionId: porNumero.get(fila.numero)!.id, items: input.opciones[idx].items }))
+        filas.map((fila, idx) => ({ cotizacionId: porClave.get(clave(fila))!.id, items: input.opciones[idx].items }))
       )
-      return porNumero.get(filas[0].numero)!
+      return porClave.get(clave(filas[0]))!
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cotizaciones'] }),
   })
@@ -336,14 +340,14 @@ export function useAgregarOpcion() {
     mutationFn: async (input: AgregarOpcionInput) => {
       const { data: origen, error: origenError } = await supabase
         .from('cotizaciones')
-        .select('id, numero, estado, cliente_id, fecha_vencimiento, notas, grupo_id, categoria_id, descuento_pct, iva_pct, categoria:envio_categorias(orden)')
+        .select('id, numero, estado, cliente_id, fecha_vencimiento, notas, grupo_id, categoria_id, descuento_pct, iva_pct')
         .eq('id', input.origenId)
         .single()
       if (origenError) throw origenError
       const o = origen as unknown as Pick<
         Cotizacion,
         'id' | 'numero' | 'estado' | 'cliente_id' | 'fecha_vencimiento' | 'notas' | 'grupo_id' | 'categoria_id' | 'descuento_pct' | 'iva_pct'
-      > & { categoria: Pick<EnvioCategoria, 'orden'> | null }
+      >
       if (o.estado !== 'borrador' && o.estado !== 'enviada') {
         throw new Error('Solo se agregan opciones a un envío en borrador o enviado')
       }
@@ -366,9 +370,8 @@ export function useAgregarOpcion() {
         : await consulta
       if (hermanasError) throw hermanasError
       const etiqueta = siguienteEtiqueta((hermanas as Pick<Cotizacion, 'opcion_etiqueta'>[]).map((h) => h.opcion_etiqueta))
-      // Mismo número base que el envío: COT-123-A → COT-123-C, COT-123-2A → COT-123-2C.
-      const base = numeroBaseEnvio(o.numero)
-      const sufijo = o.categoria ? codigoOpcion(o.categoria.orden, etiqueta) : etiqueta
+      // El número lo pone la base con la misma base del envío:
+      // COT-00018-A → COT-00018-C, COT-00018-2A → COT-00018-2C.
 
       // Con categorías, descuento e IVA son del envío: se copian del origen
       // para que el pedido sume bien.
@@ -378,7 +381,6 @@ export function useAgregarOpcion() {
       const { data: cot, error } = await supabase
         .from('cotizaciones')
         .insert({
-          numero: `${base}-${sufijo}`,
           cliente_id: o.cliente_id,
           usuario_id: input.usuario_id,
           estado: input.estado,

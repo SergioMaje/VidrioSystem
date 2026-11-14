@@ -104,7 +104,7 @@ select pg_temp.debe_fallar(format(
 select pg_temp.debe_fallar(format(
   $q$insert into public.cotizaciones (numero, cliente_id, subtotal, total, grupo_id, opcion_etiqueta)
      values ('COT-TESTOP-Y', %L, 1, 1, %L, 'A')$q$, pg_temp.id('cliente'), pg_temp.id('grupo')),
-  'cotizaciones_grupo_etiqueta_unica');
+  'ya tiene la opción');
 select pg_temp.debe_fallar(format(
   $q$insert into public.cotizaciones (numero, cliente_id, subtotal, total, grupo_id, opcion_etiqueta)
      values ('COT-TESTOP-Z', %L, 1, 1, %L, 'ab')$q$, pg_temp.id('cliente'), pg_temp.id('grupo')),
