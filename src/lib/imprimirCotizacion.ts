@@ -42,8 +42,6 @@ export const tablaItemsCss = `
     td{padding:4px 6px;border-bottom:1px solid #ddd;vertical-align:top}
     tr{page-break-inside:avoid}
     .right{text-align:right;white-space:nowrap}
-    /* Especificaciones del producto, debajo de su descripcion y en la misma celda. */
-    .specs{margin-top:3px;font-size:10px;font-weight:400;color:#333;border-left:2px solid #999;padding-left:6px}
     .totales{margin-top:8px;margin-left:auto;width:230px}
     .totales .row{display:flex;justify-content:space-between;padding:2px 0}
     /* Doble filete sobre el total: convencion de documento contable. */
@@ -180,7 +178,6 @@ export function tablaItemsHtml(items: CotizacionItem[]) {
         <td>
           ${escapar(item.descripcion)}${item.ancho_cm && item.alto_cm ? ` <span class="dim">(${item.ancho_cm} × ${item.alto_cm} cm)</span>` : ''}
           ${porLado ? `<br/><span class="dim">${escapar(porLado)}</span>` : ''}
-          ${item.notas?.trim() ? `<div class="specs">${escapar(item.notas.trim()).replace(/\n/g, '<br/>')}</div>` : ''}
         </td>
         <td class="right">${formatCantidad(item.cantidad)}</td>
         <td class="right">${formatCOP(item.precio_unitario)}</td>
