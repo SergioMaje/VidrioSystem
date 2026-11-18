@@ -191,9 +191,22 @@ export interface Cliente {
   direccion: string | null
   ciudad: string | null
   activo: boolean
+  /** Puede llevarse trabajos sin anticipo y pagar contra cuenta de cobro. Solo lo cambia un admin. */
+  credito_habilitado: boolean
+  /** Plazo de sus cuentas de cobro, desde la emisión. */
+  dias_credito: number
+  /** Tope de lo que puede deber a crédito. Null = sin tope. */
+  cupo_credito: number | null
   created_at: string
   updated_at: string
 }
+
+/**
+ * 'anticipo': se cobra para producir y se liquida para entregar (lo normal).
+ * 'credito': aprobada por un admin (`aprobar_cotizacion_credito`); se paga
+ * contra cuenta de cobro.
+ */
+export type CondicionPago = 'anticipo' | 'credito'
 
 /**
  * Por qué se anuló una cotización. Decide si el reverso de los cobros en
@@ -253,6 +266,11 @@ export interface Cotizacion {
   anulado_por: string | null
   motivo_anulacion: string | null
   tipo_anulacion: TipoAnulacionCotizacion | null
+  condicion_pago: CondicionPago
+  /** Orden de compra del cliente (empresas); va en la cuenta de cobro. */
+  orden_compra: string | null
+  credito_autorizado_por: string | null
+  credito_autorizado_at: string | null
   subtotal: number
   descuento_pct: number
   iva_pct: number
@@ -632,4 +650,53 @@ export interface CotizacionSaldo {
   total_abonado: number
   saldo: number
   pct_abonado: number
+}
+
+/** Cuenta de cobro de una venta a crédito (CC-0001…). Se escribe solo por RPC. */
+export interface CuentaCobro {
+  id: string
+  numero: string
+  cotizacion_id: string
+  cliente_id: string
+  orden_id: string | null
+  fecha_emision: string
+  fecha_vencimiento: string
+  /** Lo cobrado en el documento, congelado al emitir. */
+  monto: number
+  orden_compra: string | null
+  usuario_id: string
+  created_at: string
+  anulado_at: string | null
+  anulado_por: string | null
+  motivo_anulacion: string | null
+}
+
+/** Estado de una venta a crédito, derivado del saldo (vista `cartera`). */
+export type EstadoCartera = 'sin_emitir' | 'pendiente' | 'parcial' | 'vencida' | 'pagada'
+
+/** Fila de la vista `cartera`: una venta a crédito viva. */
+export interface FilaCartera {
+  cotizacion_id: string
+  cotizacion_numero: string
+  orden_compra: string | null
+  fecha_aprobacion: string | null
+  cliente_id: string
+  cliente_nombre: string
+  cliente_apellido: string
+  cliente_empresa: string | null
+  cliente_documento: string | null
+  dias_credito: number
+  total: number
+  total_abonado: number
+  saldo: number
+  cuenta_cobro_id: string | null
+  cuenta_cobro_numero: string | null
+  fecha_emision: string | null
+  fecha_vencimiento: string | null
+  monto_cuenta: number | null
+  orden_id: string | null
+  orden_numero: string | null
+  orden_estado: OrdenTrabajo['estado'] | null
+  dias_mora: number
+  estado: EstadoCartera
 }

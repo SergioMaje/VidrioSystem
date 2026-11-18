@@ -1,4 +1,4 @@
-import type { CategoriaGasto, MetodoPago, TipoPago } from '@/types/database'
+import type { CategoriaGasto, CondicionPago, EstadoCartera, MetodoPago, TipoPago } from '@/types/database'
 import { formatCOP } from './utils'
 
 /** El cliente debe entregar al menos este porcentaje del total como anticipo. */
@@ -147,3 +147,31 @@ export function origenDeVenta(venta: VentaConOrigen): { numero: string; cliente:
     cliente: cliente ? `${cliente.nombre} ${cliente.apellido}` : '—',
   }
 }
+
+// ── Venta a crédito ─────────────────────────────────────────────────────────
+
+/**
+ * Venta a crédito con la vidriería (empresas que pagan contra entrega): no
+ * pide anticipo para producir y se entrega con cuenta de cobro. Las reglas
+ * viven en `validar_avance_orden` y `validar_pago_cotizacion`.
+ */
+export const esVentaCredito = (c: { condicion_pago?: CondicionPago | null } | null | undefined) =>
+  c?.condicion_pago === 'credito'
+
+export const textoCondicionCredito = (dias: number) =>
+  dias === 0 ? 'Crédito (pago a la entrega)' : `Crédito a ${dias} días`
+
+type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline'
+
+/** El orden importa: es el de los filtros de la página de Cartera. */
+export const ESTADO_CARTERA_CONFIG: Record<EstadoCartera, { label: string; variant: BadgeVariant }> = {
+  vencida: { label: 'Vencida', variant: 'destructive' },
+  pendiente: { label: 'Pendiente', variant: 'warning' },
+  parcial: { label: 'Pago parcial', variant: 'default' },
+  sin_emitir: { label: 'Sin cuenta de cobro', variant: 'secondary' },
+  pagada: { label: 'Pagada', variant: 'success' },
+}
+
+/** Tramos de antigüedad de la cartera, por días de mora. */
+export const tramoMora = (dias: number) =>
+  dias <= 0 ? 'Al día' : dias <= 30 ? '1–30 días' : dias <= 60 ? '31–60 días' : 'Más de 60 días'

@@ -33,7 +33,11 @@ export function useCliente(id: string) {
   })
 }
 
-type ClienteInput = Omit<Cliente, 'id' | 'created_at' | 'updated_at'>
+type CamposCredito = 'credito_habilitado' | 'dias_credito' | 'cupo_credito'
+
+/** El crédito es opcional: solo lo envía un admin (el trigger lo protege). */
+type ClienteInput = Omit<Cliente, 'id' | 'created_at' | 'updated_at' | CamposCredito> &
+  Partial<Pick<Cliente, CamposCredito>>
 
 export function useCrearCliente() {
   const qc = useQueryClient()
