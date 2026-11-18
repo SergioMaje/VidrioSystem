@@ -10,8 +10,8 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { AnularCotizacionDialog } from './AnularCotizacionDialog'
-import { AprobarCreditoDialog } from './AprobarCreditoDialog'
 import { CuentaCobroPanel } from './CuentaCobroPanel'
+import { useCuentaCobroVigente } from '@/hooks/useCartera'
 import { ElegirOpcionesDialog } from './ElegirOpcionesDialog'
 import { IconoTipoCategoria } from '@/components/shared/IconoTipoCategoria'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
@@ -24,7 +24,7 @@ import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/hooks/useAuth'
-import { esVentaAnulada, esVentaCredito, estaLiquidada, textoAnticipoSolicitado, textoCondicionCredito, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { esVentaAnulada, esVentaCredito, estaLiquidada, textoAnticipoSolicitado, textoVenceTrasEntrega, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, TIPO_CATEGORIA_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { abrirYImprimir, descargarImagen, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
 import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
@@ -44,6 +44,7 @@ export function CotizacionDetalle() {
   const { toast } = useToast()
   const { data: cotizacion, isLoading } = useCotizacion(id ?? '')
   const { data: saldoInfo } = useSaldoCotizacion(id)
+  const { data: cuentaCobro } = useCuentaCobroVigente(esVentaCredito(cotizacion) ? id : null)
   const { data: pagos } = usePagosCotizacion(id)
   const { data: orden } = useOrdenDeCotizacion(id)
   const { data: opcionesGrupo } = useOpcionesDelGrupo(cotizacion?.grupo_id)
@@ -63,7 +64,6 @@ export function CotizacionDetalle() {
   const [anularCotizacionOpen, setAnularCotizacionOpen] = useState(false)
   const [descargando, setDescargando] = useState(false)
   const [elegirOpen, setElegirOpen] = useState(false)
-  const [creditoOpen, setCreditoOpen] = useState(false)
   // Recién armado desde "Cliente eligió…": se cobra su anticipo aquí mismo.
   const [pedidoCreado, setPedidoCreado] = useState<Cotizacion | null>(null)
   const { usuario } = useAuth()
@@ -165,11 +165,6 @@ export function CotizacionDetalle() {
     .filter((o) => ['borrador', 'enviada', 'vencida', 'aprobada'].includes(o.estado))
     .map((o) => o.opcion_etiqueta ?? '')
   const abierta = cotizacion.estado === 'borrador' || cotizacion.estado === 'enviada'
-  // Cosmético: la regla vive en aprobar_cotizacion_credito (admin, crédito
-  // habilitado, sin cobros, enviada o aprobada, no una opción por categorías).
-  const puedeAprobarCredito =
-    esAdmin && !porCategoria && !!cliente?.credito_habilitado && abonado <= 0 &&
-    (cotizacion.estado === 'enviada' || cotizacion.estado === 'aprobada')
   const envioCompleto = opcionesImprimibles.length > 1
   // El envío se nombra por su número base: COT-123-B → COT-123.
   const numeroEnvio = numeroBaseEnvio(cotizacion.numero)
@@ -234,12 +229,25 @@ export function CotizacionDetalle() {
           </DropdownMenuContent>
         </DropdownMenu>
         <Badge variant={cfg.variant} className={anulada ? 'px-3 py-1 text-sm' : undefined}>{cfg.label}</Badge>
-        {credito && (
-          <Badge variant="outline" className="gap-1" title="Aprobada a crédito: se paga contra cuenta de cobro">
-            <Handshake className="h-3 w-3" />
-            {cliente ? textoCondicionCredito(cliente.dias_credito) : 'Crédito'}
-            {cotizacion.orden_compra && ` · OC ${cotizacion.orden_compra}`}
-          </Badge>
+        {credito && !anulada && (
+          liquidada ? (
+            <Badge variant="outline" className="gap-1" title="Aprobada con pago en $0 y pagada contra su cuenta de cobro">
+              <Handshake className="h-3 w-3" />
+              Cuenta de cobro{cuentaCobro ? ` ${cuentaCobro.numero}` : ''} pagada
+            </Badge>
+          ) : (
+            <Badge
+              variant="warning"
+              className="gap-1 px-3 py-1 text-sm"
+              title={`Aprobada con pago en $0: el cliente paga contra la cuenta de cobro${
+                cuentaCobro ? ` (vence ${textoVenceTrasEntrega(cuentaCobro.dias_plazo).toLowerCase()})` : ''
+              }`}
+            >
+              <Handshake className="h-3.5 w-3.5" />
+              Por cobrar{cuentaCobro ? ` · ${cuentaCobro.numero}` : ''} · {formatCOP(saldo)}
+              {cotizacion.orden_compra && ` · OC ${cotizacion.orden_compra}`}
+            </Badge>
+          )
         )}
       </div>
 
@@ -539,12 +547,6 @@ export function CotizacionDetalle() {
               </Badge>
             ) : (
               <div className="flex gap-2">
-                {puedeAprobarCredito && (
-                  <Button size="sm" variant="outline" onClick={() => setCreditoOpen(true)}>
-                    <Handshake className="mr-2 h-4 w-4" />
-                    Aprobar a crédito
-                  </Button>
-                )}
                 <Button size="sm" onClick={() => setPagoOpen(true)}>
                   <Wallet className="mr-2 h-4 w-4" />
                   {abonado > 0 || credito ? 'Registrar abono' : 'Registrar anticipo'}
@@ -659,7 +661,9 @@ export function CotizacionDetalle() {
 
             {!liquidada && !anulada && (
               <p className="text-xs text-muted-foreground">
-                {abonado > 0
+                {credito
+                  ? 'Aprobada con pago en $0: la producción puede avanzar y la orden se entrega con saldo. El cliente paga contra la cuenta de cobro, cuyo plazo empieza a contar el día de la entrega.'
+                  : abonado > 0
                   ? 'La producción ya puede avanzar. El cliente tiene plazo hasta el día de la entrega para abonar el saldo: la orden no se entregará mientras quede pendiente.'
                   : 'La producción no puede iniciar hasta cobrar el anticipo.'}
               </p>
@@ -728,16 +732,6 @@ export function CotizacionDetalle() {
                   : cotizacion.grupo_id ? 'Cliente eligió esta opción — Registrar anticipo' : 'Cliente aprobó — Registrar anticipo'}
               </Button>
             )}
-            {cotizacion.estado === 'enviada' && puedeAprobarCredito && (
-              <Button
-                variant="outline"
-                onClick={() => setCreditoOpen(true)}
-                title="El cliente tiene crédito: se produce sin anticipo y paga contra cuenta de cobro"
-              >
-                <Handshake className="mr-2 h-4 w-4" />
-                Aprobar a crédito
-              </Button>
-            )}
             <Button
               variant="destructive"
               onClick={handleRechazar}
@@ -790,15 +784,6 @@ export function CotizacionDetalle() {
             setPedidoCreado(null)
             navigate(`/cotizaciones/${destino}`, { state: origen })
           }}
-        />
-      )}
-      {cliente && puedeAprobarCredito && (
-        <AprobarCreditoDialog
-          cotizacion={cotizacion}
-          cliente={cliente}
-          open={creditoOpen}
-          onOpenChange={setCreditoOpen}
-          opcionesADescartar={aDescartar}
         />
       )}
       <AnularVentaDialog venta={aAnular} documento={cotizacion.numero} onClose={() => setAAnular(null)} />

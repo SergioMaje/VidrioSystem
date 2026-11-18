@@ -17,7 +17,6 @@ import { escapar } from '@/lib/documentos'
 import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
 import { MaterialesOrdenPanel } from './MaterialesOrdenPanel'
 import { anticipoMinimo, esVentaCredito, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
-import { useEntregarOrdenCredito } from '@/hooks/useCartera'
 import { formatCantidad, formatCOP, formatFecha, hoyBogota, mensajeError } from '@/lib/utils'
 import {
   calcularCortes,
@@ -109,27 +108,13 @@ export function OrdenDetalle() {
   const saldoPendiente = saldoInfo?.saldo ?? 0
   const pctAbonado = saldoInfo?.pct_abonado ?? 0
   const conCotizacion = !!orden?.cotizacion_id
-  // Venta a crédito: produce sin anticipo y se entrega con cuenta de cobro
-  // (entregar_orden_credito). Las reglas viven en validar_avance_orden.
+  // Venta a crédito (pago en $0): produce sin anticipo y se entrega con saldo
+  // porque tiene cuenta de cobro. Las reglas viven en validar_avance_orden.
   const credito = esVentaCredito(cotizacion)
   // Mientras el saldo (o la cotización) no haya cargado se asume bloqueado, para
   // no habilitar los botones por un instante antes de saber qué se ha cobrado.
   const sinAnticipo = conCotizacion && !credito && (!saldoInfo || !cotizacion || !puedeIniciarProduccion(abonado, total))
   const bloqueadaPorSaldo = conCotizacion && (!saldoInfo || !estaLiquidada(saldoInfo.saldo))
-  const entregaConCuentaCobro = credito && bloqueadaPorSaldo && !!saldoInfo
-  const entregarCredito = useEntregarOrdenCredito()
-
-  const onEntregarCredito = async () => {
-    try {
-      const cc = await entregarCredito.mutateAsync({ ordenId: id!, cotizacionId: orden!.cotizacion_id! })
-      toast({
-        title: cc ? `Orden entregada — cuenta de cobro ${cc.numero} emitida` : 'Orden entregada',
-        variant: 'success',
-      })
-    } catch (err) {
-      toast({ title: mensajeError(err, 'No se pudo entregar la orden'), variant: 'destructive' })
-    }
-  }
   const enCurso = orden ? ESTADOS_ACTIVOS.includes(orden.estado) : false
 
   const { data: materiales } = useOrdenMateriales(orden?.estado === 'en_produccion' ? id : undefined)
@@ -583,20 +568,17 @@ export function OrdenDetalle() {
             Cerrar producción
           </Button>
         )}
-        {orden.estado === 'lista' && (entregaConCuentaCobro ? (
-          <Button onClick={onEntregarCredito} disabled={entregarCredito.isPending}>
-            {entregarCredito.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
-            Entregar y emitir cuenta de cobro
-          </Button>
-        ) : (
+        {orden.estado === 'lista' && (
           <Button
             onClick={() => cambiarEstado.mutate('entregada')}
-            disabled={cambiarEstado.isPending || bloqueadaPorSaldo}
+            // A crédito se entrega con saldo; si su cuenta de cobro se anuló, la
+            // base lo rechaza con el motivo.
+            disabled={cambiarEstado.isPending || (bloqueadaPorSaldo && !credito)}
           >
             {cambiarEstado.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
             Marcar como entregada
           </Button>
-        ))}
+        )}
       </div>
 
       {orden.estado === 'pendiente' && sinAnticipo && saldoInfo && (
@@ -626,9 +608,9 @@ export function OrdenDetalle() {
         <div className="flex items-start gap-2 rounded-md border px-4 py-3 text-sm text-muted-foreground">
           <Handshake className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
-            Venta a crédito: se produce sin anticipo. Al entregar se emite la cuenta de cobro por el saldo
-            (<strong className="font-mono text-foreground">{formatCOP(saldoPendiente)}</strong>)
-            {cotizacion?.cliente ? ` con vencimiento a ${cotizacion.cliente.dias_credito} días` : ''}.
+            Aprobada con pago en $0: se produce sin anticipo y se entrega contra la cuenta de cobro
+            (<strong className="font-mono text-foreground">{formatCOP(saldoPendiente)}</strong> por cobrar).
+            Su plazo de pago empieza a contar el día de la entrega.
           </div>
         </div>
       )}

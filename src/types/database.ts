@@ -191,9 +191,7 @@ export interface Cliente {
   direccion: string | null
   ciudad: string | null
   activo: boolean
-  /** Puede llevarse trabajos sin anticipo y pagar contra cuenta de cobro. Solo lo cambia un admin. */
-  credito_habilitado: boolean
-  /** Plazo de sus cuentas de cobro, desde la emisión. */
+  /** Plazo de sus cuentas de cobro, contado desde la entrega. Solo lo cambia un admin. */
   dias_credito: number
   /** Tope de lo que puede deber a crédito. Null = sin tope. */
   cupo_credito: number | null
@@ -660,7 +658,10 @@ export interface CuentaCobro {
   cliente_id: string
   orden_id: string | null
   fecha_emision: string
-  fecha_vencimiento: string
+  /** Null hasta que se entrega la orden: el plazo cuenta desde la entrega. */
+  fecha_vencimiento: string | null
+  /** Días de plazo del cliente, congelados al emitir. */
+  dias_plazo: number
   /** Lo cobrado en el documento, congelado al emitir. */
   monto: number
   orden_compra: string | null
@@ -685,7 +686,6 @@ export interface FilaCartera {
   cliente_apellido: string
   cliente_empresa: string | null
   cliente_documento: string | null
-  dias_credito: number
   total: number
   total_abonado: number
   saldo: number
@@ -699,4 +699,6 @@ export interface FilaCartera {
   orden_estado: OrdenTrabajo['estado'] | null
   dias_mora: number
   estado: EstadoCartera
+  /** Plazo congelado en la cuenta de cobro; null sin cuenta vigente. */
+  dias_plazo: number | null
 }

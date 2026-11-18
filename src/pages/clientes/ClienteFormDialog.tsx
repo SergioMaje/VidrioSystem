@@ -25,7 +25,6 @@ const schema = z.object({
   email: z.string().email('Correo inválido').optional().or(z.literal('')),
   direccion: z.string().optional(),
   ciudad: z.string().optional(),
-  credito_habilitado: z.boolean(),
   dias_credito: z.coerce.number().int('Días enteros').min(0, 'Mínimo 0').max(365, 'Máximo 365'),
   /** Solo dígitos; vacío = sin tope. */
   cupo_credito: z.string(),
@@ -49,11 +48,10 @@ export function ClienteFormDialog({ open, onOpenChange, cliente, onCreado }: Cli
   // Cosmético: el trigger clientes_proteger_credito rechaza el cambio si no es admin.
   const esAdmin = usuario?.rol === 'admin'
 
-  const { register, handleSubmit, setValue, reset, watch, control, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, reset, control, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { tipo: 'natural', credito_habilitado: false, dias_credito: 30, cupo_credito: '' },
+    defaultValues: { tipo: 'natural', dias_credito: 30, cupo_credito: '' },
   })
-  const conCredito = watch('credito_habilitado')
 
   useEffect(() => {
     if (open) {
@@ -68,22 +66,21 @@ export function ClienteFormDialog({ open, onOpenChange, cliente, onCreado }: Cli
           email: cliente.email ?? '',
           direccion: cliente.direccion ?? '',
           ciudad: cliente.ciudad ?? '',
-          credito_habilitado: cliente.credito_habilitado,
           dias_credito: cliente.dias_credito,
           cupo_credito: cliente.cupo_credito != null ? String(Math.round(cliente.cupo_credito)) : '',
         })
       } else {
-        reset({ nombre: '', apellido: '', tipo: 'natural', credito_habilitado: false, dias_credito: 30, cupo_credito: '' })
+        reset({ nombre: '', apellido: '', tipo: 'natural', dias_credito: 30, cupo_credito: '' })
       }
     }
   }, [open, cliente, reset])
 
   const onSubmit = async (data: FormData) => {
     try {
-      const { credito_habilitado, dias_credito, cupo_credito, ...datos } = data
+      const { dias_credito, cupo_credito, ...datos } = data
       // Solo el admin manda el crédito: así editar un cliente nunca lo toca por accidente.
       const credito = esAdmin
-        ? { credito_habilitado, dias_credito, cupo_credito: cupo_credito ? Number(cupo_credito) : null }
+        ? { dias_credito, cupo_credito: cupo_credito ? Number(cupo_credito) : null }
         : {}
       const payload = {
         ...datos,
@@ -174,33 +171,28 @@ export function ClienteFormDialog({ open, onOpenChange, cliente, onCreado }: Cli
           </div>
           {esAdmin && (
             <div className="space-y-3 rounded-md border p-3">
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input type="checkbox" className="h-4 w-4" {...register('credito_habilitado')} />
-                Venta a crédito (paga contra entrega)
-              </label>
+              <p className="text-sm font-medium">Cuenta de cobro (pago en $0)</p>
               <p className="text-xs text-muted-foreground">
-                Sus cotizaciones se pueden aprobar sin anticipo. Al entregar se emite una cuenta de cobro
-                que vence a los días de plazo.
+                Si apruebas una cotización suya con un pago de $0, su cuenta de cobro vence a estos días
+                contados desde la entrega. El cupo limita cuánto puede deber así.
               </p>
-              {conCredito && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label>Plazo (días)</Label>
-                    <Input type="number" min={0} max={365} {...register('dias_credito')} />
-                    {errors.dias_credito && <p className="text-xs text-destructive">{errors.dias_credito.message}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Cupo (opcional)</Label>
-                    <Controller
-                      control={control}
-                      name="cupo_credito"
-                      render={({ field }) => (
-                        <InputDinero value={field.value} onChange={field.onChange} placeholder="Sin tope" />
-                      )}
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Plazo (días)</Label>
+                  <Input type="number" min={0} max={365} {...register('dias_credito')} />
+                  {errors.dias_credito && <p className="text-xs text-destructive">{errors.dias_credito.message}</p>}
                 </div>
-              )}
+                <div className="space-y-1">
+                  <Label>Cupo (opcional)</Label>
+                  <Controller
+                    control={control}
+                    name="cupo_credito"
+                    render={({ field }) => (
+                      <InputDinero value={field.value} onChange={field.onChange} placeholder="Sin tope" />
+                    )}
+                  />
+                </div>
+              </div>
             </div>
           )}
           <DialogFooter>

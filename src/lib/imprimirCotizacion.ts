@@ -1,6 +1,6 @@
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { ANCHO_CARTA_PX, descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
-import { textoAnticipoSolicitado, textoCondicionCredito } from '@/lib/pagos'
+import { textoAnticipoSolicitado } from '@/lib/pagos'
 import {
   codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, rangoTotales, TIPO_CATEGORIA_CONFIG, textoOpcion,
   type TipoCategoria,
@@ -215,7 +215,7 @@ function cierreHtml(cot: Cotizacion, pctAnticipo: number | null | undefined, abo
   // descartada ya no piden nada; una venta a crédito dice su condición.
   const anticipo = cot.condicion_pago === 'credito'
     ? `<div class="anticipo">${escapar(
-        textoCondicionCredito(cot.cliente?.dias_credito ?? 0) + (cot.orden_compra ? ` · OC ${cot.orden_compra}` : '')
+        'Pago contra cuenta de cobro' + (cot.orden_compra ? ` · OC ${cot.orden_compra}` : '')
       )}</div>`
     : !pctAnticipo || cot.estado === 'anulada' || cot.estado === 'descartada' ? '' : `
     <div class="anticipo">${escapar(textoAnticipoSolicitado(pctAnticipo, cot.total))}</div>`

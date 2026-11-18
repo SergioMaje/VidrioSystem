@@ -22,19 +22,21 @@ export function useCartera(clienteId?: string) {
 }
 
 /** La cuenta de cobro vigente de una cotización, o null si no tiene. */
+export async function cuentaCobroVigente(cotizacionId: string) {
+  const { data, error } = await supabase
+    .from('cuentas_cobro')
+    .select('*')
+    .eq('cotizacion_id', cotizacionId)
+    .is('anulado_at', null)
+    .maybeSingle()
+  if (error) throw error
+  return data as CuentaCobro | null
+}
+
 export function useCuentaCobroVigente(cotizacionId: string | null | undefined) {
   return useQuery({
     queryKey: ['cuenta-cobro', cotizacionId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cuentas_cobro')
-        .select('*')
-        .eq('cotizacion_id', cotizacionId!)
-        .is('anulado_at', null)
-        .maybeSingle()
-      if (error) throw error
-      return data as CuentaCobro | null
-    },
+    queryFn: () => cuentaCobroVigente(cotizacionId!),
     enabled: !!cotizacionId,
   })
 }
@@ -53,9 +55,9 @@ function invalidarCredito(qc: ReturnType<typeof useQueryClient>, cotizacionId: s
 }
 
 /**
- * Venta a crédito: la cotización queda vendida y con su orden, sin cobro y sin
- * caja. Solo admin y con el crédito habilitado en el cliente; la garantía está
- * en el RPC `aprobar_cotizacion_credito`.
+ * Pago en $0: la cotización queda vendida a crédito y con su orden, sin cobro y
+ * sin caja, y con su cuenta de cobro emitida por el total. Cualquier cliente,
+ * solo admin; la garantía está en el RPC `aprobar_cotizacion_credito`.
  */
 export function useAprobarCredito() {
   const qc = useQueryClient()
@@ -84,7 +86,7 @@ export function useAprobarCredito() {
   })
 }
 
-/** Emite la cuenta de cobro por el saldo de hoy (antes de entregar, si la piden). */
+/** Emite una cuenta de cobro por el saldo de hoy (para reemplazar una anulada). */
 export function useEmitirCuentaCobro() {
   const qc = useQueryClient()
   return useMutation({
@@ -94,25 +96,6 @@ export function useEmitirCuentaCobro() {
       return data as unknown as CuentaCobro
     },
     onSettled: (_data, _err, cotizacionId) => invalidarCredito(qc, cotizacionId),
-  })
-}
-
-/**
- * Entrega una orden a crédito: emite la cuenta de cobro si queda saldo y aún no
- * existe, y marca la orden entregada, en una sola transacción. Devuelve la
- * cuenta de cobro, o null si ya estaba pagada.
- */
-export function useEntregarOrdenCredito() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ ordenId }: { ordenId: string; cotizacionId: string }) => {
-      const { data, error } = await supabase.rpc('entregar_orden_credito', { p_orden_id: ordenId })
-      if (error) throw error
-      // Un tipo compuesto nulo llega como una fila con todos los campos en null.
-      const cc = data as unknown as CuentaCobro | null
-      return cc?.id ? cc : null
-    },
-    onSettled: (_data, _err, { cotizacionId }) => invalidarCredito(qc, cotizacionId),
   })
 }
 

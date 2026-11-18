@@ -33,9 +33,9 @@ export function useCliente(id: string) {
   })
 }
 
-type CamposCredito = 'credito_habilitado' | 'dias_credito' | 'cupo_credito'
+type CamposCredito = 'dias_credito' | 'cupo_credito'
 
-/** El crédito es opcional: solo lo envía un admin (el trigger lo protege). */
+/** Las condiciones de crédito son opcionales: solo las envía un admin (el trigger las protege). */
 type ClienteInput = Omit<Cliente, 'id' | 'created_at' | 'updated_at' | CamposCredito> &
   Partial<Pick<Cliente, CamposCredito>>
 

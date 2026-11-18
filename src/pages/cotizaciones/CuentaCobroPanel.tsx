@@ -8,14 +8,13 @@ import { AccionesCuentaCobro } from '@/components/shared/AccionesCuentaCobro'
 import { useAnularCuentaCobro, useCuentaCobroVigente, useEmitirCuentaCobro } from '@/hooks/useCartera'
 import { useToast } from '@/hooks/useToast'
 import { MOTIVO_ANULACION_MIN } from '@/lib/anulacion'
-import { estaLiquidada } from '@/lib/pagos'
+import { estaLiquidada, textoVenceTrasEntrega } from '@/lib/pagos'
 import { formatCOP, formatFecha, hoyBogota, mensajeError } from '@/lib/utils'
 import type { Cotizacion } from '@/types/database'
 
 /**
- * La cuenta de cobro de una venta a crédito, dentro de la tarjeta de pagos:
- * imprimirla, emitirla antes de entregar (si la empresa la pide con la OC) o,
- * siendo admin, anularla para emitir otra.
+ * La cuenta de cobro de una venta a crédito (pago en $0), dentro de la tarjeta
+ * de pagos: imprimirla o, siendo admin, anularla y emitir otra.
  */
 export function CuentaCobroPanel({
   cotizacion,
@@ -56,7 +55,7 @@ export function CuentaCobroPanel({
     }
   }
 
-  const vencida = !!cuenta && !estaLiquidada(saldo) && hoyBogota() > cuenta.fecha_vencimiento
+  const vencida = !!cuenta?.fecha_vencimiento && !estaLiquidada(saldo) && hoyBogota() > cuenta.fecha_vencimiento
 
   return (
     <div className="rounded-md border px-3 py-2 text-sm">
@@ -66,7 +65,9 @@ export function CuentaCobroPanel({
           <AccionesCuentaCobro cuentaId={cuenta.id} numero={cuenta.numero} />
           <span className="font-mono">{formatCOP(cuenta.monto)}</span>
           <span className={vencida ? 'font-medium text-destructive' : 'text-muted-foreground'}>
-            {vencida ? 'Venció' : 'Vence'} el {formatFecha(cuenta.fecha_vencimiento)}
+            {cuenta.fecha_vencimiento
+              ? `${vencida ? 'Venció' : 'Vence'} el ${formatFecha(cuenta.fecha_vencimiento)}`
+              : `Vence ${textoVenceTrasEntrega(cuenta.dias_plazo).toLowerCase()}`}
           </span>
           {estaLiquidada(saldo) && <Badge variant="success">Pagada</Badge>}
           {esAdmin && !estaLiquidada(saldo) && (
@@ -81,7 +82,7 @@ export function CuentaCobroPanel({
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-muted-foreground">
-            La cuenta de cobro se emite al entregar la orden. Si la empresa la pide antes, emítela ahora.
+            Sin cuenta de cobro vigente. Emite una nueva por el saldo de hoy.
           </span>
           <Button size="sm" variant="outline" onClick={onEmitir} disabled={emitir.isPending}>
             {emitir.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileOutput className="mr-2 h-4 w-4" />}

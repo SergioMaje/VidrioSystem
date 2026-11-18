@@ -161,6 +161,13 @@ export const esVentaCredito = (c: { condicion_pago?: CondicionPago | null } | nu
 export const textoCondicionCredito = (dias: number) =>
   dias === 0 ? 'Crédito (pago a la entrega)' : `Crédito a ${dias} días`
 
+/**
+ * Vencimiento de una cuenta de cobro que aún no lo tiene: el plazo cuenta
+ * desde la entrega (lo fija ordenes_fijar_vencimiento_cc al entregar).
+ */
+export const textoVenceTrasEntrega = (dias: number) =>
+  dias === 0 ? 'Al entregar' : `${dias} días después de la entrega`
+
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline'
 
 /** El orden importa: es el de los filtros de la página de Cartera. */

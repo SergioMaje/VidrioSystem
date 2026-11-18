@@ -23,7 +23,7 @@ import {
 import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { ESTADOS_ORDEN_CONFIG, ESTADOS_ACTIVOS } from '@/lib/estadosOrden'
 import { etiquetaDocumento } from '@/lib/imprimirCotizacion'
-import { ESTADO_CARTERA_CONFIG, estaLiquidada, textoCondicionCredito } from '@/lib/pagos'
+import { ESTADO_CARTERA_CONFIG, estaLiquidada, textoCondicionCredito, textoVenceTrasEntrega } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
 import type { Cotizacion, CotizacionSaldo, VentaMostrador } from '@/types/database'
 import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
@@ -94,8 +94,8 @@ export function ClienteDetalle() {
               </div>
               <Badge variant="secondary" className="capitalize">{cliente.tipo}</Badge>
               {!cliente.activo && <Badge variant="destructive">Inactivo</Badge>}
-              {cliente.credito_habilitado && (
-                <Badge variant="outline" title="Puede llevarse trabajos sin anticipo y pagar contra cuenta de cobro">
+              {(cliente.cupo_credito != null || cliente.dias_credito !== 30) && (
+                <Badge variant="outline" title="Condiciones de su cuenta de cobro cuando se aprueba con pago en $0">
                   {textoCondicionCredito(cliente.dias_credito)}
                   {cliente.cupo_credito != null && ` · cupo ${formatCOP(cliente.cupo_credito)}`}
                 </Badge>
@@ -155,11 +155,13 @@ export function ClienteDetalle() {
                   <AccionesCuentaCobro cuentaId={f.cuenta_cobro_id} numero={f.cuenta_cobro_numero} />
                 )}
                 <Badge variant={ESTADO_CARTERA_CONFIG[f.estado].variant}>{ESTADO_CARTERA_CONFIG[f.estado].label}</Badge>
-                {f.fecha_vencimiento && (
+                {f.fecha_vencimiento ? (
                   <span className="text-muted-foreground">
                     Vence {formatFecha(f.fecha_vencimiento)}
                     {f.dias_mora > 0 && <span className="text-destructive"> · {f.dias_mora} días de mora</span>}
                   </span>
+                ) : f.dias_plazo != null && (
+                  <span className="text-muted-foreground">Vence {textoVenceTrasEntrega(f.dias_plazo).toLowerCase()}</span>
                 )}
                 <span className="ml-auto font-mono font-medium">{formatCOP(f.saldo)}</span>
               </div>

@@ -1,5 +1,5 @@
 import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
-import { estaLiquidada } from '@/lib/pagos'
+import { estaLiquidada, textoVenceTrasEntrega } from '@/lib/pagos'
 import { etiquetaDocumento, tablaItemsCss, tablaItemsHtml, totalesFilasHtml, type ContextoImpresion } from '@/lib/imprimirCotizacion'
 import { numeroALetras } from '@/lib/numeroALetras'
 import { ANCHO_CARTA_PX, descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
@@ -96,10 +96,14 @@ const nombreCliente = (cli: Cliente | null) =>
 export function htmlCuentaCobro(datos: DatosCuentaCobro, ctx: ContextoImpresion) {
   const { cuenta, cotizacion, orden, saldo } = datos
   const cli = cotizacion.cliente
-  const plazo = Math.round(
-    (new Date(cuenta.fecha_vencimiento + 'T00:00:00').getTime() - new Date(cuenta.fecha_emision + 'T00:00:00').getTime())
-      / 86_400_000
-  )
+  // Sin fecha mientras no se entrega: el plazo cuenta desde la entrega.
+  const vence = cuenta.fecha_vencimiento
+    ? `${formatFecha(cuenta.fecha_vencimiento)}${
+        cuenta.dias_plazo > 0
+          ? ` <span style="font-weight:400;color:#555">(${cuenta.dias_plazo} días desde la entrega)</span>`
+          : ''
+      }`
+    : escapar(textoVenceTrasEntrega(cuenta.dias_plazo))
 
   const anulado = !cuenta.anulado_at ? '' : `
   <div class="anulado">ANULADA<span>El ${formatFechaHora(cuenta.anulado_at)}${
@@ -153,9 +157,7 @@ export function htmlCuentaCobro(datos: DatosCuentaCobro, ctx: ContextoImpresion)
       <span class="letras">(${escapar(numeroALetras(cuenta.monto))})</span></dd>
     <dt>Por concepto de</dt><dd>${escapar(concepto)}</dd>
     ${cuenta.orden_compra ? `<dt>Orden de compra</dt><dd>${escapar(cuenta.orden_compra)}</dd>` : ''}
-    <dt>Fecha de vencimiento</dt><dd class="vence">${formatFecha(cuenta.fecha_vencimiento)}${
-      plazo > 0 ? ` <span style="font-weight:400;color:#555">(${plazo} días)</span>` : ''
-    }</dd>
+    <dt>Fecha de vencimiento</dt><dd class="vence">${vence}</dd>
   </dl>
 
   <div class="detalle">
