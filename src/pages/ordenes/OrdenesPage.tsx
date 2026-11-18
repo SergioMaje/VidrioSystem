@@ -10,10 +10,10 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { supabase } from '@/lib/supabase'
 import { useSaldos } from '@/hooks/useVentasCaja'
-import { estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
+import { esVentaCredito, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
 import { ESTADOS_ORDEN_CONFIG as estadoConfig } from '@/lib/estadosOrden'
-import type { OrdenTrabajo } from '@/types/database'
+import type { CondicionPago, OrdenTrabajo } from '@/types/database'
 import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
 
 export function OrdenesPage() {
@@ -27,10 +27,10 @@ export function OrdenesPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('ordenes_trabajo')
-        .select('*, cliente:clientes(nombre, apellido)')
+        .select('*, cliente:clientes(nombre, apellido), cotizacion:cotizaciones(condicion_pago)')
         .order('created_at', { ascending: false })
       if (error) throw error
-      return data as OrdenTrabajo[]
+      return data as (OrdenTrabajo & { cotizacion: { condicion_pago: CondicionPago } | null })[]
     },
   })
 
@@ -96,8 +96,10 @@ export function OrdenesPage() {
                     const cliente = orden.cliente as { nombre: string; apellido: string } | undefined
                     const cfg = estadoConfig[orden.estado]
                     const saldo = orden.cotizacion_id ? saldos?.get(orden.cotizacion_id) : undefined
-                    // Sin el anticipo cobrado el taller no debería tomar la orden.
-                    const sinAnticipo = !!saldo && !puedeIniciarProduccion(saldo.total_abonado, saldo.total)
+                    const credito = esVentaCredito(orden.cotizacion)
+                    // Sin el anticipo cobrado el taller no debería tomar la orden
+                    // (salvo una venta a crédito, que no lo pide).
+                    const sinAnticipo = !!saldo && !credito && !puedeIniciarProduccion(saldo.total_abonado, saldo.total)
                     return (
                       <tr
                         key={orden.id}
@@ -118,7 +120,10 @@ export function OrdenesPage() {
                           ) : estaLiquidada(saldo.saldo) ? (
                             <span className="font-mono text-xs text-emerald-600">Pagada</span>
                           ) : (
-                            <span className="font-mono text-xs text-amber-700">{formatCOP(saldo.saldo)}</span>
+                            <span className="inline-flex items-center gap-2">
+                              {credito && <Badge variant="outline">Crédito</Badge>}
+                              <span className="font-mono text-xs text-amber-700">{formatCOP(saldo.saldo)}</span>
+                            </span>
                           )}
                         </td>
                       </tr>

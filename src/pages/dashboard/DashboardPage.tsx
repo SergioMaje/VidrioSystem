@@ -1,13 +1,14 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Package, AlertTriangle, FileText, TrendingUp, Users, Factory, Truck, Wallet, ChevronRight, HandCoins } from 'lucide-react'
+import { Package, AlertTriangle, FileText, TrendingUp, Users, Factory, Truck, Wallet, ChevronRight, HandCoins, Handshake } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useAuth } from '@/hooks/useAuth'
 import { expirarCotizacionesVencidas } from '@/hooks/useCotizaciones'
 import { useCotizacionesMorosas } from '@/hooks/useVentasCaja'
+import { useCartera } from '@/hooks/useCartera'
 import { useVentasPorDesembolsar } from '@/hooks/useFinancieras'
 import { supabase } from '@/lib/supabase'
 import { getSaludo, formatFecha, formatCantidad, formatCOP, diasHasta } from '@/lib/utils'
@@ -190,6 +191,14 @@ export function DashboardPage() {
     [porDesembolsar]
   )
 
+  // Ventas a crédito (empresas que pagan contra cuenta de cobro).
+  const { data: cartera } = useCartera()
+  const creditoPorCobrar = useMemo(
+    () => (cartera ?? []).filter((f) => f.estado !== 'pagada').reduce((suma, f) => suma + f.saldo, 0),
+    [cartera]
+  )
+  const creditoVencidas = (cartera ?? []).filter((f) => f.estado === 'vencida').length
+
   const saludo = usuario ? getSaludo(usuario.nombre) : 'Bienvenido'
 
   // `to` deja cada métrica en su listado con el filtro ya aplicado, para que el
@@ -200,6 +209,16 @@ export function DashboardPage() {
     { label: 'Cotizaciones pendientes', value: cotizacionesPendientes ?? 0, icon: FileText, color: 'text-purple-600', bg: 'bg-purple-50', to: '/cotizaciones?estado=pendientes' },
     { label: 'Cotizaciones por cobrar', value: morosas?.length ?? 0, icon: Wallet, color: 'text-red-600', bg: 'bg-red-50', to: '/cotizaciones?estado=por_cobrar' },
     { label: 'Por desembolsar (financieras)', value: formatCOP(totalPorDesembolsar), icon: HandCoins, color: 'text-violet-600', bg: 'bg-violet-50', to: '/reportes?tab=financieras' },
+    {
+      label: creditoVencidas > 0
+        ? `Cartera a crédito · ${creditoVencidas} vencida${creditoVencidas === 1 ? '' : 's'}`
+        : 'Cartera a crédito',
+      value: formatCOP(creditoPorCobrar),
+      icon: Handshake,
+      color: creditoVencidas > 0 ? 'text-red-600' : 'text-teal-600',
+      bg: creditoVencidas > 0 ? 'bg-red-50' : 'bg-teal-50',
+      to: '/cartera',
+    },
   ]
 
   return (
@@ -209,7 +228,7 @@ export function DashboardPage() {
         <p className="text-muted-foreground">Aquí tienes el resumen de hoy</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {metricas.map(({ label, value, icon: Icon, color, bg, to }) => (
           <Card key={label} className="transition-shadow hover:shadow-md">
             <button

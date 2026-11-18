@@ -212,8 +212,12 @@ export function totalesFilasHtml(cot: Pick<Cotizacion, 'subtotal' | 'descuento_p
 /** Totales con el anticipo solicitado a la izquierda, y abonado/saldo si ya hubo cobros. */
 function cierreHtml(cot: Cotizacion, pctAnticipo: number | null | undefined, abonado = 0, saldo = cot.total) {
   // Lo que la vidriería pide de anticipo (Configuración). Una anulada o una
-  // descartada ya no piden nada.
-  const anticipo = !pctAnticipo || cot.estado === 'anulada' || cot.estado === 'descartada' ? '' : `
+  // descartada ya no piden nada; una venta a crédito dice su condición.
+  const anticipo = cot.condicion_pago === 'credito'
+    ? `<div class="anticipo">${escapar(
+        'Pago contra cuenta de cobro' + (cot.orden_compra ? ` · OC ${cot.orden_compra}` : '')
+      )}</div>`
+    : !pctAnticipo || cot.estado === 'anulada' || cot.estado === 'descartada' ? '' : `
     <div class="anticipo">${escapar(textoAnticipoSolicitado(pctAnticipo, cot.total))}</div>`
   return `
   <div class="cierre">

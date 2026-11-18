@@ -213,6 +213,9 @@ function invalidarPagos(
   qc.invalidateQueries({ queryKey: ['cotizaciones-morosas'] })
   qc.invalidateQueries({ queryKey: ['ordenes'] })
   qc.invalidateQueries({ queryKey: ['ventas-por-desembolsar'] })
+  // Un abono a una venta a crédito cambia su estado en la cartera.
+  qc.invalidateQueries({ queryKey: ['cartera'] })
+  qc.invalidateQueries({ queryKey: ['cuenta-cobro', cotizacionId] })
 }
 
 /**

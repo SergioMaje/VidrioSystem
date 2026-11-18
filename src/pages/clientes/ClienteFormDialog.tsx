@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2 } from 'lucide-react'
@@ -8,8 +8,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { InputDinero } from '@/components/shared/InputDinero'
 import { useCrearCliente, useEditarCliente } from '@/hooks/useClientes'
 import { useToast } from '@/hooks/useToast'
+import { useAuth } from '@/hooks/useAuth'
+import { mensajeError } from '@/lib/utils'
 import type { Cliente } from '@/types/database'
 
 const schema = z.object({
@@ -22,6 +25,9 @@ const schema = z.object({
   email: z.string().email('Correo inválido').optional().or(z.literal('')),
   direccion: z.string().optional(),
   ciudad: z.string().optional(),
+  dias_credito: z.coerce.number().int('Días enteros').min(0, 'Mínimo 0').max(365, 'Máximo 365'),
+  /** Solo dígitos; vacío = sin tope. */
+  cupo_credito: z.string(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -38,10 +44,13 @@ export function ClienteFormDialog({ open, onOpenChange, cliente, onCreado }: Cli
   const crearCliente = useCrearCliente()
   const editarCliente = useEditarCliente()
   const { toast } = useToast()
+  const { usuario } = useAuth()
+  // Cosmético: el trigger clientes_proteger_credito rechaza el cambio si no es admin.
+  const esAdmin = usuario?.rol === 'admin'
 
-  const { register, handleSubmit, setValue, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, reset, control, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { tipo: 'natural' },
+    defaultValues: { tipo: 'natural', dias_credito: 30, cupo_credito: '' },
   })
 
   useEffect(() => {
@@ -57,17 +66,25 @@ export function ClienteFormDialog({ open, onOpenChange, cliente, onCreado }: Cli
           email: cliente.email ?? '',
           direccion: cliente.direccion ?? '',
           ciudad: cliente.ciudad ?? '',
+          dias_credito: cliente.dias_credito,
+          cupo_credito: cliente.cupo_credito != null ? String(Math.round(cliente.cupo_credito)) : '',
         })
       } else {
-        reset({ nombre: '', apellido: '', tipo: 'natural' })
+        reset({ nombre: '', apellido: '', tipo: 'natural', dias_credito: 30, cupo_credito: '' })
       }
     }
   }, [open, cliente, reset])
 
   const onSubmit = async (data: FormData) => {
     try {
+      const { dias_credito, cupo_credito, ...datos } = data
+      // Solo el admin manda el crédito: así editar un cliente nunca lo toca por accidente.
+      const credito = esAdmin
+        ? { dias_credito, cupo_credito: cupo_credito ? Number(cupo_credito) : null }
+        : {}
       const payload = {
-        ...data,
+        ...datos,
+        ...credito,
         empresa: data.empresa || null,
         documento: data.documento || null,
         telefono: data.telefono || null,
@@ -87,8 +104,8 @@ export function ClienteFormDialog({ open, onOpenChange, cliente, onCreado }: Cli
         return
       }
       onOpenChange(false)
-    } catch {
-      toast({ title: 'Error al guardar', variant: 'destructive' })
+    } catch (err) {
+      toast({ title: mensajeError(err, 'Error al guardar'), variant: 'destructive' })
     }
   }
 
@@ -152,6 +169,32 @@ export function ClienteFormDialog({ open, onOpenChange, cliente, onCreado }: Cli
               <Input {...register('ciudad')} />
             </div>
           </div>
+          {esAdmin && (
+            <div className="space-y-3 rounded-md border p-3">
+              <p className="text-sm font-medium">Cuenta de cobro (pago en $0)</p>
+              <p className="text-xs text-muted-foreground">
+                Si apruebas una cotización suya con un pago de $0, su cuenta de cobro vence a estos días
+                contados desde la entrega. El cupo limita cuánto puede deber así.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Plazo (días)</Label>
+                  <Input type="number" min={0} max={365} {...register('dias_credito')} />
+                  {errors.dias_credito && <p className="text-xs text-destructive">{errors.dias_credito.message}</p>}
+                </div>
+                <div className="space-y-1">
+                  <Label>Cupo (opcional)</Label>
+                  <Controller
+                    control={control}
+                    name="cupo_credito"
+                    render={({ field }) => (
+                      <InputDinero value={field.value} onChange={field.onChange} placeholder="Sin tope" />
+                    )}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={isSubmitting}>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Building2, User, Pencil, FileText, ClipboardList, ShoppingBag } from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/card'
+import { ArrowLeft, Building2, User, Pencil, FileText, ClipboardList, ShoppingBag, Receipt } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -9,7 +9,9 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 import type { OrigenNavegacion } from '@/components/shared/EnlaceDocumento'
 import { BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
+import { AccionesCuentaCobro } from '@/components/shared/AccionesCuentaCobro'
 import { ClienteFormDialog } from './ClienteFormDialog'
+import { useCartera } from '@/hooks/useCartera'
 import { useCliente } from '@/hooks/useClientes'
 import {
   useCotizacionesDeCliente,
@@ -21,7 +23,7 @@ import {
 import { ESTADOS_COTIZACION_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { ESTADOS_ORDEN_CONFIG, ESTADOS_ACTIVOS } from '@/lib/estadosOrden'
 import { etiquetaDocumento } from '@/lib/imprimirCotizacion'
-import { estaLiquidada } from '@/lib/pagos'
+import { ESTADO_CARTERA_CONFIG, estaLiquidada, textoCondicionCredito, textoVenceTrasEntrega } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
 import type { Cotizacion, CotizacionSaldo, VentaMostrador } from '@/types/database'
 import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
@@ -45,6 +47,7 @@ export function ClienteDetalle() {
   const { data: cotizaciones, isLoading: cargandoCot } = useCotizacionesDeCliente(id!)
   const { data: ordenes, isLoading: cargandoOrdenes } = useOrdenesDeCliente(id!)
   const { data: ventasMostrador } = useVentasMostradorDeCliente(id!)
+  const { data: cartera } = useCartera(id)
 
   const vendidas = cotizaciones?.filter((c) => c.estado === 'vendida') ?? []
   const { data: saldos } = useSaldosDeCotizaciones((cotizaciones ?? []).map((c) => c.id))
@@ -91,6 +94,12 @@ export function ClienteDetalle() {
               </div>
               <Badge variant="secondary" className="capitalize">{cliente.tipo}</Badge>
               {!cliente.activo && <Badge variant="destructive">Inactivo</Badge>}
+              {(cliente.cupo_credito != null || cliente.dias_credito !== 30) && (
+                <Badge variant="outline" title="Condiciones de su cuenta de cobro cuando se aprueba con pago en $0">
+                  {textoCondicionCredito(cliente.dias_credito)}
+                  {cliente.cupo_credito != null && ` · cupo ${formatCOP(cliente.cupo_credito)}`}
+                </Badge>
+              )}
             </div>
             <Button variant="outline" size="sm" onClick={() => setEditarOpen(true)}>
               <Pencil className="mr-2 h-4 w-4" />
@@ -123,6 +132,43 @@ export function ClienteDetalle() {
           destacado={saldoPendiente > 0}
         />
       </div>
+
+      {cartera && cartera.some((f) => f.estado !== 'pagada') && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Receipt className="h-4 w-4" />
+              Ventas a crédito por cobrar
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {cartera.filter((f) => f.estado !== 'pagada').map((f) => (
+              <div key={f.cotizacion_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-2 first:border-0 first:pt-0">
+                <button
+                  type="button"
+                  className="font-mono text-xs font-medium text-primary underline-offset-2 hover:underline"
+                  onClick={() => navigate(`/cotizaciones/${f.cotizacion_id}`, { state: origen })}
+                >
+                  {f.cotizacion_numero}
+                </button>
+                {f.cuenta_cobro_id && f.cuenta_cobro_numero && (
+                  <AccionesCuentaCobro cuentaId={f.cuenta_cobro_id} numero={f.cuenta_cobro_numero} />
+                )}
+                <Badge variant={ESTADO_CARTERA_CONFIG[f.estado].variant}>{ESTADO_CARTERA_CONFIG[f.estado].label}</Badge>
+                {f.fecha_vencimiento ? (
+                  <span className="text-muted-foreground">
+                    Vence {formatFecha(f.fecha_vencimiento)}
+                    {f.dias_mora > 0 && <span className="text-destructive"> · {f.dias_mora} días de mora</span>}
+                  </span>
+                ) : f.dias_plazo != null && (
+                  <span className="text-muted-foreground">Vence {textoVenceTrasEntrega(f.dias_plazo).toLowerCase()}</span>
+                )}
+                <span className="ml-auto font-mono font-medium">{formatCOP(f.saldo)}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs value={tab} onValueChange={cambiarTab}>
         <TabsList data-pestanas-flechas>

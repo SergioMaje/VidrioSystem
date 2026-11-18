@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2, Star, ListChecks } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2, Star, ListChecks, Handshake } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,8 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { AnularCotizacionDialog } from './AnularCotizacionDialog'
+import { CuentaCobroPanel } from './CuentaCobroPanel'
+import { useCuentaCobroVigente } from '@/hooks/useCartera'
 import { ElegirOpcionesDialog } from './ElegirOpcionesDialog'
 import { IconoTipoCategoria } from '@/components/shared/IconoTipoCategoria'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
@@ -22,7 +24,7 @@ import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/hooks/useAuth'
-import { esVentaAnulada, estaLiquidada, textoAnticipoSolicitado, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { esVentaAnulada, esVentaCredito, estaLiquidada, textoAnticipoSolicitado, textoVenceTrasEntrega, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, TIPO_CATEGORIA_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { abrirYImprimir, descargarImagen, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
 import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
@@ -42,6 +44,7 @@ export function CotizacionDetalle() {
   const { toast } = useToast()
   const { data: cotizacion, isLoading } = useCotizacion(id ?? '')
   const { data: saldoInfo } = useSaldoCotizacion(id)
+  const { data: cuentaCobro } = useCuentaCobroVigente(esVentaCredito(cotizacion) ? id : null)
   const { data: pagos } = usePagosCotizacion(id)
   const { data: orden } = useOrdenDeCotizacion(id)
   const { data: opcionesGrupo } = useOpcionesDelGrupo(cotizacion?.grupo_id)
@@ -142,8 +145,9 @@ export function CotizacionDetalle() {
   const anulada = cotizacion.estado === 'anulada'
   // Una anulada no tiene nada vigente: su saldo no es una deuda del cliente.
   const liquidada = !anulada && estaLiquidada(saldo)
-  // Ni una anulada ni una descartada le piden anticipo al cliente.
-  const pctAnticipo = anulada || cotizacion.estado === 'descartada' ? null : empresa?.anticipo_solicitado_pct
+  const credito = esVentaCredito(cotizacion)
+  // Ni una anulada, ni una descartada, ni una venta a crédito le piden anticipo al cliente.
+  const pctAnticipo = anulada || cotizacion.estado === 'descartada' || credito ? null : empresa?.anticipo_solicitado_pct
   const categorias = categoriasEnvio ?? []
   const categoriaActual = categorias.find((c) => c.id === cotizacion.categoria_id) ?? null
   // Opción de un envío por categorías: no se cobra sola, se cobra el pedido.
@@ -225,6 +229,26 @@ export function CotizacionDetalle() {
           </DropdownMenuContent>
         </DropdownMenu>
         <Badge variant={cfg.variant} className={anulada ? 'px-3 py-1 text-sm' : undefined}>{cfg.label}</Badge>
+        {credito && !anulada && (
+          liquidada ? (
+            <Badge variant="outline" className="gap-1" title="Aprobada con pago en $0 y pagada contra su cuenta de cobro">
+              <Handshake className="h-3 w-3" />
+              Cuenta de cobro{cuentaCobro ? ` ${cuentaCobro.numero}` : ''} pagada
+            </Badge>
+          ) : (
+            <Badge
+              variant="warning"
+              className="gap-1 px-3 py-1 text-sm"
+              title={`Aprobada con pago en $0: el cliente paga contra la cuenta de cobro${
+                cuentaCobro ? ` (vence ${textoVenceTrasEntrega(cuentaCobro.dias_plazo).toLowerCase()})` : ''
+              }`}
+            >
+              <Handshake className="h-3.5 w-3.5" />
+              Por cobrar{cuentaCobro ? ` · ${cuentaCobro.numero}` : ''} · {formatCOP(saldo)}
+              {cotizacion.orden_compra && ` · OC ${cotizacion.orden_compra}`}
+            </Badge>
+          )
+        )}
       </div>
 
       {cotizacion.pedido_id && (
@@ -522,10 +546,12 @@ export function CotizacionDetalle() {
                 Pagada completa
               </Badge>
             ) : (
-              <Button size="sm" onClick={() => setPagoOpen(true)}>
-                <Wallet className="mr-2 h-4 w-4" />
-                {abonado > 0 ? 'Registrar abono' : 'Registrar anticipo'}
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => setPagoOpen(true)}>
+                  <Wallet className="mr-2 h-4 w-4" />
+                  {abonado > 0 || credito ? 'Registrar abono' : 'Registrar anticipo'}
+                </Button>
+              </div>
             )}
           </CardHeader>
           <CardContent className="space-y-4">
@@ -538,6 +564,8 @@ export function CotizacionDetalle() {
               </div>
               <p className="text-xs text-muted-foreground">{Math.round(pctAbonado)}% del total abonado</p>
             </div>
+
+            {credito && !anulada && <CuentaCobroPanel cotizacion={cotizacion} saldo={saldo} esAdmin={esAdmin} />}
 
             {pagos && pagos.length > 0 && (
               <table className="w-full text-sm">
@@ -633,7 +661,9 @@ export function CotizacionDetalle() {
 
             {!liquidada && !anulada && (
               <p className="text-xs text-muted-foreground">
-                {abonado > 0
+                {credito
+                  ? 'Aprobada con pago en $0: la producción puede avanzar y la orden se entrega con saldo. El cliente paga contra la cuenta de cobro, cuyo plazo empieza a contar el día de la entrega.'
+                  : abonado > 0
                   ? 'La producción ya puede avanzar. El cliente tiene plazo hasta el día de la entrega para abonar el saldo: la orden no se entregará mientras quede pendiente.'
                   : 'La producción no puede iniciar hasta cobrar el anticipo.'}
               </p>

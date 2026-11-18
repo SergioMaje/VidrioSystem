@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { useCotizaciones } from '@/hooks/useCotizaciones'
 import { useSaldos } from '@/hooks/useVentasCaja'
+import { useCartera } from '@/hooks/useCartera'
 import { estaLiquidada } from '@/lib/pagos'
 import { formatCOP, formatFecha } from '@/lib/utils'
 import { consecutivoBuscado, ESTADOS_COTIZACION_CONFIG } from '@/lib/cotizaciones'
@@ -33,6 +34,12 @@ export function CotizacionesPage() {
 
   const { data: cotizaciones, isLoading } = useCotizaciones()
   const { data: saldos } = useSaldos()
+  // Las aprobadas con pago en $0 que aún se deben: llevan "Por cobrar · CC-…".
+  const { data: cartera } = useCartera()
+  const porCobrar = useMemo(
+    () => new Map((cartera ?? []).filter((f) => f.estado !== 'pagada').map((f) => [f.cotizacion_id, f])),
+    [cartera]
+  )
 
   // "18" o "cot18" buscan la COT-00018: esa va primero, antes que los números
   // anteriores (COT-1794…) que por casualidad contienen "18".
@@ -150,7 +157,19 @@ export function CotizacionesPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3"><Badge variant={cfg.variant}>{cfg.label}</Badge></td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                            {porCobrar.has(cot.id) && (
+                              <Badge
+                                variant={porCobrar.get(cot.id)!.estado === 'vencida' ? 'destructive' : 'warning'}
+                                title="Aprobada con pago en $0: se paga contra la cuenta de cobro"
+                              >
+                                Por cobrar{porCobrar.get(cot.id)!.cuenta_cobro_numero ? ` · ${porCobrar.get(cot.id)!.cuenta_cobro_numero}` : ''}
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}

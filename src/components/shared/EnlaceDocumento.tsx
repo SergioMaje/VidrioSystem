@@ -8,6 +8,7 @@ export type OrigenNavegacion = { desde: string; desdeEtiqueta: string }
 const ETIQUETAS: Record<string, string> = {
   '/caja': 'Caja',
   '/reportes': 'Reportes',
+  '/cartera': 'Cartera',
 }
 
 /**
