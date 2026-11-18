@@ -10,7 +10,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { AccionesCuentaCobro } from '@/components/shared/AccionesCuentaCobro'
 import type { OrigenNavegacion } from '@/components/shared/EnlaceDocumento'
 import { useCartera } from '@/hooks/useCartera'
-import { ESTADO_CARTERA_CONFIG, tramoMora } from '@/lib/pagos'
+import { ESTADO_CARTERA_CONFIG, textoVenceTrasEntrega, tramoMora } from '@/lib/pagos'
 import { ESTADOS_ORDEN_CONFIG } from '@/lib/estadosOrden'
 import { cn, formatCOP, formatFecha } from '@/lib/utils'
 import { FILA_NAVEGABLE, filaNavegableClase } from '@/lib/navegacionTeclado'
@@ -22,8 +22,8 @@ const nombreCliente = (f: FilaCartera) => f.cliente_empresa ?? `${f.cliente_nomb
 const ORDEN_ESTADO: Record<EstadoCartera, number> = { vencida: 0, pendiente: 1, parcial: 2, sin_emitir: 3, pagada: 4 }
 
 /**
- * Cartera: lo que deben los clientes con crédito (ventas a crédito). Muestra
- * cada venta con su cuenta de cobro, el vencimiento y la mora. Los pagos se
+ * Cartera: lo que deben las cotizaciones aprobadas con pago en $0. Muestra
+ * cada una con su cuenta de cobro, el vencimiento y la mora. Los pagos se
  * registran como abonos desde la cotización.
  */
 export function CarteraPage() {
@@ -51,23 +51,33 @@ export function CarteraPage() {
       .sort((a, b) => ORDEN_ESTADO[a.estado] - ORDEN_ESTADO[b.estado] || b.dias_mora - a.dias_mora)
   }, [filas, busqueda, estado])
 
-  // Antigüedad de lo que se debe: solo cuentas emitidas con saldo.
+  // El plazo solo corre desde la entrega: lo que aún no se entrega (cuenta sin
+  // fecha de vencimiento) va aparte y no entra en la antigüedad.
   const resumen = useMemo(() => {
     const tramos = new Map<string, number>()
     let total = 0
     let vencido = 0
-    let sinEmitir = 0
+    let porVencer = 0
+    let porEntregar = 0
+    let nPorEntregar = 0
+    let sinCuenta = 0
     for (const f of abiertas) {
       total += f.saldo
-      if (f.estado === 'sin_emitir') {
-        sinEmitir += f.saldo
+      if (!f.cuenta_cobro_id) {
+        sinCuenta += f.saldo
+        continue
+      }
+      if (!f.fecha_vencimiento) {
+        porEntregar += f.saldo
+        nPorEntregar += 1
         continue
       }
       if (f.estado === 'vencida') vencido += f.saldo
+      else porVencer += f.saldo
       const tramo = tramoMora(f.dias_mora)
       tramos.set(tramo, (tramos.get(tramo) ?? 0) + f.saldo)
     }
-    return { total, vencido, sinEmitir, tramos }
+    return { total, vencido, porVencer, porEntregar, nPorEntregar, sinCuenta, tramos }
   }, [abiertas])
 
   const origen: OrigenNavegacion = { desde: location.pathname, desdeEtiqueta: 'Cartera' }
@@ -75,14 +85,22 @@ export function CarteraPage() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Resumen titulo="Por cobrar" valor={formatCOP(resumen.total)} detalle={`${abiertas.length} venta${abiertas.length === 1 ? '' : 's'} a crédito`} />
-        <Resumen titulo="Vencido" valor={formatCOP(resumen.vencido)} destacado={resumen.vencido > 0} />
         <Resumen
-          titulo="Por vencer"
-          valor={formatCOP(resumen.total - resumen.vencido - resumen.sinEmitir)}
-          detalle="Cuentas de cobro al día"
+          titulo="Por cobrar"
+          valor={formatCOP(resumen.total)}
+          detalle={
+            resumen.sinCuenta > 0
+              ? `${formatCOP(resumen.sinCuenta)} sin cuenta de cobro vigente`
+              : `${abiertas.length} cotizaci${abiertas.length === 1 ? 'ón' : 'ones'} con pago en $0`
+          }
         />
-        <Resumen titulo="En producción" valor={formatCOP(resumen.sinEmitir)} detalle="Aún sin cuenta de cobro" />
+        <Resumen titulo="Vencido" valor={formatCOP(resumen.vencido)} destacado={resumen.vencido > 0} />
+        <Resumen titulo="Por vencer" valor={formatCOP(resumen.porVencer)} detalle="Entregadas, dentro del plazo" />
+        <Resumen
+          titulo="Por entregar"
+          valor={formatCOP(resumen.porEntregar)}
+          detalle={`${resumen.nPorEntregar} trabajo${resumen.nPorEntregar === 1 ? '' : 's'}: el plazo corre al entregar`}
+        />
       </div>
 
       {resumen.tramos.size > 0 && (
@@ -127,8 +145,8 @@ export function CarteraPage() {
           ) : visibles.length === 0 ? (
             <EmptyState
               icon={Handshake}
-              title={(filas ?? []).length === 0 ? 'No hay ventas a crédito' : 'Nada en este filtro'}
-              description="Habilita el crédito en la ficha de un cliente y aprueba sus cotizaciones a crédito"
+              title={(filas ?? []).length === 0 ? 'No hay nada por cobrar' : 'Nada en este filtro'}
+              description="Aprueba una cotización con pago en $0 para verla aquí"
             />
           ) : (
             <div className="overflow-x-auto">
@@ -181,7 +199,9 @@ export function CarteraPage() {
                               {f.dias_mora > 0 && <div className="text-xs text-destructive">{f.dias_mora} días de mora</div>}
                             </>
                           ) : (
-                            <span className="text-muted-foreground">Al entregar</span>
+                            <span className="text-muted-foreground">
+                              {f.dias_plazo != null ? textoVenceTrasEntrega(f.dias_plazo) : '—'}
+                            </span>
                           )}
                         </td>
                         <td className="px-4 py-3"><Badge variant={cfg.variant}>{cfg.label}</Badge></td>
