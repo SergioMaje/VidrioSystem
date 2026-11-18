@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Package, Boxes, FileText, Users, ClipboardList,
-  Truck, BarChart2, DollarSign, Settings,
+  Truck, BarChart2, DollarSign, Settings, Handshake,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -23,6 +23,7 @@ export const NAV_ITEMS: ItemNavegacion[] = [
   { to: '/ordenes', label: 'Órdenes', icon: ClipboardList },
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/caja', label: 'Caja', icon: DollarSign },
+  { to: '/cartera', label: 'Cartera', icon: Handshake },
   { to: '/reportes', label: 'Reportes', icon: BarChart2 },
   { to: '/configuracion', label: 'Configuración', icon: Settings, soloAdmin: true },
 ]
