@@ -19,7 +19,7 @@ import { PistaConfirmar } from '@/components/shared/Kbd'
 import { CamposFinanciera } from '@/components/shared/CamposFinanciera'
 import { InputDinero } from '@/components/shared/InputDinero'
 import { cajaVencida } from '@/lib/caja'
-import { METODO_PAGO_LABEL, anticipoMinimo, anticipoSolicitado, cumpleAnticipoMinimo, excedeSaldo } from '@/lib/pagos'
+import { METODO_PAGO_LABEL, anticipoMinimo, anticipoSolicitado, cumpleAnticipoMinimo, esVentaCredito, excedeSaldo } from '@/lib/pagos'
 import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
 import type { Cotizacion, MetodoPago, Venta } from '@/types/database'
 
@@ -58,8 +58,9 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
   const sugeridoAnticipo = pctSolicitado ? Math.max(minimo, anticipoSolicitado(pctSolicitado, total)) : minimo
   const esAdmin = usuario?.rol === 'admin'
   // Mientras el saldo no ha cargado se asume anticipo: es el lado que exige el
-  // mínimo, así nunca se ofrece un cobro más laxo del que corresponde.
-  const esAnticipo = abonado <= 0
+  // mínimo, así nunca se ofrece un cobro más laxo del que corresponde. Una venta
+  // a crédito ya está vendida y produciendo: todo lo que paga es abono.
+  const esAnticipo = abonado <= 0 && !esVentaCredito(cotizacion)
 
   const [monto, setMonto] = useState('')
   const [metodoPago, setMetodoPago] = useState<Venta['metodo_pago']>('efectivo')

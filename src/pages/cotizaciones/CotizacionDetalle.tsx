@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2, Star, ListChecks } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, XCircle, Printer, AlertCircle, Pencil, Wallet, CheckCircle2, Send, ClipboardList, Ban, Layers, Plus, ChevronDown, ImageDown, Loader2, Star, ListChecks, Handshake } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,8 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { AnularCotizacionDialog } from './AnularCotizacionDialog'
+import { AprobarCreditoDialog } from './AprobarCreditoDialog'
+import { CuentaCobroPanel } from './CuentaCobroPanel'
 import { ElegirOpcionesDialog } from './ElegirOpcionesDialog'
 import { IconoTipoCategoria } from '@/components/shared/IconoTipoCategoria'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
@@ -22,7 +24,7 @@ import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/hooks/useAuth'
-import { esVentaAnulada, estaLiquidada, textoAnticipoSolicitado, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
+import { esVentaAnulada, esVentaCredito, estaLiquidada, textoAnticipoSolicitado, textoCondicionCredito, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
 import { codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, TIPO_CATEGORIA_CONFIG, textoOpcion } from '@/lib/cotizaciones'
 import { abrirYImprimir, descargarImagen, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
 import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
@@ -61,6 +63,7 @@ export function CotizacionDetalle() {
   const [anularCotizacionOpen, setAnularCotizacionOpen] = useState(false)
   const [descargando, setDescargando] = useState(false)
   const [elegirOpen, setElegirOpen] = useState(false)
+  const [creditoOpen, setCreditoOpen] = useState(false)
   // Recién armado desde "Cliente eligió…": se cobra su anticipo aquí mismo.
   const [pedidoCreado, setPedidoCreado] = useState<Cotizacion | null>(null)
   const { usuario } = useAuth()
@@ -142,8 +145,9 @@ export function CotizacionDetalle() {
   const anulada = cotizacion.estado === 'anulada'
   // Una anulada no tiene nada vigente: su saldo no es una deuda del cliente.
   const liquidada = !anulada && estaLiquidada(saldo)
-  // Ni una anulada ni una descartada le piden anticipo al cliente.
-  const pctAnticipo = anulada || cotizacion.estado === 'descartada' ? null : empresa?.anticipo_solicitado_pct
+  const credito = esVentaCredito(cotizacion)
+  // Ni una anulada, ni una descartada, ni una venta a crédito le piden anticipo al cliente.
+  const pctAnticipo = anulada || cotizacion.estado === 'descartada' || credito ? null : empresa?.anticipo_solicitado_pct
   const categorias = categoriasEnvio ?? []
   const categoriaActual = categorias.find((c) => c.id === cotizacion.categoria_id) ?? null
   // Opción de un envío por categorías: no se cobra sola, se cobra el pedido.
@@ -161,6 +165,11 @@ export function CotizacionDetalle() {
     .filter((o) => ['borrador', 'enviada', 'vencida', 'aprobada'].includes(o.estado))
     .map((o) => o.opcion_etiqueta ?? '')
   const abierta = cotizacion.estado === 'borrador' || cotizacion.estado === 'enviada'
+  // Cosmético: la regla vive en aprobar_cotizacion_credito (admin, crédito
+  // habilitado, sin cobros, enviada o aprobada, no una opción por categorías).
+  const puedeAprobarCredito =
+    esAdmin && !porCategoria && !!cliente?.credito_habilitado && abonado <= 0 &&
+    (cotizacion.estado === 'enviada' || cotizacion.estado === 'aprobada')
   const envioCompleto = opcionesImprimibles.length > 1
   // El envío se nombra por su número base: COT-123-B → COT-123.
   const numeroEnvio = numeroBaseEnvio(cotizacion.numero)
@@ -225,6 +234,13 @@ export function CotizacionDetalle() {
           </DropdownMenuContent>
         </DropdownMenu>
         <Badge variant={cfg.variant} className={anulada ? 'px-3 py-1 text-sm' : undefined}>{cfg.label}</Badge>
+        {credito && (
+          <Badge variant="outline" className="gap-1" title="Aprobada a crédito: se paga contra cuenta de cobro">
+            <Handshake className="h-3 w-3" />
+            {cliente ? textoCondicionCredito(cliente.dias_credito) : 'Crédito'}
+            {cotizacion.orden_compra && ` · OC ${cotizacion.orden_compra}`}
+          </Badge>
+        )}
       </div>
 
       {cotizacion.pedido_id && (
@@ -522,10 +538,18 @@ export function CotizacionDetalle() {
                 Pagada completa
               </Badge>
             ) : (
-              <Button size="sm" onClick={() => setPagoOpen(true)}>
-                <Wallet className="mr-2 h-4 w-4" />
-                {abonado > 0 ? 'Registrar abono' : 'Registrar anticipo'}
-              </Button>
+              <div className="flex gap-2">
+                {puedeAprobarCredito && (
+                  <Button size="sm" variant="outline" onClick={() => setCreditoOpen(true)}>
+                    <Handshake className="mr-2 h-4 w-4" />
+                    Aprobar a crédito
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => setPagoOpen(true)}>
+                  <Wallet className="mr-2 h-4 w-4" />
+                  {abonado > 0 || credito ? 'Registrar abono' : 'Registrar anticipo'}
+                </Button>
+              </div>
             )}
           </CardHeader>
           <CardContent className="space-y-4">
@@ -538,6 +562,8 @@ export function CotizacionDetalle() {
               </div>
               <p className="text-xs text-muted-foreground">{Math.round(pctAbonado)}% del total abonado</p>
             </div>
+
+            {credito && !anulada && <CuentaCobroPanel cotizacion={cotizacion} saldo={saldo} esAdmin={esAdmin} />}
 
             {pagos && pagos.length > 0 && (
               <table className="w-full text-sm">
@@ -702,6 +728,16 @@ export function CotizacionDetalle() {
                   : cotizacion.grupo_id ? 'Cliente eligió esta opción — Registrar anticipo' : 'Cliente aprobó — Registrar anticipo'}
               </Button>
             )}
+            {cotizacion.estado === 'enviada' && puedeAprobarCredito && (
+              <Button
+                variant="outline"
+                onClick={() => setCreditoOpen(true)}
+                title="El cliente tiene crédito: se produce sin anticipo y paga contra cuenta de cobro"
+              >
+                <Handshake className="mr-2 h-4 w-4" />
+                Aprobar a crédito
+              </Button>
+            )}
             <Button
               variant="destructive"
               onClick={handleRechazar}
@@ -754,6 +790,15 @@ export function CotizacionDetalle() {
             setPedidoCreado(null)
             navigate(`/cotizaciones/${destino}`, { state: origen })
           }}
+        />
+      )}
+      {cliente && puedeAprobarCredito && (
+        <AprobarCreditoDialog
+          cotizacion={cotizacion}
+          cliente={cliente}
+          open={creditoOpen}
+          onOpenChange={setCreditoOpen}
+          opcionesADescartar={aDescartar}
         />
       )}
       <AnularVentaDialog venta={aAnular} documento={cotizacion.numero} onClose={() => setAAnular(null)} />
