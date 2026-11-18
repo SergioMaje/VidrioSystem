@@ -83,7 +83,7 @@ with x as (
   select k, pg_temp.id(c), 'enviada', t, t
   from (values ('obra', 'empresa_cli', 1000), ('obra2', 'empresa_cli', 1000),
                ('grande', 'empresa_cli', 5000), ('contado', 'contado_cli', 1000),
-               ('anular', 'empresa_cli', 300)) v(k, c, t)
+               ('anular', 'empresa_cli', 300), ('libre', 'contado_cli', 400)) v(k, c, t)
   returning id, notas as k
 ) select pg_temp.guardar(k, id) from x;
 
@@ -93,31 +93,24 @@ with x as (
 ) select pg_temp.guardar('caja1', id) from x;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 1. El crédito del cliente solo lo da el admin
+-- 1. Las condiciones de crédito del cliente solo las cambia el admin
 -- ════════════════════════════════════════════════════════════════════════════
 select pg_temp.como('vendedor');
 set local role authenticated;
 select pg_temp.debe_fallar(format(
-  $q$update public.clientes set credito_habilitado = true where id = %L$q$, pg_temp.id('empresa_cli')),
+  $q$update public.clientes set cupo_credito = 9000 where id = %L$q$, pg_temp.id('empresa_cli')),
   'Solo un administrador puede cambiar el crédito');
 -- Editar otros datos sí puede.
 update public.clientes set telefono = '3001234567' where id = pg_temp.id('empresa_cli');
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 2. Aprobar a crédito: solo admin y con crédito habilitado
+-- 2. Pago en $0: solo admin, cualquier cliente, y emite la cuenta de cobro
 -- ════════════════════════════════════════════════════════════════════════════
 select pg_temp.como('admin');
 set local role authenticated;
-select pg_temp.debe_fallar(format(
-  $q$select public.aprobar_cotizacion_credito(%L)$q$, pg_temp.id('obra')),
-  'no tiene crédito habilitado');
-reset role;
-
-select pg_temp.como('admin');
-set local role authenticated;
 update public.clientes
-   set credito_habilitado = true, dias_credito = 30, cupo_credito = 2500
+   set dias_credito = 30, cupo_credito = 2500
  where id = pg_temp.id('empresa_cli');
 reset role;
 
@@ -129,7 +122,7 @@ select pg_temp.debe_fallar(format(
 -- Tampoco puede marcarla a mano.
 select pg_temp.debe_fallar(format(
   $q$update public.cotizaciones set condicion_pago = 'credito' where id = %L$q$, pg_temp.id('obra')),
-  'Aprobar a crédito');
+  'pago en $0');
 reset role;
 
 select pg_temp.como('admin');
@@ -147,36 +140,79 @@ select pg_temp.afirmar(
   'la cotización queda vendida a crédito con su OC');
 select pg_temp.afirmar(
   not exists (select 1 from public.ventas where cotizacion_id = pg_temp.id('obra')),
-  'aprobar a crédito no registra ningún cobro');
+  'el pago en $0 no registra ningún cobro');
 select pg_temp.guardar('ot', (select id from public.ordenes_trabajo where cotizacion_id = pg_temp.id('obra')));
 select pg_temp.afirmar(pg_temp.id('ot') is not null, 'se crea la orden de trabajo');
-select pg_temp.afirmar(pg_temp.estado_cartera('obra') = 'sin_emitir', 'en cartera, sin cuenta de cobro aún');
+select pg_temp.guardar('cc1', (select id from public.cuentas_cobro where cotizacion_id = pg_temp.id('obra')));
+select pg_temp.afirmar(
+  (select numero = 'CC-0001' and monto = 1000 and orden_compra = 'OC-7781' and dias_plazo = 30
+          and fecha_vencimiento is null and orden_id = pg_temp.id('ot')
+     from public.cuentas_cobro where id = pg_temp.id('cc1')),
+  'el pago en $0 emite CC-0001 por el total, con la OC, 30 días de plazo y sin vencimiento aún');
+select pg_temp.afirmar(pg_temp.estado_cartera('obra') = 'pendiente', 'en cartera: pendiente');
+select pg_temp.afirmar(
+  (select dias_mora = 0 from public.cartera where cotizacion_id = pg_temp.id('obra')),
+  'sin entregar no hay mora');
+
+-- Cualquier cliente, aunque no tenga nada configurado: plazo por defecto.
+select pg_temp.como('admin');
+set local role authenticated;
+select public.aprobar_cotizacion_credito(pg_temp.id('libre'));
+reset role;
+select pg_temp.afirmar(
+  (select numero = 'CC-0002' and monto = 400 and dias_plazo = 30
+     from public.cuentas_cobro where cotizacion_id = pg_temp.id('libre')),
+  'un cliente sin condiciones configuradas también: CC-0002 a 30 días');
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 3. Produce sin anticipo; no se entrega con saldo por la vía normal
+-- 3. Produce sin anticipo; sin cuenta de cobro vigente no se entrega con saldo
 -- ════════════════════════════════════════════════════════════════════════════
 select pg_temp.como('vendedor');
 set local role authenticated;
 update public.ordenes_trabajo set estado = 'en_produccion' where id = pg_temp.id('ot');
 update public.ordenes_trabajo set estado = 'lista' where id = pg_temp.id('ot');
 select pg_temp.debe_fallar(format(
+  $q$select public.anular_cuenta_cobro(%L, 'La OC estaba equivocada')$q$, pg_temp.id('cc1')),
+  'Solo un administrador');
+reset role;
+
+select pg_temp.como('admin');
+set local role authenticated;
+select public.anular_cuenta_cobro(pg_temp.id('cc1'), 'La OC estaba equivocada');
+reset role;
+select pg_temp.afirmar(pg_temp.estado_cartera('obra') = 'sin_emitir', 'anulada: cartera sin emitir');
+
+select pg_temp.como('vendedor');
+set local role authenticated;
+select pg_temp.debe_fallar(format(
   $q$update public.ordenes_trabajo set estado = 'entregada' where id = %L$q$, pg_temp.id('ot')),
-  'emite la cuenta de cobro');
+  'no tiene cuenta de cobro vigente');
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 4. Entregar emite la cuenta de cobro en la misma transacción
+-- 4. Se reemplaza la anulada; al entregar, el plazo empieza a contar
 -- ════════════════════════════════════════════════════════════════════════════
+select pg_temp.como('admin');
+set local role authenticated;
+select pg_temp.guardar('cc', (public.emitir_cuenta_cobro(pg_temp.id('obra'))).id);
+reset role;
+select pg_temp.afirmar(
+  (select fecha_vencimiento is null from public.cuentas_cobro where id = pg_temp.id('cc')),
+  'la nueva, emitida antes de entregar, aún no vence');
+
 select pg_temp.como('vendedor');
 set local role authenticated;
-select pg_temp.guardar('cc', (public.entregar_orden_credito(pg_temp.id('ot'))).id);
+update public.ordenes_trabajo
+   set estado = 'entregada', fecha_entrega_real = (now() at time zone 'America/Bogota')::date
+ where id = pg_temp.id('ot');
 reset role;
 
 select pg_temp.afirmar(
-  (select numero = 'CC-0001' and monto = 1000 and orden_compra = 'OC-7781'
-          and fecha_vencimiento = fecha_emision + 30 and orden_id = pg_temp.id('ot')
-     from public.cuentas_cobro where id = pg_temp.id('cc')),
-  'CC-0001 por el saldo, con la OC y a 30 días');
+  (select cc.numero = 'CC-0003' and cc.monto = 1000
+          and cc.fecha_vencimiento = o.fecha_entrega_real + 30
+     from public.cuentas_cobro cc join public.ordenes_trabajo o on o.id = cc.orden_id
+    where cc.id = pg_temp.id('cc')),
+  'CC-0003 reemplaza la anulada y vence 30 días después de la entrega');
 select pg_temp.afirmar(
   (select estado = 'entregada' and fecha_entrega_real is not null
      from public.ordenes_trabajo where id = pg_temp.id('ot')),
@@ -191,11 +227,29 @@ select pg_temp.debe_fallar(format(
   'permission denied');
 select pg_temp.debe_fallar(format(
   $q$select public.emitir_cuenta_cobro(%L)$q$, pg_temp.id('obra')),
-  'ya tiene la cuenta de cobro CC-0001');
+  'ya tiene la cuenta de cobro CC-0003');
 reset role;
 select pg_temp.debe_fallar(format(
   $q$update public.cuentas_cobro set monto = 1 where id = %L$q$, pg_temp.id('cc')),
   'no se modifica');
+select pg_temp.debe_fallar(format(
+  $q$update public.cuentas_cobro set fecha_vencimiento = fecha_vencimiento + 5 where id = %L$q$, pg_temp.id('cc')),
+  'no se modifica');
+
+-- La entrega normal (sin el RPC) también fija el vencimiento.
+select pg_temp.guardar('ot_libre', (select id from public.ordenes_trabajo where cotizacion_id = pg_temp.id('libre')));
+select pg_temp.como('vendedor');
+set local role authenticated;
+update public.ordenes_trabajo set estado = 'en_produccion' where id = pg_temp.id('ot_libre');
+update public.ordenes_trabajo set estado = 'lista' where id = pg_temp.id('ot_libre');
+update public.ordenes_trabajo
+   set estado = 'entregada', fecha_entrega_real = (now() at time zone 'America/Bogota')::date
+ where id = pg_temp.id('ot_libre');
+reset role;
+select pg_temp.afirmar(
+  (select fecha_vencimiento = (now() at time zone 'America/Bogota')::date + 30
+     from public.cuentas_cobro where cotizacion_id = pg_temp.id('libre')),
+  'entregar por la vía normal también pone el vencimiento');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 5. Los pagos son abonos, sin mínimo del 50%
@@ -268,7 +322,6 @@ reset role;
 select pg_temp.como('admin');
 set local role authenticated;
 select public.aprobar_cotizacion_credito(pg_temp.id('anular'));
-select public.emitir_cuenta_cobro(pg_temp.id('anular'));
 select public.anular_cotizacion(pg_temp.id('anular'), 'La constructora canceló la obra', 'desistimiento');
 reset role;
 select pg_temp.afirmar(
@@ -278,8 +331,8 @@ select pg_temp.afirmar(
   (select estado = 'cancelada' from public.ordenes_trabajo where cotizacion_id = pg_temp.id('anular')),
   'su orden se cancela');
 select pg_temp.afirmar(
-  (select numero = 'CC-0002' and anulado_at is not null from public.cuentas_cobro where cotizacion_id = pg_temp.id('anular')),
-  'su cuenta de cobro (CC-0002) queda anulada');
+  (select numero = 'CC-0005' and anulado_at is not null from public.cuentas_cobro where cotizacion_id = pg_temp.id('anular')),
+  'su cuenta de cobro (CC-0005) queda anulada');
 select pg_temp.afirmar(pg_temp.estado_cartera('anular') is null, 'sale de la cartera');
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -292,9 +345,8 @@ select pg_temp.debe_fallar(format(
   'al menos el 50');
 select public.registrar_anticipo_cotizacion(pg_temp.id('contado'), 'efectivo', 600);
 select pg_temp.debe_fallar(format(
-  $q$select public.entregar_orden_credito((select id from public.ordenes_trabajo where cotizacion_id = %L))$q$,
-  pg_temp.id('contado')),
-  'no es una venta a crédito');
+  $q$select public.emitir_cuenta_cobro(%L)$q$, pg_temp.id('contado')),
+  'Solo una venta a crédito');
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -307,14 +359,13 @@ select pg_temp.afirmar((select count(*) = 0 from public.cartera), 'admin2 no ve 
 with x as (
   insert into public.clientes (nombre, apellido) values ('Cliente', 'Otra') returning id
 ) select pg_temp.guardar('cliente2', id) from x;
-update public.clientes set credito_habilitado = true where id = pg_temp.id('cliente2');
 with x as (
   insert into public.cotizaciones (numero, cliente_id, estado, subtotal, total)
   values ('COT-TESTCC-OTRA', pg_temp.id('cliente2'), 'enviada', 500, 500) returning id
 ) select pg_temp.guardar('otra', id) from x;
 select public.aprobar_cotizacion_credito(pg_temp.id('otra'));
 select pg_temp.afirmar(
-  (public.emitir_cuenta_cobro(pg_temp.id('otra'))).numero = 'CC-0001',
+  (select numero = 'CC-0001' from public.cuentas_cobro where cotizacion_id = pg_temp.id('otra')),
   'la otra vidriería empieza su propia numeración');
 select pg_temp.debe_fallar(format(
   $q$select public.emitir_cuenta_cobro(%L)$q$, pg_temp.id('obra2')),

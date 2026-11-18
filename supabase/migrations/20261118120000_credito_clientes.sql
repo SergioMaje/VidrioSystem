@@ -9,13 +9,17 @@
 --   * la orden no se entrega con saldo (validar_avance_orden).
 --
 -- Con esta migración:
---   1. El admin habilita el crédito en el cliente, con su plazo en días y un
---      cupo opcional.
---   2. El admin aprueba la cotización a crédito (aprobar_cotizacion_credito):
---      queda 'vendida' y con su OT, sin cobro y sin caja.
---   3. La OT a crédito produce sin anticipo. Para entregarla con saldo hace
---      falta una cuenta de cobro vigente (CC-0001), que emite
---      entregar_orden_credito en la misma transacción.
+--   1. El admin registra el "pago en $0" de una cotización de cualquier
+--      cliente (aprobar_cotizacion_credito): queda 'vendida' y con su OT, sin
+--      cobro y sin caja, y en la misma transacción se emite su cuenta de
+--      cobro (CC-0001) por el total.
+--   2. El plazo de pago sale del cliente (dias_credito, 30 por defecto) y
+--      empieza a contar al entregar: la cuenta nace sin fecha de vencimiento
+--      y la recibe cuando la orden pasa a 'entregada'. Un cupo opcional en el
+--      cliente limita lo que puede deber así.
+--   3. La OT a crédito produce sin anticipo y se entrega con saldo por la vía
+--      normal, porque tiene cuenta de cobro vigente. Si se anuló, hay que
+--      emitir otra antes de entregar.
 --   4. Los pagos entran como abonos normales, con caja abierta y su recibo
 --      RC. El estado de la cuenta (pendiente, parcial, vencida o pagada) se
 --      deriva del saldo, igual que en cotizaciones_saldo; no se guarda.
@@ -23,17 +27,16 @@
 -- La cuenta de cobro no es una factura electrónica. Si la vidriería está
 -- obligada a facturar, la DIAN queda como fase 2 sobre este mismo modelo.
 
--- ── 1. Crédito en el cliente ────────────────────────────────────────────────
+-- ── 1. Condiciones de crédito del cliente ───────────────────────────────────
+-- Cualquier cliente puede llevarse un trabajo a crédito si un admin lo
+-- aprueba; aquí solo se guardan sus condiciones.
 
 alter table public.clientes
-  add column if not exists credito_habilitado boolean not null default false,
   add column if not exists dias_credito       integer not null default 30,
   add column if not exists cupo_credito       numeric(14,2);
 
-comment on column public.clientes.credito_habilitado is
-  'El cliente puede llevarse trabajos sin anticipo y pagar contra cuenta de cobro. Solo lo cambia un admin.';
 comment on column public.clientes.dias_credito is
-  'Plazo de pago de sus cuentas de cobro, contado desde la emisión.';
+  'Plazo de pago de sus cuentas de cobro, contado desde la entrega del trabajo.';
 comment on column public.clientes.cupo_credito is
   'Tope de lo que puede deber a crédito al mismo tiempo. Null = sin tope.';
 
@@ -44,8 +47,9 @@ alter table public.clientes drop constraint if exists clientes_cupo_credito_chec
 alter table public.clientes add constraint clientes_cupo_credito_check
   check (cupo_credito is null or cupo_credito > 0);
 
--- La política de UPDATE de clientes deja editar a cualquier usuario. El crédito
--- es una decisión del admin, así que se protege aquí, columna por columna.
+-- La política de UPDATE de clientes deja editar a cualquier usuario. Las
+-- condiciones de crédito son decisión del admin, así que se protegen aquí,
+-- columna por columna.
 create or replace function public.clientes_proteger_credito()
 returns trigger
 language plpgsql
@@ -60,14 +64,14 @@ begin
   end if;
 
   if tg_op = 'INSERT' then
-    if new.credito_habilitado or new.cupo_credito is not null or new.dias_credito <> 30 then
+    if new.cupo_credito is not null or new.dias_credito <> 30 then
       raise exception 'Solo un administrador puede dar crédito a un cliente';
     end if;
     return new;
   end if;
 
-  if (new.credito_habilitado, new.dias_credito, new.cupo_credito)
-     is distinct from (old.credito_habilitado, old.dias_credito, old.cupo_credito) then
+  if (new.dias_credito, new.cupo_credito)
+     is distinct from (old.dias_credito, old.cupo_credito) then
     raise exception 'Solo un administrador puede cambiar el crédito de un cliente';
   end if;
   return new;
@@ -137,7 +141,7 @@ begin
   if (new.condicion_pago, new.orden_compra, new.credito_autorizado_por, new.credito_autorizado_at)
      is distinct from
      (old.condicion_pago, old.orden_compra, old.credito_autorizado_por, old.credito_autorizado_at) then
-    raise exception 'La venta a crédito solo se registra con "Aprobar a crédito"';
+    raise exception 'La venta a crédito solo se registra con el pago en $0 (cuenta de cobro)';
   end if;
   return new;
 end;
@@ -173,7 +177,11 @@ create table if not exists public.cuentas_cobro (
   cliente_id        uuid not null,
   orden_id          uuid,
   fecha_emision     date not null default (now() at time zone 'America/Bogota')::date,
-  fecha_vencimiento date not null,
+  -- El plazo se cuenta desde la entrega: null mientras la orden no se entrega.
+  -- Lo fija el trigger ordenes_fijar_vencimiento_cc, una sola vez.
+  fecha_vencimiento date,
+  -- Días de plazo del cliente, congelados al emitir.
+  dias_plazo        integer not null check (dias_plazo between 0 and 365),
   -- Congelado al emitir: lo que se le cobró en el documento. Lo que falta hoy
   -- sale de cotizaciones_saldo.
   monto             numeric(14,2) not null check (monto > 0),
@@ -185,7 +193,7 @@ create table if not exists public.cuentas_cobro (
   motivo_anulacion  text,
   constraint cuentas_cobro_empresa_id_id_key unique (empresa_id, id),
   constraint cuentas_cobro_numero_unico unique (empresa_id, numero),
-  constraint cuentas_cobro_vencimiento_valido check (fecha_vencimiento >= fecha_emision),
+  constraint cuentas_cobro_vencimiento_valido check (fecha_vencimiento is null or fecha_vencimiento >= fecha_emision),
   constraint cuentas_cobro_anulacion_coherente check (
     (anulado_at is null) = (anulado_por is null)
     and (anulado_at is null) = (motivo_anulacion is null)
@@ -240,18 +248,23 @@ create trigger cuentas_cobro_zz_asignar_numero
   before insert on public.cuentas_cobro
   for each row execute function public.cuentas_cobro_asignar_numero();
 
--- Emitida, solo cambia para anularse (una vez).
+-- Emitida, solo cambia para anularse (una vez) o para recibir su fecha de
+-- vencimiento al entregar (también una vez).
 create or replace function public.cuentas_cobro_inmutable()
 returns trigger
 language plpgsql
 set search_path to 'public'
 as $$
+declare
+  v_libres text[] := array['anulado_at', 'anulado_por', 'motivo_anulacion'];
 begin
   if old.anulado_at is not null then
     raise exception 'La cuenta de cobro % ya está anulada', old.numero;
   end if;
-  if (to_jsonb(new) - array['anulado_at', 'anulado_por', 'motivo_anulacion'])
-     is distinct from (to_jsonb(old) - array['anulado_at', 'anulado_por', 'motivo_anulacion']) then
+  if old.fecha_vencimiento is null and new.fecha_vencimiento is not null then
+    v_libres := array_append(v_libres, 'fecha_vencimiento');
+  end if;
+  if (to_jsonb(new) - v_libres) is distinct from (to_jsonb(old) - v_libres) then
     raise exception 'Una cuenta de cobro emitida no se modifica: anúlala y emite otra';
   end if;
   return new;
@@ -434,7 +447,7 @@ begin
       end if;
       if not exists (select 1 from public.cuentas_cobro
                       where cotizacion_id = new.cotizacion_id and anulado_at is null) then
-        raise exception 'No se puede entregar: emite la cuenta de cobro por el saldo de % (venta a crédito)', v_saldo;
+        raise exception 'No se puede entregar: la venta a crédito no tiene cuenta de cobro vigente; emite una por el saldo de %', v_saldo;
       end if;
     end if;
   end if;
@@ -442,9 +455,10 @@ begin
   return new;
 end $$;
 
--- ── 6. Aprobar a crédito ────────────────────────────────────────────────────
--- El equivalente a registrar_anticipo_cotizacion para un cliente con crédito:
--- vende y crea la orden, pero sin cobro y sin caja. Solo el admin.
+-- ── 6. Aprobar a crédito ("pago en $0") ─────────────────────────────────────
+-- El equivalente a registrar_anticipo_cotizacion con un pago de $0: vende y
+-- crea la orden sin cobro y sin caja, y emite la cuenta de cobro por el total
+-- en la misma transacción. Cualquier cliente; solo el admin.
 create or replace function public.aprobar_cotizacion_credito(
   p_cotizacion_id uuid,
   p_fecha_entrega date default null,
@@ -464,7 +478,7 @@ declare
   v_orden   public.ordenes_trabajo;
 begin
   if v_usuario is null then
-    raise exception 'Debes iniciar sesión para aprobar a crédito';
+    raise exception 'Debes iniciar sesión para aprobar con pago en $0';
   end if;
 
   if public.get_user_rol() is distinct from 'admin'::public.rol_usuario then
@@ -516,9 +530,6 @@ begin
   select * into v_cliente from public.clientes
    where id = v_cot.cliente_id and empresa_id = v_empresa
    for update;
-  if not v_cliente.credito_habilitado then
-    raise exception 'El cliente no tiene crédito habilitado: actívalo en su ficha';
-  end if;
 
   if v_cliente.cupo_credito is not null then
     select coalesce(sum(s.saldo), 0) into v_deuda
@@ -568,15 +579,18 @@ begin
            fecha_entrega_estimada = coalesce(p_fecha_entrega, fecha_entrega_estimada)
      where id = v_orden.id
     returning * into v_orden;
-    return v_orden;
+  else
+    insert into public.ordenes_trabajo
+      (numero, cotizacion_id, cliente_id, estado, fecha_entrega_estimada, notas)
+    values
+      ('OT-' || (extract(epoch from clock_timestamp()) * 1000)::bigint::text,
+       v_cot.id, v_cot.cliente_id, 'pendiente', p_fecha_entrega, v_cot.notas)
+    returning * into v_orden;
   end if;
 
-  insert into public.ordenes_trabajo
-    (numero, cotizacion_id, cliente_id, estado, fecha_entrega_estimada, notas)
-  values
-    ('OT-' || (extract(epoch from clock_timestamp()) * 1000)::bigint::text,
-     v_cot.id, v_cot.cliente_id, 'pendiente', p_fecha_entrega, v_cot.notas)
-  returning * into v_orden;
+  -- El documento del "pago en $0": nace con la venta, después de la orden para
+  -- quedar ligado a ella. Su plazo empieza a correr al entregar.
+  perform public.emitir_cuenta_cobro(v_cot.id);
 
   return v_orden;
 end;
@@ -586,10 +600,13 @@ revoke execute on function public.aprobar_cotizacion_credito(uuid, date, text) f
 grant execute on function public.aprobar_cotizacion_credito(uuid, date, text) to authenticated;
 
 -- ── 7. Emitir la cuenta de cobro ────────────────────────────────────────────
--- Por el saldo de hoy, con vencimiento a los días de crédito del cliente.
--- Puede emitirse antes de entregar (hay empresas que la piden con la OC) o la
--- emite entregar_orden_credito. El llamador debe tener la cotización
--- bloqueada; esta función la vuelve a bloquear, lo que no cuesta nada.
+-- Por el saldo de hoy, con el plazo del cliente congelado. La emite
+-- aprobar_cotizacion_credito; desde la cotización sirve para reemplazar una
+-- anulada. Si la
+-- orden ya se entregó, el vencimiento cuenta desde esa entrega (nunca antes de
+-- hoy); si no, queda pendiente hasta entregar. El llamador debe tener la
+-- cotización bloqueada; esta función la vuelve a bloquear, lo que no cuesta
+-- nada.
 create or replace function public.emitir_cuenta_cobro(
   p_cotizacion_id uuid
 ) returns public.cuentas_cobro
@@ -604,8 +621,9 @@ declare
   v_cliente public.clientes;
   v_saldo   numeric;
   v_previa  public.cuentas_cobro;
-  v_orden   uuid;
+  v_orden   public.ordenes_trabajo;
   v_hoy     date := (now() at time zone 'America/Bogota')::date;
+  v_vence   date;
   v_cc      public.cuentas_cobro;
 begin
   if v_usuario is null then
@@ -636,17 +654,21 @@ begin
 
   select * into v_cliente from public.clientes where id = v_cot.cliente_id;
 
-  select id into v_orden from public.ordenes_trabajo
+  select * into v_orden from public.ordenes_trabajo
    where cotizacion_id = v_cot.id and estado <> 'cancelada'
    order by created_at desc
    limit 1;
 
+  if v_orden.estado = 'entregada'::public.estado_orden then
+    v_vence := greatest(v_hoy, coalesce(v_orden.fecha_entrega_real, v_hoy) + v_cliente.dias_credito);
+  end if;
+
   insert into public.cuentas_cobro
     (cotizacion_id, cliente_id, orden_id, fecha_emision, fecha_vencimiento,
-     monto, orden_compra, usuario_id)
+     dias_plazo, monto, orden_compra, usuario_id)
   values
-    (v_cot.id, v_cot.cliente_id, v_orden, v_hoy, v_hoy + v_cliente.dias_credito,
-     round(v_saldo), v_cot.orden_compra, v_usuario)
+    (v_cot.id, v_cot.cliente_id, v_orden.id, v_hoy, v_vence,
+     v_cliente.dias_credito, round(v_saldo), v_cot.orden_compra, v_usuario)
   returning * into v_cc;
 
   return v_cc;
@@ -656,72 +678,36 @@ $function$;
 revoke execute on function public.emitir_cuenta_cobro(uuid) from public, anon;
 grant execute on function public.emitir_cuenta_cobro(uuid) to authenticated;
 
--- ── 8. Entregar una orden a crédito ─────────────────────────────────────────
--- Emite la cuenta de cobro (si hay saldo y aún no existe) y entrega en la
--- misma transacción: no queda una orden entregada sin documento de cobro, ni
--- un documento de una entrega que falló.
-create or replace function public.entregar_orden_credito(
-  p_orden_id uuid
-) returns public.cuentas_cobro
-  language plpgsql
-  security definer
-  set search_path to 'public'
-as $function$
+-- El plazo empieza al entregar: la cuenta vigente de la cotización recibe su
+-- vencimiento (entrega + días de plazo) cuando la orden pasa a 'entregada'.
+create or replace function public.ordenes_fijar_vencimiento_cc()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
 declare
-  v_empresa uuid := public.current_empresa_id();
-  v_orden   public.ordenes_trabajo;
-  v_cot     public.cotizaciones;
-  v_saldo   numeric;
-  v_cc      public.cuentas_cobro;
+  v_entrega date := coalesce(new.fecha_entrega_real, (now() at time zone 'America/Bogota')::date);
 begin
-  if auth.uid() is null then
-    raise exception 'Debes iniciar sesión para entregar una orden';
-  end if;
-
-  select * into v_orden from public.ordenes_trabajo
-   where id = p_orden_id and empresa_id = v_empresa;
-  if not found or v_orden.cotizacion_id is null then
-    raise exception 'Orden no encontrada';
-  end if;
-
-  -- Cotización antes que orden: el mismo orden que el anticipo y la anulación.
-  select * into v_cot from public.cotizaciones
-   where id = v_orden.cotizacion_id and empresa_id = v_empresa
-   for update;
-  select * into v_orden from public.ordenes_trabajo where id = p_orden_id for update;
-
-  if v_cot.condicion_pago <> 'credito' then
-    raise exception 'La orden % no es una venta a crédito', v_orden.numero;
-  end if;
-
-  if v_orden.estado <> 'lista'::public.estado_orden then
-    raise exception 'La orden % debe estar lista para entregarse (estado actual: %)', v_orden.numero, v_orden.estado;
-  end if;
-
-  select * into v_cc from public.cuentas_cobro
-   where cotizacion_id = v_cot.id and anulado_at is null;
-
-  if not found then
-    select saldo into v_saldo from public.cotizaciones_saldo where cotizacion_id = v_cot.id;
-    if coalesce(v_saldo, 0) > 1 then
-      v_cc := public.emitir_cuenta_cobro(v_cot.id);
-    end if;
-  end if;
-
-  update public.ordenes_trabajo
-     set estado = 'entregada',
-         fecha_entrega_real = (now() at time zone 'America/Bogota')::date
-   where id = v_orden.id;
-
-  -- Null si ya estaba pagada: se entregó sin cuenta de cobro.
-  return v_cc;
+  update public.cuentas_cobro
+     set fecha_vencimiento = greatest(fecha_emision, v_entrega + dias_plazo)
+   where cotizacion_id = new.cotizacion_id
+     and anulado_at is null
+     and fecha_vencimiento is null;
+  return null;
 end;
-$function$;
+$$;
 
-revoke execute on function public.entregar_orden_credito(uuid) from public, anon;
-grant execute on function public.entregar_orden_credito(uuid) to authenticated;
+revoke execute on function public.ordenes_fijar_vencimiento_cc() from public, anon, authenticated;
 
--- ── 9. Anular una cuenta de cobro ───────────────────────────────────────────
+drop trigger if exists ordenes_fijar_vencimiento_cc on public.ordenes_trabajo;
+create trigger ordenes_fijar_vencimiento_cc
+  after update of estado on public.ordenes_trabajo
+  for each row
+  when (new.estado = 'entregada' and old.estado is distinct from 'entregada' and new.cotizacion_id is not null)
+  execute function public.ordenes_fijar_vencimiento_cc();
+
+-- ── 8. Anular una cuenta de cobro ───────────────────────────────────────────
 -- Para corregirla (OC equivocada, monto acordado distinto): se anula y se
 -- emite otra. No toca cobros ni la orden.
 create or replace function public.anular_cuenta_cobro(
@@ -769,7 +755,7 @@ $function$;
 revoke execute on function public.anular_cuenta_cobro(uuid, text) from public, anon;
 grant execute on function public.anular_cuenta_cobro(uuid, text) to authenticated;
 
--- ── 10. Anular el único cobro de una venta a crédito no la deshace ──────────
+-- ── 9. Anular el único cobro de una venta a crédito no la deshace ──────────
 -- Mismo cuerpo que 20261106120100_anulacion_ventas.sql. Lo único nuevo: con
 -- condicion_pago = 'credito', quedarse sin cobros no cancela la orden ni
 -- devuelve la cotización. La venta existe por la aprobación a crédito, no por
@@ -978,7 +964,7 @@ revoke execute on function public.anular_venta(uuid, text, boolean) from public,
 grant execute on function public.anular_venta(uuid, text, boolean) to authenticated;
 
 
--- ── 11. Anular una venta a crédito ──────────────────────────────────────────
+-- ── 10. Anular una venta a crédito ──────────────────────────────────────────
 -- Mismo cuerpo que 20261108120100_cotizacion_anulada.sql. Lo nuevo: una venta
 -- a crédito puede no tener cobros, así que se anula igual. Como anular_venta
 -- ya no cancela su orden, la cancela esta función, y también anula la cuenta
@@ -1099,15 +1085,17 @@ $function$;
 revoke execute on function public.anular_cotizacion(uuid, text, text) from public, anon;
 grant execute on function public.anular_cotizacion(uuid, text, text) to authenticated;
 
--- ── 12. Cartera ─────────────────────────────────────────────────────────────
+-- ── 11. Cartera ─────────────────────────────────────────────────────────────
 -- Las ventas a crédito vivas, con su cuenta de cobro vigente si ya se emitió.
 -- El estado se deriva del saldo de hoy:
---   sin_emitir  todavía no tiene cuenta de cobro (en producción, por lo general);
+--   sin_emitir  no tiene cuenta de cobro vigente (se anuló y falta la nueva);
 --   pendiente   emitida, sin pagos desde la emisión;
 --   parcial     emitida, con algún pago desde la emisión;
---   vencida     pasó la fecha de vencimiento con saldo;
+--   vencida     pasó la fecha de vencimiento con saldo (solo tiene fecha
+--               desde que se entregó);
 --   pagada      saldo en cero (tolerancia de $1).
--- Espejo en TS: estadoCartera() en src/lib/pagos.ts.
+-- Las tarjetas de la página Cartera separan además las emitidas sin
+-- vencimiento (trabajo por entregar) de las que ya corren plazo.
 create or replace view public.cartera
 with (security_invoker = on) as
 select
@@ -1120,7 +1108,6 @@ select
   cl.apellido          as cliente_apellido,
   cl.empresa           as cliente_empresa,
   cl.documento         as cliente_documento,
-  cl.dias_credito,
   s.total,
   s.total_abonado,
   s.saldo,
@@ -1132,7 +1119,7 @@ select
   o.id                 as orden_id,
   o.numero             as orden_numero,
   o.estado             as orden_estado,
-  case when cc.id is null or s.saldo <= 1 then 0
+  case when cc.fecha_vencimiento is null or s.saldo <= 1 then 0
        else greatest(0, (now() at time zone 'America/Bogota')::date - cc.fecha_vencimiento)
   end                  as dias_mora,
   case
@@ -1141,7 +1128,8 @@ select
     when (now() at time zone 'America/Bogota')::date > cc.fecha_vencimiento then 'vencida'
     when s.saldo < cc.monto - 1 then 'parcial'
     else 'pendiente'
-  end                  as estado
+  end                  as estado,
+  cc.dias_plazo
 from public.cotizaciones c
 join public.clientes cl on cl.id = c.cliente_id
 join public.cotizaciones_saldo s on s.cotizacion_id = c.id
