@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Play, CheckSquare, Truck, Loader2, Printer, Scissors, Calculator, Wallet, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Play, CheckSquare, Truck, Loader2, Printer, Scissors, Calculator, Wallet, AlertCircle, Handshake } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,7 +16,8 @@ import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfi
 import { escapar } from '@/lib/documentos'
 import { RegistrarPagoDialog } from '@/pages/cotizaciones/RegistrarPagoDialog'
 import { MaterialesOrdenPanel } from './MaterialesOrdenPanel'
-import { anticipoMinimo, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
+import { anticipoMinimo, esVentaCredito, estaLiquidada, puedeIniciarProduccion } from '@/lib/pagos'
+import { useEntregarOrdenCredito } from '@/hooks/useCartera'
 import { formatCantidad, formatCOP, formatFecha, hoyBogota, mensajeError } from '@/lib/utils'
 import {
   calcularCortes,
@@ -108,10 +109,27 @@ export function OrdenDetalle() {
   const saldoPendiente = saldoInfo?.saldo ?? 0
   const pctAbonado = saldoInfo?.pct_abonado ?? 0
   const conCotizacion = !!orden?.cotizacion_id
-  // Mientras el saldo no haya cargado se asume bloqueado, para no habilitar los
-  // botones por un instante antes de saber qué se ha cobrado.
-  const sinAnticipo = conCotizacion && (!saldoInfo || !puedeIniciarProduccion(abonado, total))
+  // Venta a crédito: produce sin anticipo y se entrega con cuenta de cobro
+  // (entregar_orden_credito). Las reglas viven en validar_avance_orden.
+  const credito = esVentaCredito(cotizacion)
+  // Mientras el saldo (o la cotización) no haya cargado se asume bloqueado, para
+  // no habilitar los botones por un instante antes de saber qué se ha cobrado.
+  const sinAnticipo = conCotizacion && !credito && (!saldoInfo || !cotizacion || !puedeIniciarProduccion(abonado, total))
   const bloqueadaPorSaldo = conCotizacion && (!saldoInfo || !estaLiquidada(saldoInfo.saldo))
+  const entregaConCuentaCobro = credito && bloqueadaPorSaldo && !!saldoInfo
+  const entregarCredito = useEntregarOrdenCredito()
+
+  const onEntregarCredito = async () => {
+    try {
+      const cc = await entregarCredito.mutateAsync({ ordenId: id!, cotizacionId: orden!.cotizacion_id! })
+      toast({
+        title: cc ? `Orden entregada — cuenta de cobro ${cc.numero} emitida` : 'Orden entregada',
+        variant: 'success',
+      })
+    } catch (err) {
+      toast({ title: mensajeError(err, 'No se pudo entregar la orden'), variant: 'destructive' })
+    }
+  }
   const enCurso = orden ? ESTADOS_ACTIVOS.includes(orden.estado) : false
 
   const { data: materiales } = useOrdenMateriales(orden?.estado === 'en_produccion' ? id : undefined)
@@ -565,7 +583,12 @@ export function OrdenDetalle() {
             Cerrar producción
           </Button>
         )}
-        {orden.estado === 'lista' && (
+        {orden.estado === 'lista' && (entregaConCuentaCobro ? (
+          <Button onClick={onEntregarCredito} disabled={entregarCredito.isPending}>
+            {entregarCredito.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
+            Entregar y emitir cuenta de cobro
+          </Button>
+        ) : (
           <Button
             onClick={() => cambiarEstado.mutate('entregada')}
             disabled={cambiarEstado.isPending || bloqueadaPorSaldo}
@@ -573,7 +596,7 @@ export function OrdenDetalle() {
             {cambiarEstado.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
             Marcar como entregada
           </Button>
-        )}
+        ))}
       </div>
 
       {orden.estado === 'pendiente' && sinAnticipo && saldoInfo && (
@@ -599,7 +622,18 @@ export function OrdenDetalle() {
         </div>
       )}
 
-      {orden.estado === 'en_produccion' && bloqueadaPorSaldo && saldoInfo && (
+      {credito && enCurso && bloqueadaPorSaldo && saldoInfo && (
+        <div className="flex items-start gap-2 rounded-md border px-4 py-3 text-sm text-muted-foreground">
+          <Handshake className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            Venta a crédito: se produce sin anticipo. Al entregar se emite la cuenta de cobro por el saldo
+            (<strong className="font-mono text-foreground">{formatCOP(saldoPendiente)}</strong>)
+            {cotizacion?.cliente ? ` con vencimiento a ${cotizacion.cliente.dias_credito} días` : ''}.
+          </div>
+        </div>
+      )}
+
+      {orden.estado === 'en_produccion' && bloqueadaPorSaldo && saldoInfo && !credito && (
         <div className="flex items-start gap-2 rounded-md border px-4 py-3 text-sm text-muted-foreground">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
@@ -609,7 +643,7 @@ export function OrdenDetalle() {
         </div>
       )}
 
-      {orden.estado === 'lista' && bloqueadaPorSaldo && saldoInfo && (
+      {orden.estado === 'lista' && bloqueadaPorSaldo && saldoInfo && !credito && (
         <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
