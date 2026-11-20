@@ -20,8 +20,8 @@ export const cumpleAnticipoMinimo = (monto: number, total: number) =>
 export const anticipoSolicitado = (pct: number, total: number) => Math.round((total * pct) / 100)
 
 export function textoAnticipoSolicitado(pct: number, total: number) {
-  const texto = `Anticipo del ${pct}% de la cotización`
-  return pct >= 100 ? texto : `${texto}: ${formatCOP(anticipoSolicitado(pct, total))}`
+  const texto = `Condiciones de pago: ${pct}% anticipado para envío a producción`
+  return pct >= 100 ? texto : `${texto} (${formatCOP(anticipoSolicitado(pct, total))})`
 }
 
 export const estaLiquidada = (saldo: number) => saldo <= TOLERANCIA
