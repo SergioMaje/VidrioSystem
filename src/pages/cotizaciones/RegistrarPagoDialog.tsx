@@ -361,7 +361,7 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
             <div className="space-y-1.5">
               <Label>Monto a recibir</Label>
               <InputDinero value={monto} onChange={setMonto} disabled={esFinanciera} inputClassName="text-base" />
-              <div className={`flex gap-2 pt-0.5 ${esFinanciera ? 'hidden' : ''}`}>
+              <div className={`flex flex-wrap gap-2 pt-0.5 ${esFinanciera ? 'hidden' : ''}`}>
                 {esAnticipo && (
                   <Button type="button" variant="outline" size="sm" onClick={() => setMonto(String(minimo))}>
                     50% ({formatCOP(minimo)})
