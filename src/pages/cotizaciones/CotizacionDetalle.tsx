@@ -25,7 +25,7 @@ import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfi
 import { useToast } from '@/hooks/useToast'
 import { useAuth } from '@/hooks/useAuth'
 import { esVentaAnulada, esVentaCredito, estaLiquidada, textoAnticipoSolicitado, textoVenceTrasEntrega, METODO_PAGO_LABEL, TIPO_PAGO_LABEL } from '@/lib/pagos'
-import { codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, TIPO_CATEGORIA_CONFIG, textoOpcion } from '@/lib/cotizaciones'
+import { codigoOpcion, ESTADOS_COTIZACION_CONFIG, estiloCategoria, numeroBaseEnvio, textoOpcion } from '@/lib/cotizaciones'
 import { abrirYImprimir, descargarImagen, etiquetaDocumento, htmlCotizacion, htmlEnvio } from '@/lib/imprimirCotizacion'
 import { AccionesRecibo } from '@/components/shared/AccionesRecibo'
 import type { OrigenNavegacion } from '@/components/shared/EnlaceDocumento'
@@ -302,7 +302,7 @@ export function CotizacionDetalle() {
                     onClick={() => navigate(`/cotizaciones/${o.id}`, { state: origen })}
                     className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
                   >
-                    {o.categoria && <IconoTipoCategoria tipo={o.categoria.tipo} className="h-4 w-4 shrink-0" />}
+                    {o.categoria && <IconoTipoCategoria categoria={o.categoria} className="h-4 w-4 shrink-0" />}
                     <span className="min-w-0 flex-1">
                       <span className="font-medium">{o.categoria?.nombre}</span>
                       <span className="text-muted-foreground"> · {textoOpcion(o)}</span>
@@ -345,9 +345,9 @@ export function CotizacionDetalle() {
                 {cat && (
                   <p
                     className="flex items-center gap-2 border-l-4 border-t bg-muted/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide"
-                    style={{ borderLeftColor: TIPO_CATEGORIA_CONFIG[cat.tipo].color }}
+                    style={{ borderLeftColor: estiloCategoria(cat).color }}
                   >
-                    <IconoTipoCategoria tipo={cat.tipo} className="h-3.5 w-3.5" />
+                    <IconoTipoCategoria categoria={cat} className="h-3.5 w-3.5" />
                     {cat.nombre}
                   </p>
                 )}
