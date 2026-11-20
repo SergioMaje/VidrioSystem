@@ -32,6 +32,8 @@ interface PanelCotizacionProps {
   onDescuentoChange: (v: number) => void
   ivaPct: number
   onIvaChange: (v: number) => void
+  /** False si la vidriería no cobra IVA: no aparece el campo. */
+  mostrarIva?: boolean
   onGuardar: (estado: 'borrador' | 'enviada') => void
   isPending: boolean
   modoEdicion?: boolean
@@ -74,6 +76,7 @@ export function PanelCotizacion({
   onDescuentoChange,
   ivaPct,
   onIvaChange,
+  mostrarIva = true,
   onGuardar,
   isPending,
   modoEdicion = false,
@@ -364,23 +367,27 @@ export function PanelCotizacion({
               className="h-7 w-20 text-right font-mono text-sm"
             />
           </div>
-          <div className="flex items-center justify-between text-sm gap-4">
-            <span className="text-muted-foreground shrink-0">IVA (%)</span>
-            <Input
-              type="number"
-              min={0}
-              max={100}
-              value={ivaPct}
-              onChange={(e) => onIvaChange(parseFloat(e.target.value) || 0)}
-              disabled={descuentoDelEnvio === 'bloqueado'}
-              className="h-7 w-20 text-right font-mono text-sm"
-            />
-          </div>
+          {mostrarIva && (
+            <div className="flex items-center justify-between text-sm gap-4">
+              <span className="text-muted-foreground shrink-0">IVA (%)</span>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={ivaPct}
+                onChange={(e) => onIvaChange(parseFloat(e.target.value) || 0)}
+                disabled={descuentoDelEnvio === 'bloqueado'}
+                className="h-7 w-20 text-right font-mono text-sm"
+              />
+            </div>
+          )}
           {descuentoDelEnvio && (
             <p className="text-xs text-muted-foreground">
-              {descuentoDelEnvio === 'editable'
-                ? 'Descuento e IVA aplican a todo el envío.'
-                : 'Descuento e IVA son los del envío.'}
+              {`${mostrarIva ? 'Descuento e IVA' : 'El descuento'} ${
+                descuentoDelEnvio === 'editable'
+                  ? `${mostrarIva ? 'aplican' : 'aplica'} a todo el envío.`
+                  : `${mostrarIva ? 'son los' : 'es el'} del envío.`
+              }`}
             </p>
           )}
           <Separator />
