@@ -255,7 +255,7 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
                 {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
               </div>
               <div className="space-y-1">
-                <Label htmlFor="anticipo-pct">Anticipo solicitado en la cotización (opcional)</Label>
+                <Label htmlFor="anticipo-pct">Condiciones de pago: % anticipado para producción (opcional)</Label>
                 <div className="relative">
                   <Input
                     id="anticipo-pct"
