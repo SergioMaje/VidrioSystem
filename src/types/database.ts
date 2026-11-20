@@ -89,6 +89,10 @@ export interface ConfiguracionEmpresa {
    * nombre. Null: el texto por defecto (MENSAJE_RECIBO_DEFECTO en src/lib/recibos.ts).
    */
   mensaje_recibo: string | null
+  /** La vidriería cobra IVA. False: las cotizaciones nuevas salen con 0% y sin el campo. */
+  usa_iva: boolean
+  /** % con el que arranca una cotización nueva cuando usa_iva es true. */
+  iva_pct: number
   created_at: string
   updated_at: string
 }

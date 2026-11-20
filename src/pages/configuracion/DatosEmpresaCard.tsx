@@ -41,7 +41,13 @@ const schema = z.object({
     ),
   // Vacío = el agradecimiento por defecto. Mismo largo que el check de la base.
   mensaje_recibo: z.string().trim().max(MENSAJE_RECIBO_MAX, `Máximo ${MENSAJE_RECIBO_MAX} caracteres`),
-})
+  usa_iva: z.boolean(),
+  // Solo se valida si cobra IVA; apagado, se guarda el que ya había.
+  iva_pct: z.string().trim(),
+}).refine(
+  (d) => !d.usa_iva || (/^\d{1,3}([.,]\d{1,2})?$/.test(d.iva_pct) && Number(d.iva_pct.replace(',', '.')) <= 100),
+  { path: ['iva_pct'], message: 'Debe ser un número entre 0 y 100' }
+)
 
 type FormData = z.infer<typeof schema>
 
@@ -67,6 +73,7 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
   const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting, isDirty } } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
+  const usaIva = watch('usa_iva')
 
   useEffect(() => {
     if (!empresa) return
@@ -80,6 +87,8 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
       email: empresa.email ?? '',
       anticipo_solicitado_pct: empresa.anticipo_solicitado_pct?.toString() ?? '',
       mensaje_recibo: empresa.mensaje_recibo ?? '',
+      usa_iva: empresa.usa_iva,
+      iva_pct: Number(empresa.iva_pct).toString(),
     })
   }, [empresa, reset])
 
@@ -98,6 +107,8 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
           email: data.email || null,
           anticipo_solicitado_pct: data.anticipo_solicitado_pct ? Number(data.anticipo_solicitado_pct) : null,
           mensaje_recibo: data.mensaje_recibo || null,
+          usa_iva: data.usa_iva,
+          iva_pct: data.usa_iva ? Number(data.iva_pct.replace(',', '.')) : empresa.iva_pct,
         },
       })
       toast({ title: 'Datos de la empresa actualizados', variant: 'success' })
@@ -276,6 +287,44 @@ export function DatosEmpresaCard({ esAdmin }: DatosEmpresaCardProps) {
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     Se muestra en la cotización. Al cobrar, el sistema acepta desde el {MIN_PCT}%.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="usa-iva"
+                    type="checkbox"
+                    className="h-4 w-4"
+                    disabled={!esAdmin}
+                    {...register('usa_iva')}
+                  />
+                  <Label htmlFor="usa-iva" className="font-normal">Cobro IVA en las cotizaciones</Label>
+                </div>
+                {usaIva && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <Label htmlFor="iva-pct" className="shrink-0 font-normal text-muted-foreground">% de IVA por defecto</Label>
+                    <div className="relative w-24">
+                      <Input
+                        id="iva-pct"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="19"
+                        className="pr-7 text-right"
+                        disabled={!esAdmin}
+                        {...register('iva_pct')}
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">%</span>
+                    </div>
+                  </div>
+                )}
+                {errors.iva_pct ? (
+                  <p className="text-xs text-destructive">{errors.iva_pct.message}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {usaIva
+                      ? 'Las cotizaciones nuevas arrancan con este %; se puede cambiar en cada una.'
+                      : 'Las cotizaciones nuevas salen sin IVA y sin el campo para agregarlo.'}
                   </p>
                 )}
               </div>

@@ -1,4 +1,4 @@
-import type { Cotizacion, CotizacionItem, EnvioCategoria } from '@/types/database'
+import type { ConfiguracionEmpresa, Cotizacion, CotizacionItem, EnvioCategoria } from '@/types/database'
 
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'warning' | 'success' | 'outline'
 
@@ -12,6 +12,18 @@ export const ESTADOS_COTIZACION_CONFIG: Record<Cotizacion['estado'], { label: st
   anulada: { label: 'Anulada', variant: 'destructive' },
   // El cliente eligió otra opción del mismo envío. No es un rechazo.
   descartada: { label: 'Descartada', variant: 'outline' },
+}
+
+/** IVA de antes de que se pudiera configurar; también mientras carga la configuración. */
+export const IVA_PCT_DEFECTO = 19
+
+/**
+ * IVA con el que arranca una cotización nueva: el % de la vidriería si cobra
+ * IVA, 0 si no.
+ */
+export function ivaPorDefecto(config: Pick<ConfiguracionEmpresa, 'usa_iva' | 'iva_pct'> | null | undefined) {
+  if (!config) return IVA_PCT_DEFECTO
+  return config.usa_iva ? Number(config.iva_pct) : 0
 }
 
 /** Letras de las opciones de un envío: A, B, C… (el check de la base admite A–Z). */

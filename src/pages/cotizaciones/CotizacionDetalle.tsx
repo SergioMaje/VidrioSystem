@@ -453,7 +453,7 @@ export function CotizacionDetalle() {
             {cotizacion.fecha_aprobacion && (
               <div className="flex justify-between"><span className="text-muted-foreground">Aprobación:</span><span>{formatFechaHora(cotizacion.fecha_aprobacion)}</span></div>
             )}
-            <div className="flex justify-between"><span className="text-muted-foreground">IVA:</span><span>{cotizacion.iva_pct}%</span></div>
+            {cotizacion.iva_pct > 0 && <div className="flex justify-between"><span className="text-muted-foreground">IVA:</span><span>{cotizacion.iva_pct}%</span></div>}
           </CardContent>
         </Card>
       </div>
@@ -494,7 +494,7 @@ export function CotizacionDetalle() {
           <div className="space-y-2 p-4">
             <div className="flex justify-between text-sm"><span>Subtotal</span><span className="font-mono">{formatCOP(cotizacion.subtotal)}</span></div>
             {cotizacion.descuento_pct > 0 && <div className="flex justify-between text-sm text-muted-foreground"><span>Descuento ({cotizacion.descuento_pct}%)</span><span className="font-mono">-{formatCOP(cotizacion.subtotal * cotizacion.descuento_pct / 100)}</span></div>}
-            <div className="flex justify-between text-sm"><span>IVA ({cotizacion.iva_pct}%)</span><span className="font-mono">{formatCOP(cotizacion.total - cotizacion.subtotal * (1 - cotizacion.descuento_pct / 100))}</span></div>
+            {cotizacion.iva_pct > 0 && <div className="flex justify-between text-sm"><span>IVA ({cotizacion.iva_pct}%)</span><span className="font-mono">{formatCOP(cotizacion.total - cotizacion.subtotal * (1 - cotizacion.descuento_pct / 100))}</span></div>}
             <Separator />
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
               <span className="text-lg font-bold">Total</span>

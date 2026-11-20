@@ -198,14 +198,14 @@ export function tablaItemsHtml(items: CotizacionItem[], { conNotas = false } = {
   </table>`
 }
 
-/** Subtotal, descuento, IVA y total de la cotización. */
+/** Subtotal, descuento, IVA y total de la cotización. Sin IVA (0%), esa fila no sale. */
 export function totalesFilasHtml(cot: Pick<Cotizacion, 'subtotal' | 'descuento_pct' | 'iva_pct' | 'total'>) {
   const descuentoValor = cot.subtotal * (cot.descuento_pct / 100)
   const ivaValor = cot.total - cot.subtotal * (1 - cot.descuento_pct / 100)
   return `
     <div class="row"><span>Subtotal</span><span>${formatCOP(cot.subtotal)}</span></div>
     ${cot.descuento_pct > 0 ? `<div class="row"><span>Descuento (${cot.descuento_pct}%)</span><span>-${formatCOP(descuentoValor)}</span></div>` : ''}
-    <div class="row"><span>IVA (${cot.iva_pct}%)</span><span>${formatCOP(ivaValor)}</span></div>
+    ${cot.iva_pct > 0 ? `<div class="row"><span>IVA (${cot.iva_pct}%)</span><span>${formatCOP(ivaValor)}</span></div>` : ''}
     <div class="row total"><span>Total</span><span>${formatCOP(cot.total)}</span></div>`
 }
 
@@ -278,7 +278,7 @@ export function htmlCotizacion(
         <dt>Estado</dt><dd>${ESTADOS_COTIZACION_CONFIG[cot.estado].label}</dd>
         <dt>Emisión</dt><dd>${formatFecha(cot.fecha_emision)}</dd>
         <dt>Vence</dt><dd>${cot.fecha_vencimiento ? formatFecha(cot.fecha_vencimiento) : '—'}</dd>
-        <dt>IVA</dt><dd>${cot.iva_pct}%</dd>
+        ${cot.iva_pct > 0 ? `<dt>IVA</dt><dd>${cot.iva_pct}%</dd>` : ''}
       </dl>
     </div>
   </div>
@@ -400,7 +400,7 @@ function htmlEnvioEnTarjetas(
         ${variasOpciones ? `<div class="dif">${
           o.total - minimo > 0.5 ? `+ ${formatCOP(o.total - minimo)} frente a la más económica` : 'La más económica'
         }</div>` : ''}
-        <div class="num">Opción ${escapar(codigo(cat, o))} · ${escapar(o.numero)} · IVA ${o.iva_pct}% incluido</div>
+        <div class="num">Opción ${escapar(codigo(cat, o))} · ${escapar(o.numero)}${o.iva_pct > 0 ? ` · IVA ${o.iva_pct}% incluido` : ''}</div>
       </div>`).join('')}
     </div>
   </div>`

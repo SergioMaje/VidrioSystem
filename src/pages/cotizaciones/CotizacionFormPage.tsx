@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ConfiguradorProducto, type EdicionItem } from '@/pages/productos/ConfiguradorProducto'
 import { ItemLibreForm } from '@/pages/productos/ItemLibreForm'
@@ -10,11 +10,14 @@ import {
   useCambiarEstadoCotizacion, useCategoriasDelEnvio,
 } from '@/hooks/useCotizaciones'
 import { useReferencias } from '@/hooks/useReferencias'
+import { useConfiguracionEmpresa } from '@/hooks/useConfiguracionEmpresa'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { useCambiosSinGuardar } from '@/providers/cambiosSinGuardar'
 import { PageLoader } from '@/components/shared/LoadingSpinner'
-import { calcularTotales, codigoOpcion, etiquetaDeIndice, MAX_OPCIONES, numeroBaseEnvio } from '@/lib/cotizaciones'
+import {
+  calcularTotales, codigoOpcion, etiquetaDeIndice, IVA_PCT_DEFECTO, ivaPorDefecto, MAX_OPCIONES, numeroBaseEnvio,
+} from '@/lib/cotizaciones'
 import { hoyBogota, mensajeError, sumarDias } from '@/lib/utils'
 
 type ModoItem = 'referencia' | 'libre'
@@ -35,7 +38,7 @@ const opcionVacia = (categoria: number | null = null, base?: Pick<OpcionForm, 'd
   nombre: '',
   items: [],
   descuentoPct: base?.descuentoPct ?? 0,
-  ivaPct: base?.ivaPct ?? 19,
+  ivaPct: base?.ivaPct ?? IVA_PCT_DEFECTO,
   categoria,
   recomendada: false,
 })
@@ -65,6 +68,9 @@ export function CotizacionFormPage() {
   const { data: cotizacionExistente, isLoading: cargandoCotizacion } = useCotizacion(id || '')
   const { data: envioOrigen, isLoading: cargandoOrigen } = useCotizacion(modoAgregar ? agregarA! : '')
   const { data: referencias, isLoading: cargandoReferencias } = useReferencias()
+  // IVA con el que arranca una opción nueva: el de la vidriería, o 0 si no cobra IVA.
+  const { data: config, isLoading: cargandoConfig } = useConfiguracionEmpresa()
+  const ivaDefecto = ivaPorDefecto(config)
   const crearCotizacion = useCrearCotizacion()
   const actualizarCotizacion = useActualizarCotizacion()
   const agregarOpcion = useAgregarOpcion()
@@ -138,6 +144,18 @@ export function CotizacionFormPage() {
     }
   }, [modoAgregar, envioOrigen])
 
+  // La configuración llega después del primer render: el IVA inicial de una
+  // cotización nueva se ajusta una sola vez. Editar no lo toca (la cotización
+  // tiene el suyo) y una opción nueva de un envío por categorías tampoco
+  // (lleva el del envío).
+  const ivaAplicado = useRef(false)
+  useEffect(() => {
+    if (ivaAplicado.current || cargandoConfig || modoEdicion) return
+    if (modoAgregar && (!envioOrigen || envioOrigen.categoria_id)) return
+    ivaAplicado.current = true
+    setOpciones((prev) => prev.map((o) => ({ ...o, ivaPct: ivaDefecto })))
+  }, [cargandoConfig, modoEdicion, modoAgregar, envioOrigen, ivaDefecto])
+
   // Cambios sin guardar: el estado actual comparado con el que había al cargar
   // (la cotización existente, o el formulario vacío). Lo usan los atajos de
   // teclado para preguntar antes de salir.
@@ -151,11 +169,14 @@ export function CotizacionFormPage() {
         categorias: [],
         opciones: [envioOrigen.categoria_id
           ? opcionVacia(null, { descuentoPct: envioOrigen.descuento_pct, ivaPct: envioOrigen.iva_pct })
-          : opcionVacia()],
+          : opcionVacia(null, { descuentoPct: 0, ivaPct: ivaDefecto })],
       })
     }
     if (!modoEdicion) {
-      return JSON.stringify({ clienteId: '', fechaVencimiento: fechaInicial, notas: '', categorias: [], opciones: [opcionVacia()] })
+      return JSON.stringify({
+        clienteId: '', fechaVencimiento: fechaInicial, notas: '', categorias: [],
+        opciones: [opcionVacia(null, { descuentoPct: 0, ivaPct: ivaDefecto })],
+      })
     }
     if (!cotizacionExistente) return null
     return JSON.stringify({
@@ -173,7 +194,7 @@ export function CotizacionFormPage() {
         items: cotizacionExistente.items.map(({ id, cotizacion_id, ...rest }) => rest),
       }],
     })
-  }, [modoAgregar, envioOrigen, modoEdicion, cotizacionExistente, fechaInicial])
+  }, [modoAgregar, envioOrigen, modoEdicion, cotizacionExistente, fechaInicial, ivaDefecto])
   const actual = JSON.stringify({ clienteId, fechaVencimiento, notas, categorias, opciones })
   useCambiosSinGuardar(inicial !== null && actual !== inicial)
 
@@ -426,7 +447,7 @@ export function CotizacionFormPage() {
     }
   }
 
-  if ((modoEdicion && cargandoCotizacion) || (modoAgregar && cargandoOrigen)) {
+  if ((modoEdicion && cargandoCotizacion) || (modoAgregar && cargandoOrigen) || (!modoEdicion && cargandoConfig)) {
     return <PageLoader />
   }
 
@@ -492,6 +513,8 @@ export function CotizacionFormPage() {
         onDescuentoChange={(v) => cambiarDescuentoIva('descuentoPct', v)}
         ivaPct={opcion.ivaPct}
         onIvaChange={(v) => cambiarDescuentoIva('ivaPct', v)}
+        // Sin IVA en la vidriería no se ofrece, salvo que la cotización ya lo tenga (para poder quitarlo).
+        mostrarIva={(config?.usa_iva ?? true) || opcion.ivaPct > 0}
         onGuardar={handleGuardar}
         isPending={crearCotizacion.isPending || actualizarCotizacion.isPending || agregarOpcion.isPending || cambiarEstado.isPending}
         modoEdicion={modoEdicion}
