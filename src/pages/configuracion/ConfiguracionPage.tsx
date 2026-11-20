@@ -9,6 +9,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { CuentaEmpresaFormDialog } from './CuentaEmpresaFormDialog'
 import { DatosEmpresaCard } from './DatosEmpresaCard'
 import { FinancierasCard } from './FinancierasCard'
+import { TiposCategoriaCard } from './TiposCategoriaCard'
 import { useCuentasPagoEmpresa, useEliminarCuentaPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
@@ -126,6 +127,8 @@ export function ConfiguracionPage() {
       </Card>
 
       <FinancierasCard esAdmin={esAdmin} />
+
+      <TiposCategoriaCard esAdmin={esAdmin} />
 
       <CuentaEmpresaFormDialog open={formOpen} onOpenChange={setFormOpen} cuenta={editCuenta} />
 
