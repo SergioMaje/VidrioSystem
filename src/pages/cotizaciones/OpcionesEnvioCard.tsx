@@ -1,19 +1,32 @@
+import { useState } from 'react'
 import { Copy, Layers, Plus, Star, Trash2, Ungroup } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { IconoTipoCategoria } from '@/components/shared/IconoTipoCategoria'
 import {
-  MAX_OPCIONES, rangoTotales, TIPO_CATEGORIA_CONFIG, TIPOS_CATEGORIA, type TipoCategoria,
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import { IconoTipoCategoria } from '@/components/shared/IconoTipoCategoria'
+import { useTiposCategoria } from '@/hooks/useTiposCategoria'
+import {
+  estiloCategoria, MAX_OPCIONES, rangoTotales, TIPO_CATEGORIA_CONFIG, TIPOS_CATEGORIA, type TipoCategoria,
 } from '@/lib/cotizaciones'
 import { cn, formatCOP } from '@/lib/utils'
+import type { TipoCategoriaEnvio } from '@/types/database'
+import { TipoCategoriaDialog } from './TipoCategoriaDialog'
 
 /** Una parte del envío mientras se arma (p. ej. "Puerta principal"). */
 export interface CategoriaForm {
   nombre: string
   tipo: TipoCategoria
+  /** Tipo propio de la vidriería; si está, manda sobre `tipo`. */
+  tipoPersonalizadoId?: string | null
 }
+
+/** Valor del desplegable: los tipos fijos y los propios comparten la lista. */
+const NUEVO_TIPO = 'nuevo'
+const valorTipo = (cat: CategoriaForm) =>
+  cat.tipoPersonalizadoId ? `propio:${cat.tipoPersonalizadoId}` : `fijo:${cat.tipo}`
 
 /** Lo que se muestra de cada opción del envío en la tarjeta. */
 export interface ResumenOpcion {
@@ -61,6 +74,9 @@ export function OpcionesEnvioCard({
   onEliminarCategoria,
   onCambiarCategoria,
 }: OpcionesEnvioCardProps) {
+  const { data: tiposPropios } = useTiposCategoria()
+  // Índice de la categoría que pidió "Nuevo tipo…": al crearlo queda elegido en ella.
+  const [creandoTipoPara, setCreandoTipoPara] = useState<number | null>(null)
   const porCategoria = categorias.length > 0
   const actual = opciones[activa]
   const variasOpciones = opciones.length > 1
@@ -93,6 +109,27 @@ export function OpcionesEnvioCard({
     </button>
   )
 
+  /** La categoría con su tipo propio resuelto (nombre y color vigentes). */
+  const conTipo = (cat: CategoriaForm) => {
+    const propio = cat.tipoPersonalizadoId ? tiposPropios?.find((t) => t.id === cat.tipoPersonalizadoId) : null
+    return { tipo: cat.tipo, tipo_personalizado: propio ?? null }
+  }
+
+  const elegirTipo = (c: number, valor: string) => {
+    if (valor === NUEVO_TIPO) {
+      setCreandoTipoPara(c)
+      return
+    }
+    const [clase, id] = valor.split(':')
+    onCambiarCategoria(c, clase === 'propio'
+      ? { tipo: 'otro', tipoPersonalizadoId: id }
+      : { tipo: id as TipoCategoria, tipoPersonalizadoId: null })
+  }
+
+  const alCrearTipo = (tipo: TipoCategoriaEnvio) => {
+    if (creandoTipoPara !== null) onCambiarCategoria(creandoTipoPara, { tipo: 'otro', tipoPersonalizadoId: tipo.id })
+  }
+
   const rango = porCategoria
     ? rangoTotales(categorias.map((_, c) => opciones.filter((o) => o.categoria === c && o.cantidadItems > 0).map((o) => o.total)))
     : null
@@ -116,7 +153,7 @@ export function OpcionesEnvioCard({
         {porCategoria ? (
           <div className="space-y-2.5">
             {categorias.map((cat, c) => {
-              const cfg = TIPO_CATEGORIA_CONFIG[cat.tipo]
+              const cfg = estiloCategoria(conTipo(cat))
               const deEsta = opciones.map((o, idx) => [o, idx] as const).filter(([o]) => o.categoria === c)
               return (
                 <div
@@ -134,19 +171,49 @@ export function OpcionesEnvioCard({
                       aria-label={`Nombre de la categoría ${c + 1}`}
                       className={cn('h-8 flex-1 bg-background text-sm', !cat.nombre.trim() && 'border-dashed')}
                     />
-                    <Select value={cat.tipo} onValueChange={(v) => onCambiarCategoria(c, { tipo: v as TipoCategoria })}>
-                      <SelectTrigger className="h-8 w-[118px] bg-background text-xs" aria-label="Tipo de la categoría">
-                        <SelectValue />
+                    <Select value={valorTipo(cat)} onValueChange={(v) => elegirTipo(c, v)}>
+                      <SelectTrigger className="h-8 w-[132px] bg-background text-xs" aria-label="Tipo de la categoría">
+                        <SelectValue>
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <IconoTipoCategoria categoria={conTipo(cat)} className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{cfg.label}</span>
+                          </span>
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {TIPOS_CATEGORIA.map((t) => (
-                          <SelectItem key={t} value={t}>
+                          <SelectItem key={t} value={`fijo:${t}`}>
                             <span className="flex items-center gap-1.5">
-                              <IconoTipoCategoria tipo={t} className="h-3.5 w-3.5" />
+                              <IconoTipoCategoria categoria={{ tipo: t }} className="h-3.5 w-3.5" />
                               {TIPO_CATEGORIA_CONFIG[t].label}
                             </span>
                           </SelectItem>
                         ))}
+                        {tiposPropios?.some((t) => t.activo || t.id === cat.tipoPersonalizadoId) && (
+                          <>
+                            <SelectSeparator />
+                            <SelectGroup>
+                              <SelectLabel className="text-xs text-muted-foreground">De tu vidriería</SelectLabel>
+                              {tiposPropios
+                                .filter((t) => t.activo || t.id === cat.tipoPersonalizadoId)
+                                .map((t) => (
+                                  <SelectItem key={t.id} value={`propio:${t.id}`}>
+                                    <span className="flex items-center gap-1.5">
+                                      <IconoTipoCategoria categoria={{ tipo: 'otro', tipo_personalizado: t }} className="h-3.5 w-3.5" />
+                                      {t.nombre}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                            </SelectGroup>
+                          </>
+                        )}
+                        <SelectSeparator />
+                        <SelectItem value={NUEVO_TIPO}>
+                          <span className="flex items-center gap-1.5 text-primary">
+                            <Plus className="h-3.5 w-3.5" />
+                            Nuevo tipo…
+                          </span>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     {categorias.length > 1 && (
@@ -262,6 +329,12 @@ export function OpcionesEnvioCard({
           </p>
         )}
       </CardContent>
+
+      <TipoCategoriaDialog
+        open={creandoTipoPara !== null}
+        onOpenChange={(abierto) => !abierto && setCreandoTipoPara(null)}
+        onCreado={alCrearTipo}
+      />
     </Card>
   )
 }

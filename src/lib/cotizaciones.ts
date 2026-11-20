@@ -78,6 +78,47 @@ export const TIPO_CATEGORIA_CONFIG: Record<TipoCategoria, { label: string; color
 export const TIPOS_CATEGORIA = Object.keys(TIPO_CATEGORIA_CONFIG) as TipoCategoria[]
 
 /**
+ * Colores para los tipos propios de la vidriería: suaves, distintos de los fijos
+ * y legibles impresos. `fondo` es el tinte claro de la franja.
+ */
+export const PALETA_TIPOS_CATEGORIA: { color: string; fondo: string }[] = [
+  { color: '#15803d', fondo: '#dcfce7' },
+  { color: '#0369a1', fondo: '#e0f2fe' },
+  { color: '#be123c', fondo: '#ffe4e6' },
+  { color: '#c2410c', fondo: '#ffedd5' },
+  { color: '#a16207', fondo: '#fef9c3' },
+  { color: '#4338ca', fondo: '#e0e7ff' },
+  { color: '#a21caf', fondo: '#fae8ff' },
+  { color: '#0e7490', fondo: '#cffafe' },
+  { color: '#4d7c0f', fondo: '#ecfccb' },
+  { color: '#57534e', fondo: '#f5f5f4' },
+]
+
+/** Fondo claro para un color: el de la paleta o, si no está, el color mezclado con 85 % de blanco. */
+export function fondoDeColor(color: string) {
+  const dePaleta = PALETA_TIPOS_CATEGORIA.find((p) => p.color === color.toLowerCase())
+  if (dePaleta) return dePaleta.fondo
+  const m = color.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i)
+  if (!m) return '#f3f4f6'
+  const claro = (h: string) => Math.round(parseInt(h, 16) * 0.15 + 255 * 0.85).toString(16).padStart(2, '0')
+  return `#${claro(m[1])}${claro(m[2])}${claro(m[3])}`
+}
+
+/** Lo mínimo de una categoría para pintarla: su tipo fijo y, si tiene, el propio. */
+export type CategoriaConTipo = Pick<EnvioCategoria, 'tipo'> & {
+  tipo_personalizado?: { nombre: string; color: string } | null
+}
+
+/** Nombre y colores de una categoría; el tipo propio manda sobre el fijo. */
+export function estiloCategoria(cat: CategoriaConTipo) {
+  if (cat.tipo_personalizado) {
+    const { nombre, color } = cat.tipo_personalizado
+    return { label: nombre, color, fondo: fondoDeColor(color), personalizado: true }
+  }
+  return { ...TIPO_CATEGORIA_CONFIG[cat.tipo], personalizado: false }
+}
+
+/**
  * Lo que puede costar un envío por categorías si el cliente toma todas las
  * partes: la suma de la opción más barata de cada una y la de la más cara.
  */

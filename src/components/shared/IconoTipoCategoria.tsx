@@ -1,5 +1,5 @@
-import { AppWindow, Columns2, DoorClosed, FlipHorizontal2, Package, type LucideProps } from 'lucide-react'
-import { TIPO_CATEGORIA_CONFIG, type TipoCategoria } from '@/lib/cotizaciones'
+import { AppWindow, Columns2, DoorClosed, FlipHorizontal2, Package, Tag, type LucideProps } from 'lucide-react'
+import { estiloCategoria, type CategoriaConTipo, type TipoCategoria } from '@/lib/cotizaciones'
 
 const ICONOS: Record<TipoCategoria, React.ComponentType<LucideProps>> = {
   puerta: DoorClosed,
@@ -9,8 +9,12 @@ const ICONOS: Record<TipoCategoria, React.ComponentType<LucideProps>> = {
   otro: Package,
 }
 
-/** Ícono de una categoría del envío, en el color de su tipo. */
-export function IconoTipoCategoria({ tipo, ...props }: { tipo: TipoCategoria } & LucideProps) {
-  const Icono = ICONOS[tipo]
-  return <Icono color={TIPO_CATEGORIA_CONFIG[tipo].color} aria-hidden {...props} />
+/**
+ * Ícono de una categoría del envío, en el color de su tipo. Un tipo propio de
+ * la vidriería usa una etiqueta en su color.
+ */
+export function IconoTipoCategoria({ categoria, ...props }: { categoria: CategoriaConTipo } & LucideProps) {
+  const estilo = estiloCategoria(categoria)
+  const Icono = estilo.personalizado ? Tag : ICONOS[categoria.tipo]
+  return <Icono color={estilo.color} aria-hidden {...props} />
 }

@@ -7,7 +7,7 @@ import { useConsolidarEleccion } from '@/hooks/useCotizaciones'
 import { useConfiguracionEmpresa } from '@/hooks/useConfiguracionEmpresa'
 import { useToast } from '@/hooks/useToast'
 import { textoAnticipoSolicitado } from '@/lib/pagos'
-import { codigoOpcion, ESTADOS_COTIZACION_CONFIG, TIPO_CATEGORIA_CONFIG } from '@/lib/cotizaciones'
+import { codigoOpcion, ESTADOS_COTIZACION_CONFIG, estiloCategoria } from '@/lib/cotizaciones'
 import { cn, formatCOP, mensajeError } from '@/lib/utils'
 import type { Cotizacion, EnvioCategoria } from '@/types/database'
 
@@ -96,13 +96,13 @@ export function ElegirOpcionesDialog({
 
         <div className="space-y-4">
           {categorias.map((cat) => {
-            const cfg = TIPO_CATEGORIA_CONFIG[cat.tipo]
+            const cfg = estiloCategoria(cat)
             const deEsta = opciones.filter((o) => o.categoria_id === cat.id && o.estado !== 'anulada')
             const actual = eleccion[cat.id]
             return (
               <div key={cat.id} role="radiogroup" aria-label={cat.nombre} className="space-y-1.5">
                 <p className="flex items-center gap-2 border-l-4 pl-2 text-sm font-semibold" style={{ borderLeftColor: cfg.color }}>
-                  <IconoTipoCategoria tipo={cat.tipo} className="h-4 w-4" />
+                  <IconoTipoCategoria categoria={cat} className="h-4 w-4" />
                   {cat.nombre}
                 </p>
                 {deEsta.map((o) => {

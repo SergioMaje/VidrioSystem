@@ -70,7 +70,7 @@ export async function obtenerDatosRecibo(ventaId: string): Promise<DatosRecibo> 
       // Igual que useEleccionDelPedido: vacío si no es un pedido armado por categorías.
       supabase
         .from('cotizaciones')
-        .select('id, numero, estado, opcion_etiqueta, opcion_nombre, total, categoria_id, categoria:envio_categorias(nombre, tipo, orden)')
+        .select('id, numero, estado, opcion_etiqueta, opcion_nombre, total, categoria_id, categoria:envio_categorias(nombre, tipo, orden, tipo_personalizado:tipos_categoria_envio(nombre, color))')
         .eq('pedido_id', v.cotizacion_id)
         .eq('estado', 'aprobada'),
       // La orden viva; si solo hay una cancelada, esa.

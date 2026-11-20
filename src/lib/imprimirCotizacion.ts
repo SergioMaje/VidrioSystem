@@ -2,7 +2,7 @@ import { escapar, membreteCss, membreteHtml } from '@/lib/documentos'
 import { ANCHO_CARTA_PX, descargarBlob, htmlAPng } from '@/lib/htmlAImagen'
 import { textoAnticipoSolicitado } from '@/lib/pagos'
 import {
-  codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, rangoTotales, TIPO_CATEGORIA_CONFIG, textoOpcion,
+  codigoOpcion, ESTADOS_COTIZACION_CONFIG, numeroBaseEnvio, estiloCategoria, rangoTotales, textoOpcion,
   type TipoCategoria,
 } from '@/lib/cotizaciones'
 import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
@@ -327,15 +327,23 @@ const TRAZOS_TIPO: Record<TipoCategoria, string> = {
   otro: '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
 }
 
-const iconoTipo = (tipo: TipoCategoria) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="${TIPO_CATEGORIA_CONFIG[tipo].color}" stroke-width="1.8" ` +
-  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TRAZOS_TIPO[tipo]}</svg>`
+/** Etiqueta para los tipos propios de la vidriería (como el ícono Tag de la app). */
+const TRAZO_PROPIO =
+  '<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/>' +
+  '<circle cx="7.5" cy="7.5" r="1"/>'
+
+const iconoTipo = (cat: EnvioCategoria) => {
+  const estilo = estiloCategoria(cat)
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="${estilo.color}" stroke-width="1.8" ` +
+    `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${estilo.personalizado ? TRAZO_PROPIO : TRAZOS_TIPO[cat.tipo]}</svg>`
+}
 
 /** Color y fondo del tipo; un envío sin categorías va en gris. */
-const coloresParte = (cat: EnvioCategoria | null) =>
-  cat
-    ? `--c:${TIPO_CATEGORIA_CONFIG[cat.tipo].color};--f:${TIPO_CATEGORIA_CONFIG[cat.tipo].fondo}`
-    : '--c:#374151;--f:#f3f4f6'
+const coloresParte = (cat: EnvioCategoria | null) => {
+  if (!cat) return '--c:#374151;--f:#f3f4f6'
+  const { color, fondo } = estiloCategoria(cat)
+  return `--c:${color};--f:${fondo}`
+}
 
 /**
  * Todos los productos de la opción: descripción completa, medidas, cantidad y
@@ -379,7 +387,7 @@ function htmlEnvioEnTarjetas(
     const sub = variasOpciones ? `${deEsta.length} opciones · elija una` : '1 opción'
     return `
   <div class="cat" style="${coloresParte(cat)}">
-    <div class="cat-cab">${cat ? `${iconoTipo(cat.tipo)}${escapar(cat.nombre)}` : 'Opciones'}<span class="sub">${sub}</span></div>
+    <div class="cat-cab">${cat ? `${iconoTipo(cat)}${escapar(cat.nombre)}` : 'Opciones'}<span class="sub">${sub}</span></div>
     <div class="tarjetas">${deEsta.map((o) => `
       <div class="tarjeta${o.recomendada ? ' reco' : ''}">
         ${o.recomendada ? '<span class="cinta">★ Recomendada</span>' : ''}

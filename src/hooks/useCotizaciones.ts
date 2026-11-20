@@ -94,7 +94,12 @@ export type OpcionInput = {
 }
 
 /** Una parte del envío (p. ej. "Puerta principal"). */
-export type CategoriaInput = { nombre: string; tipo: TipoCategoria }
+export type CategoriaInput = {
+  nombre: string
+  tipo: TipoCategoria
+  /** Tipo propio de la vidriería; si viene, se guarda `tipo = 'otro'`. */
+  tipoPersonalizadoId?: string | null
+}
 
 /**
  * Cliente, vencimiento y notas son del envío; ítems, descuento e IVA, de cada
@@ -188,7 +193,13 @@ export function useCrearCotizacion() {
       if (porCategoria) {
         const { data, error } = await supabase
           .from('envio_categorias')
-          .insert(categorias.map((c, orden) => ({ grupo_id: grupoId, nombre: c.nombre.trim(), tipo: c.tipo, orden })))
+          .insert(categorias.map((c, orden) => ({
+            grupo_id: grupoId,
+            nombre: c.nombre.trim(),
+            tipo: c.tipoPersonalizadoId ? 'otro' : c.tipo,
+            tipo_personalizado_id: c.tipoPersonalizadoId ?? null,
+            orden,
+          })))
           .select('id, orden')
         if (error) throw error
         const porOrden = new Map((data as Pick<EnvioCategoria, 'id' | 'orden'>[]).map((c) => [c.orden, c.id]))
@@ -259,7 +270,7 @@ export function useCategoriasDelEnvio(grupoId: string | null | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('envio_categorias')
-        .select('*')
+        .select('*, tipo_personalizado:tipos_categoria_envio(nombre, color)')
         .eq('grupo_id', grupoId!)
         .order('orden')
       if (error) throw error
@@ -272,7 +283,7 @@ export function useCategoriasDelEnvio(grupoId: string | null | undefined) {
 export type OpcionElegida = Pick<
   Cotizacion,
   'id' | 'numero' | 'estado' | 'opcion_etiqueta' | 'opcion_nombre' | 'total' | 'categoria_id'
-> & { categoria: Pick<EnvioCategoria, 'nombre' | 'tipo' | 'orden'> | null }
+> & { categoria: Pick<EnvioCategoria, 'nombre' | 'tipo' | 'orden' | 'tipo_personalizado'> | null }
 
 /**
  * Las opciones que el cliente eligió y que forman el pedido, con su categoría.
@@ -284,7 +295,7 @@ export function useEleccionDelPedido(pedidoId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('cotizaciones')
-        .select('id, numero, estado, opcion_etiqueta, opcion_nombre, total, categoria_id, categoria:envio_categorias(nombre, tipo, orden)')
+        .select('id, numero, estado, opcion_etiqueta, opcion_nombre, total, categoria_id, categoria:envio_categorias(nombre, tipo, orden, tipo_personalizado:tipos_categoria_envio(nombre, color))')
         .eq('pedido_id', pedidoId!)
         .eq('estado', 'aprobada')
       if (error) throw error

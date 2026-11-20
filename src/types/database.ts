@@ -223,6 +223,21 @@ export interface EnvioCategoria {
   tipo: TipoProducto['nombre']
   /** Desde 0; el código de la opción usa orden + 1 (1A, 2B…). */
   orden: number
+  /** Tipo propio de la vidriería; si está, `tipo` es 'otro' y el ícono y el color salen de él. */
+  tipo_personalizado_id: string | null
+  /** El tipo propio, cuando la consulta lo trae con el join. */
+  tipo_personalizado?: Pick<TipoCategoriaEnvio, 'nombre' | 'color'> | null
+  created_at: string
+}
+
+/** Tipo de categoría de envío creado por la vidriería ("Baño", "Fachada"). */
+export interface TipoCategoriaEnvio {
+  id: string
+  nombre: string
+  /** Hex minúscula, #rrggbb. */
+  color: string
+  /** Archivado = false: no se ofrece en envíos nuevos, pero los viejos lo siguen mostrando. */
+  activo: boolean
   created_at: string
 }
 
