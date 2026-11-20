@@ -5,7 +5,10 @@ import { ItemLibreForm } from '@/pages/productos/ItemLibreForm'
 import { PanelCotizacion, type ItemCotizacion } from '@/pages/productos/PanelCotizacion'
 import { OpcionesEnvioCard, type CategoriaForm, type ResumenOpcion } from './OpcionesEnvioCard'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { useCrearCotizacion, useCotizacion, useActualizarCotizacion, useAgregarOpcion } from '@/hooks/useCotizaciones'
+import {
+  useCrearCotizacion, useCotizacion, useActualizarCotizacion, useAgregarOpcion,
+  useCambiarEstadoCotizacion, useCategoriasDelEnvio,
+} from '@/hooks/useCotizaciones'
 import { useReferencias } from '@/hooks/useReferencias'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
@@ -65,6 +68,13 @@ export function CotizacionFormPage() {
   const crearCotizacion = useCrearCotizacion()
   const actualizarCotizacion = useActualizarCotizacion()
   const agregarOpcion = useAgregarOpcion()
+  const cambiarEstado = useCambiarEstadoCotizacion()
+  // Al editar una opción de un envío por categorías, su categoría da el código
+  // completo (1A, 2B) y el nombre que se muestra en el encabezado.
+  const { data: categoriasEnvio } = useCategoriasDelEnvio(
+    modoEdicion && cotizacionExistente?.categoria_id ? cotizacionExistente.grupo_id : null
+  )
+  const categoriaExistente = categoriasEnvio?.find((c) => c.id === cotizacionExistente?.categoria_id)
 
   const [clienteId, setClienteId] = useState('')
   const [fechaInicial] = useState(vencimientoPorDefecto)
@@ -341,6 +351,7 @@ export function CotizacionFormPage() {
         // Editar los ítems o precios invalida lo que ya vio el cliente: la cotización
         // vuelve a borrador y hay que reenviarla antes de poder cobrar el anticipo.
         const revierteABorrador = cotizacionExistente.estado === 'enviada'
+        const grupoId = cotizacionExistente.grupo_id
         await actualizarCotizacion.mutateAsync({
           id,
           cliente_id: clienteId,
@@ -349,13 +360,20 @@ export function CotizacionFormPage() {
           descuento_pct: opcion.descuentoPct,
           iva_pct: opcion.ivaPct,
           notas: notas || undefined,
-          opcion_nombre: cotizacionExistente.grupo_id ? opcion.nombre : undefined,
-          recomendada: cotizacionExistente.grupo_id ? opcion.recomendada : undefined,
+          opcion_nombre: grupoId ? opcion.nombre : undefined,
+          recomendada: grupoId ? opcion.recomendada : undefined,
           items: opcion.items,
         })
+        // El envío se manda completo: si una opción vuelve a borrador, las demás
+        // también, para que "Marcar enviada" lo reenvíe entero.
+        if (revierteABorrador && grupoId) {
+          await cambiarEstado.mutateAsync({ id, estado: 'borrador', grupoId })
+        }
         toast({
           title: revierteABorrador
-            ? 'Cotización actualizada — vuelve a borrador, márcala como enviada de nuevo'
+            ? grupoId
+              ? 'Opción actualizada — el envío vuelve a borrador, márcalo como enviado de nuevo'
+              : 'Cotización actualizada — vuelve a borrador, márcala como enviada de nuevo'
             : 'Cotización actualizada',
           variant: 'success',
         })
@@ -423,12 +441,18 @@ export function CotizacionFormPage() {
   // Encabezado de la opción. Al editar una opción de un envío, o al agregar una
   // nueva, se trabaja una sola.
   const trabajaUna = modoEdicion || modoAgregar
+  const etiquetaExistente = cotizacionExistente?.opcion_etiqueta ?? null
   const etiquetaOpcion = modoEdicion
-    ? cotizacionExistente?.opcion_etiqueta ?? null
+    ? etiquetaExistente && categoriaExistente
+      ? codigoOpcion(categoriaExistente.orden, etiquetaExistente)
+      : etiquetaExistente
     : modoAgregar
       ? 'nueva'
       : opciones.length > 1 || porCategoria ? codigoDe(activa) : null
   const esOpcionDeEnvio = modoEdicion ? !!cotizacionExistente?.grupo_id : modoAgregar || opciones.length > 1 || porCategoria
+  // Cliente, vencimiento y notas son de todo el envío: no se cambian desde una
+  // sola opción (al agregar una, ni al editar una que ya es parte de un envío).
+  const datosEnvioBloqueados = modoAgregar || (modoEdicion && !!cotizacionExistente?.grupo_id)
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
@@ -469,7 +493,7 @@ export function CotizacionFormPage() {
         ivaPct={opcion.ivaPct}
         onIvaChange={(v) => cambiarDescuentoIva('ivaPct', v)}
         onGuardar={handleGuardar}
-        isPending={crearCotizacion.isPending || actualizarCotizacion.isPending || agregarOpcion.isPending}
+        isPending={crearCotizacion.isPending || actualizarCotizacion.isPending || agregarOpcion.isPending || cambiarEstado.isPending}
         modoEdicion={modoEdicion}
         editandoIdx={edicionItem?.idx ?? null}
         onEditarItem={handleEditarItem}
@@ -490,6 +514,7 @@ export function CotizacionFormPage() {
           />
         )}
         etiquetaOpcion={etiquetaOpcion}
+        categoriaOpcion={modoEdicion ? categoriaExistente?.nombre : undefined}
         pideNombre={esOpcionDeEnvio}
         cantidadOpciones={trabajaUna ? 1 : opciones.length}
         recomendada={opcion.recomendada}
@@ -497,7 +522,7 @@ export function CotizacionFormPage() {
         descuentoDelEnvio={opcionSueltaConCategoria ? 'bloqueado' : porCategoria ? 'editable' : null}
         nombreOpcion={opcion.nombre}
         onNombreOpcionChange={(v) => actualizarActiva((o) => ({ ...o, nombre: v }))}
-        datosEnvioBloqueados={modoAgregar}
+        datosEnvioBloqueados={datosEnvioBloqueados}
       />
     </div>
   )

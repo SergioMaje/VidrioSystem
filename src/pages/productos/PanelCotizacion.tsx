@@ -41,6 +41,8 @@ interface PanelCotizacionProps {
   tarjetaOpciones?: ReactNode
   /** Código de la opción en pantalla ("B", "2B"); null en una cotización suelta. */
   etiquetaOpcion?: string | null
+  /** Nombre de la categoría de la opción en pantalla, al editar una de un envío por categorías. */
+  categoriaOpcion?: string
   /** Pide el nombre de la opción: hay varias, o es una opción de un envío existente. */
   pideNombre?: boolean
   /** Opciones que se guardan; cambia el texto del botón Enviar. */
@@ -79,6 +81,7 @@ export function PanelCotizacion({
   onEditarItem,
   tarjetaOpciones,
   etiquetaOpcion = null,
+  categoriaOpcion,
   pideNombre = false,
   cantidadOpciones = 1,
   recomendada = false,
@@ -175,6 +178,9 @@ export function PanelCotizacion({
               : 'Ítems'}
             {items.length > 0 && <span className="ml-2 text-sm font-normal text-muted-foreground">({items.length})</span>}
           </CardTitle>
+          {categoriaOpcion && (
+            <p className="text-xs text-muted-foreground">Categoría: {categoriaOpcion}</p>
+          )}
         </CardHeader>
         <CardContent className="space-y-3">
           {pideNombre && onNombreOpcionChange && (
