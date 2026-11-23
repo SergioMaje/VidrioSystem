@@ -261,7 +261,7 @@ select pg_temp.afirmar(
 select pg_temp.afirmar(
   (select string_agg(c.numero, ',' order by c.opcion_etiqueta)
      from public.cotizaciones c join public.envio_categorias e on e.id = c.categoria_id
-    where e.nombre = 'Baño')
+    where e.grupo_id = pg_temp.id('g3') and e.nombre = 'Baño')
   = regexp_replace((pg_temp.cot('P1')).numero, '-1A$', '-3A') || ',' || regexp_replace((pg_temp.cot('P1')).numero, '-1A$', '-3B'),
   'las opciones del baño son 3A y 3B');
 select pg_temp.afirmar(
