@@ -6,6 +6,12 @@ import type { CashRegisterSession, TipoAnulacionCotizacion, Venta } from '@/type
 /** El mismo mínimo que exigen `anular_venta`, `anular_cotizacion` y el check de la tabla. */
 export const MOTIVO_ANULACION_MIN = 10
 
+/**
+ * Motivo con el que `actualizar_envio` anula una opción que se quitó al editar
+ * el envío (migración 20261123120000). Debe coincidir con el de la base.
+ */
+export const MOTIVO_OPCION_QUITADA = 'Opción quitada al editar el envío'
+
 export const TIPO_ANULACION_LABEL: Record<TipoAnulacionCotizacion, string> = {
   desistimiento: 'El cliente desistió',
   error: 'Error de registro',

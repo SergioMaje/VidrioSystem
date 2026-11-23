@@ -14,7 +14,7 @@ import { CuentaCobroPanel } from './CuentaCobroPanel'
 import { useCuentaCobroVigente } from '@/hooks/useCartera'
 import { ElegirOpcionesDialog } from './ElegirOpcionesDialog'
 import { IconoTipoCategoria } from '@/components/shared/IconoTipoCategoria'
-import { TIPO_ANULACION_LABEL } from '@/lib/anulacion'
+import { MOTIVO_OPCION_QUITADA, TIPO_ANULACION_LABEL } from '@/lib/anulacion'
 import {
   useCotizacion, useCambiarEstadoCotizacion, useOrdenDeCotizacion, useOpcionesDelGrupo, useCategoriasDelEnvio,
   useEleccionDelPedido,
@@ -143,6 +143,8 @@ export function CotizacionDetalle() {
   const saldo = saldoInfo?.saldo ?? cotizacion.total
   const pctAbonado = saldoInfo?.pct_abonado ?? 0
   const anulada = cotizacion.estado === 'anulada'
+  // Anulada al quitarla de su envío (actualizar_envio): nunca tuvo cobros.
+  const opcionQuitada = anulada && cotizacion.motivo_anulacion === MOTIVO_OPCION_QUITADA
   // Una anulada no tiene nada vigente: su saldo no es una deuda del cliente.
   const liquidada = !anulada && estaLiquidada(saldo)
   const credito = esVentaCredito(cotizacion)
@@ -188,7 +190,7 @@ export function CotizacionDetalle() {
             {opcion && (
               <span className="font-medium text-foreground">
                 {opcion}
-                {opcionesGrupo && ` (de ${opcionesGrupo.length})`} ·{' '}
+                {opcionesGrupo && ` (de ${opcionesGrupo.filter((o) => o.estado !== 'anulada').length})`} ·{' '}
               </span>
             )}
             Creada el {formatFechaHora(cotizacion.created_at)}
@@ -356,7 +358,7 @@ export function CotizacionDetalle() {
                     const actual = o.id === cotizacion.id
                     const cfgOpcion = estadoConfig[o.estado]
                     return (
-                      <li key={o.id}>
+                      <li key={o.id} className={o.estado === 'anulada' && !actual ? 'opacity-60' : undefined}>
                         <button
                           type="button"
                           disabled={actual}
@@ -395,19 +397,21 @@ export function CotizacionDetalle() {
           <Ban className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="space-y-0.5">
             <p className="font-semibold">
-              Cotización anulada
+              {opcionQuitada ? 'Opción quitada del envío' : 'Cotización anulada'}
               {cotizacion.anulado_at && ` el ${formatFechaHora(cotizacion.anulado_at)}`}
               {cotizacion.anulado_por_usuario &&
                 ` por ${cotizacion.anulado_por_usuario.nombre} ${cotizacion.anulado_por_usuario.apellido}`}
             </p>
-            {cotizacion.tipo_anulacion && (
+            {cotizacion.tipo_anulacion && !opcionQuitada && (
               <p>
                 <span className="font-medium">Motivo:</span> {TIPO_ANULACION_LABEL[cotizacion.tipo_anulacion]}
                 {cotizacion.motivo_anulacion && ` · ${cotizacion.motivo_anulacion}`}
               </p>
             )}
             <p className="text-xs opacity-80">
-              Sus cobros quedaron anulados con su reverso en caja. Ya no se le pueden registrar cobros ni editarla.
+              {opcionQuitada
+                ? 'Se quitó al editar el envío. Conserva su número, pero ya no se le ofrece al cliente ni se le pueden registrar cobros.'
+                : 'Sus cobros quedaron anulados con su reverso en caja. Ya no se le pueden registrar cobros ni editarla.'}
             </p>
           </div>
         </div>
@@ -699,7 +703,7 @@ export function CotizacionDetalle() {
               onClick={() => navigate(`/cotizaciones/${id}/editar`)}
             >
               <Pencil className="mr-2 h-4 w-4" />
-              Editar
+              {cotizacion.grupo_id ? 'Editar envío' : 'Editar'}
             </Button>
             {!cotizacion.grupo_id && (
               <Button

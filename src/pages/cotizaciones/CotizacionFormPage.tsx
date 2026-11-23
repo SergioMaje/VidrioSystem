@@ -6,8 +6,8 @@ import { PanelCotizacion, type ItemCotizacion } from '@/pages/productos/PanelCot
 import { OpcionesEnvioCard, type CategoriaForm, type ResumenOpcion } from './OpcionesEnvioCard'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
-  useCrearCotizacion, useCotizacion, useActualizarCotizacion, useAgregarOpcion,
-  useCambiarEstadoCotizacion, useCategoriasDelEnvio,
+  useCrearCotizacion, useCotizacion, useActualizarEnvio, useAgregarOpcion,
+  useOpcionesDelGrupo, useCategoriasDelEnvio,
 } from '@/hooks/useCotizaciones'
 import { useReferencias } from '@/hooks/useReferencias'
 import { useConfiguracionEmpresa } from '@/hooks/useConfiguracionEmpresa'
@@ -16,14 +16,19 @@ import { useToast } from '@/hooks/useToast'
 import { useCambiosSinGuardar } from '@/providers/cambiosSinGuardar'
 import { PageLoader } from '@/components/shared/LoadingSpinner'
 import {
-  calcularTotales, codigoOpcion, etiquetaDeIndice, IVA_PCT_DEFECTO, ivaPorDefecto, MAX_OPCIONES, numeroBaseEnvio,
+  calcularTotales, codigoOpcion, IVA_PCT_DEFECTO, ivaPorDefecto, MAX_OPCIONES, numeroBaseEnvio, siguienteEtiqueta,
 } from '@/lib/cotizaciones'
 import { hoyBogota, mensajeError, sumarDias } from '@/lib/utils'
+import type { Cotizacion, CotizacionItem, EnvioCategoria } from '@/types/database'
 
 type ModoItem = 'referencia' | 'libre'
 
 /** Lo que cambia entre las opciones de un envío. Cliente, vencimiento y notas son comunes. */
 type OpcionForm = {
+  /** Al editar un envío: la opción ya guardada. Sin id, es nueva. */
+  id?: string
+  /** Al editar un envío: su letra guardada, que no cambia. */
+  etiqueta?: string
   nombre: string
   items: ItemCotizacion[]
   descuentoPct: number
@@ -44,14 +49,117 @@ const opcionVacia = (categoria: number | null = null, base?: Pick<OpcionForm, 'd
 })
 const categoriaVacia = (): CategoriaForm => ({ nombre: '', tipo: 'otro' })
 
-/** Letra de cada opción: dentro de su categoría, o en todo el envío. */
-function letrasDeOpciones(opciones: Pick<OpcionForm, 'categoria'>[]) {
-  const contador = new Map<number | null, number>()
+/**
+ * Letra de cada opción: dentro de su categoría, o en todo el envío. Las
+ * guardadas conservan la suya; las nuevas toman la primera libre, contando las
+ * que ya existen en la base aunque estén anuladas (como `actualizar_envio`).
+ */
+function letrasDeOpciones(
+  opciones: Pick<OpcionForm, 'categoria' | 'etiqueta'>[],
+  categorias: CategoriaForm[],
+  usadasEnBase: Record<string, string[]>,
+) {
+  const tomadas = new Map<number | null, string[]>()
+  const deCategoria = (c: number | null) => {
+    let lista = tomadas.get(c)
+    if (!lista) {
+      const clave = c === null ? '' : categorias[c]?.id
+      lista = [
+        ...(clave !== undefined ? usadasEnBase[clave] ?? [] : []),
+        ...opciones.filter((o) => o.categoria === c && o.etiqueta).map((o) => o.etiqueta!),
+      ]
+      tomadas.set(c, lista)
+    }
+    return lista
+  }
   return opciones.map((o) => {
-    const n = contador.get(o.categoria) ?? 0
-    contador.set(o.categoria, n + 1)
-    return etiquetaDeIndice(n)
+    if (o.etiqueta) return o.etiqueta
+    const lista = deCategoria(o.categoria)
+    let letra = '?'
+    try {
+      letra = siguienteEtiqueta(lista)
+    } catch {
+      // Sin letras libres: la base lo rechaza al guardar con un mensaje claro.
+    }
+    lista.push(letra)
+    return letra
   })
+}
+
+type ConItems = Cotizacion & { items: CotizacionItem[] }
+
+/** Un envío ya guardado, como lo trabaja el formulario. */
+type EnvioCargado = {
+  clienteId: string
+  fechaVencimiento: string
+  notas: string
+  categorias: CategoriaForm[]
+  opciones: OpcionForm[]
+  /** La opción desde la que se abrió la edición. */
+  activa: number
+  /** Letras que ya existen en la base por categoría (su id, o '' sin categorías), anuladas incluidas. */
+  letrasUsadas: Record<string, string[]>
+  /** Orden que le toca a la próxima categoría nueva. */
+  ordenSiguiente: number
+  /** Alguna opción ya se le mandó al cliente: al guardar, el envío vuelve a borrador. */
+  enviado: boolean
+  /** Las opciones vivas al cargar; las que se quiten quedan anuladas. */
+  ids: string[]
+}
+
+function aOpcionForm(c: ConItems, categoria: number | null): OpcionForm {
+  return {
+    id: c.id,
+    etiqueta: c.opcion_etiqueta ?? undefined,
+    nombre: c.opcion_nombre ?? '',
+    descuentoPct: c.descuento_pct,
+    ivaPct: c.iva_pct,
+    categoria,
+    recomendada: c.recomendada,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    items: c.items.map(({ id, cotizacion_id, ...rest }) => rest),
+  }
+}
+
+/**
+ * Arma el formulario con todo el envío de `base`: sus opciones vivas (no
+ * anuladas) y las categorías que aún tienen alguna. Una cotización suelta es
+ * un envío de una sola opción.
+ */
+function envioAFormulario(base: ConItems, grupo: ConItems[] | undefined, cats: EnvioCategoria[] | undefined): EnvioCargado {
+  const todas = grupo ?? [base]
+  const vivas = todas.filter((o) => o.estado !== 'anulada')
+  const ordenadas = [...(cats ?? [])].sort((a, b) => a.orden - b.orden)
+  const catsVivas = ordenadas.filter((cat) => vivas.some((o) => o.categoria_id === cat.id))
+  const idxCat = (o: ConItems) => (o.categoria_id ? catsVivas.findIndex((cat) => cat.id === o.categoria_id) : -1)
+  const opcionesVivas = [...vivas].sort((a, b) =>
+    idxCat(a) - idxCat(b) || (a.opcion_etiqueta ?? '').localeCompare(b.opcion_etiqueta ?? ''))
+
+  const letrasUsadas: Record<string, string[]> = {}
+  for (const o of todas) {
+    if (!o.opcion_etiqueta) continue
+    const clave = o.categoria_id ?? ''
+    letrasUsadas[clave] = [...(letrasUsadas[clave] ?? []), o.opcion_etiqueta]
+  }
+
+  return {
+    clienteId: base.cliente_id,
+    fechaVencimiento: base.fecha_vencimiento || vencimientoPorDefecto(),
+    notas: base.notas || '',
+    categorias: catsVivas.map((cat) => ({
+      id: cat.id,
+      orden: cat.orden,
+      nombre: cat.nombre,
+      tipo: cat.tipo,
+      tipoPersonalizadoId: cat.tipo_personalizado_id,
+    })),
+    opciones: opcionesVivas.map((o) => aOpcionForm(o, o.categoria_id ? idxCat(o) : null)),
+    activa: Math.max(0, opcionesVivas.findIndex((o) => o.id === base.id)),
+    letrasUsadas,
+    ordenSiguiente: ordenadas.length > 0 ? Math.max(...ordenadas.map((c) => c.orden)) + 1 : 0,
+    enviado: vivas.some((o) => o.estado === 'enviada'),
+    ids: opcionesVivas.map((o) => o.id),
+  }
 }
 
 export function CotizacionFormPage() {
@@ -72,15 +180,16 @@ export function CotizacionFormPage() {
   const { data: config, isLoading: cargandoConfig } = useConfiguracionEmpresa()
   const ivaDefecto = ivaPorDefecto(config)
   const crearCotizacion = useCrearCotizacion()
-  const actualizarCotizacion = useActualizarCotizacion()
+  const actualizarEnvio = useActualizarEnvio()
   const agregarOpcion = useAgregarOpcion()
-  const cambiarEstado = useCambiarEstadoCotizacion()
-  // Al editar una opción de un envío por categorías, su categoría da el código
-  // completo (1A, 2B) y el nombre que se muestra en el encabezado.
-  const { data: categoriasEnvio } = useCategoriasDelEnvio(
-    modoEdicion && cotizacionExistente?.categoria_id ? cotizacionExistente.grupo_id : null
-  )
-  const categoriaExistente = categoriasEnvio?.find((c) => c.id === cotizacionExistente?.categoria_id)
+  // Al editar una opción de un envío se trabaja el envío completo: todas sus
+  // opciones y categorías.
+  const grupoEdicion = modoEdicion ? cotizacionExistente?.grupo_id ?? null : null
+  const { data: opcionesGrupo } = useOpcionesDelGrupo(grupoEdicion)
+  const { data: categoriasEnvio } = useCategoriasDelEnvio(grupoEdicion)
+  // El envío tal como se cargó. Se arma una sola vez: si las consultas se
+  // refrescan mientras se edita, no se pisan los cambios.
+  const [cargado, setCargado] = useState<EnvioCargado | null>(null)
 
   const [clienteId, setClienteId] = useState('')
   const [fechaInicial] = useState(vencimientoPorDefecto)
@@ -97,9 +206,7 @@ export function CotizacionFormPage() {
   const porCategoria = categorias.length > 0
   // La opción que se trabaja sola pertenece a un envío por categorías: su
   // descuento e IVA son los del envío.
-  const opcionSueltaConCategoria = modoEdicion
-    ? !!cotizacionExistente?.categoria_id
-    : modoAgregar && !!envioOrigen?.categoria_id
+  const opcionSueltaConCategoria = modoAgregar && !!envioOrigen?.categoria_id
 
   /** Aplica un cambio solo a la opción que se está editando. */
   const actualizarActiva = (fn: (o: OpcionForm) => OpcionForm) =>
@@ -114,22 +221,17 @@ export function CotizacionFormPage() {
   }, [cargandoReferencias, referencias])
 
   useEffect(() => {
-    if (modoEdicion && cotizacionExistente) {
-      setClienteId(cotizacionExistente.cliente_id)
-      setFechaVencimiento(cotizacionExistente.fecha_vencimiento || vencimientoPorDefecto())
-      setNotas(cotizacionExistente.notas || '')
-      setOpciones([{
-        nombre: cotizacionExistente.opcion_nombre ?? '',
-        descuentoPct: cotizacionExistente.descuento_pct,
-        ivaPct: cotizacionExistente.iva_pct,
-        categoria: null,
-        recomendada: cotizacionExistente.recomendada,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        items: cotizacionExistente.items.map(({ id, cotizacion_id, ...rest }) => rest),
-      }])
-      setActiva(0)
-    }
-  }, [modoEdicion, cotizacionExistente])
+    if (!modoEdicion || cargado || !cotizacionExistente) return
+    if (grupoEdicion && (!opcionesGrupo || !categoriasEnvio)) return
+    const envio = envioAFormulario(cotizacionExistente, grupoEdicion ? opcionesGrupo : undefined, categoriasEnvio)
+    setCargado(envio)
+    setClienteId(envio.clienteId)
+    setFechaVencimiento(envio.fechaVencimiento)
+    setNotas(envio.notas)
+    setCategorias(envio.categorias)
+    setOpciones(envio.opciones)
+    setActiva(envio.activa)
+  }, [modoEdicion, cargado, cotizacionExistente, grupoEdicion, opcionesGrupo, categoriasEnvio])
 
   // Al agregar una opción, cliente, vencimiento y notas vienen del envío y no se
   // editan. Con categorías, también el descuento y el IVA.
@@ -178,30 +280,30 @@ export function CotizacionFormPage() {
         opciones: [opcionVacia(null, { descuentoPct: 0, ivaPct: ivaDefecto })],
       })
     }
-    if (!cotizacionExistente) return null
+    if (!cargado) return null
     return JSON.stringify({
-      clienteId: cotizacionExistente.cliente_id,
-      fechaVencimiento: cotizacionExistente.fecha_vencimiento || fechaInicial,
-      notas: cotizacionExistente.notas || '',
-      categorias: [],
-      opciones: [{
-        nombre: cotizacionExistente.opcion_nombre ?? '',
-        descuentoPct: cotizacionExistente.descuento_pct,
-        ivaPct: cotizacionExistente.iva_pct,
-        categoria: null,
-        recomendada: cotizacionExistente.recomendada,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        items: cotizacionExistente.items.map(({ id, cotizacion_id, ...rest }) => rest),
-      }],
+      clienteId: cargado.clienteId,
+      fechaVencimiento: cargado.fechaVencimiento,
+      notas: cargado.notas,
+      categorias: cargado.categorias,
+      opciones: cargado.opciones,
     })
-  }, [modoAgregar, envioOrigen, modoEdicion, cotizacionExistente, fechaInicial, ivaDefecto])
+  }, [modoAgregar, envioOrigen, modoEdicion, cargado, fechaInicial, ivaDefecto])
   const actual = JSON.stringify({ clienteId, fechaVencimiento, notas, categorias, opciones })
   useCambiosSinGuardar(inicial !== null && actual !== inicial)
 
-  const letras = letrasDeOpciones(opciones)
+  const letras = letrasDeOpciones(opciones, categorias, cargado?.letrasUsadas ?? {})
+  // Posición de la categoría que forma el número (COT-…-2A): la guardada, o
+  // las siguientes para las nuevas. Al crear coincide con el índice.
+  const ordenDe = (c: number) => {
+    const guardado = categorias[c]?.orden
+    if (guardado !== undefined) return guardado
+    const nuevasAntes = categorias.slice(0, c).filter((cat) => cat.orden === undefined).length
+    return (cargado?.ordenSiguiente ?? 0) + nuevasAntes
+  }
   const codigoDe = (idx: number) => {
     const cat = opciones[idx].categoria
-    return cat === null ? letras[idx] : codigoOpcion(cat, letras[idx])
+    return cat === null ? letras[idx] : codigoOpcion(ordenDe(cat), letras[idx])
   }
 
   const handleAgregarItem = (item: ItemCotizacion) => {
@@ -276,7 +378,10 @@ export function CotizacionFormPage() {
   // Lo normal es cambiar solo el vidrio o el color: se parte de una copia.
   const duplicarOpcion = () => {
     if (cuantasEn(opcion.categoria) >= MAX_OPCIONES) return
-    setOpciones((prev) => [...prev, { ...structuredClone(prev[activa]), nombre: '', recomendada: false }])
+    // La copia es una opción nueva: sin id ni letra guardada.
+    setOpciones((prev) => [...prev, {
+      ...structuredClone(prev[activa]), id: undefined, etiqueta: undefined, nombre: '', recomendada: false,
+    }])
     seleccionarOpcion(opciones.length)
   }
 
@@ -340,6 +445,7 @@ export function CotizacionFormPage() {
     cantidadItems: o.items.length,
     categoria: o.categoria,
     recomendada: o.recomendada,
+    guardada: !!o.id,
   }))
 
   const handleGuardar = async (estado: 'borrador' | 'enviada') => {
@@ -349,7 +455,7 @@ export function CotizacionFormPage() {
     }
     const sinNombre = categorias.findIndex((c) => !c.nombre.trim())
     if (sinNombre !== -1) {
-      toast({ title: `Ponle nombre a la categoría ${sinNombre + 1} (p. ej. "Puerta principal")`, variant: 'destructive' })
+      toast({ title: `Ponle nombre a la categoría ${ordenDe(sinNombre) + 1} (p. ej. "Puerta principal")`, variant: 'destructive' })
       return
     }
     const vacia = opciones.findIndex((o) => o.items.length === 0)
@@ -368,37 +474,43 @@ export function CotizacionFormPage() {
       return
     }
     try {
-      if (modoEdicion && id && cotizacionExistente) {
-        // Editar los ítems o precios invalida lo que ya vio el cliente: la cotización
-        // vuelve a borrador y hay que reenviarla antes de poder cobrar el anticipo.
-        const revierteABorrador = cotizacionExistente.estado === 'enviada'
-        const grupoId = cotizacionExistente.grupo_id
-        await actualizarCotizacion.mutateAsync({
-          id,
+      if (modoEdicion && id && cargado) {
+        // Se guarda el envío completo de una vez. Lo que vio el cliente ya no
+        // vale: todo vuelve a borrador y hay que reenviarlo antes de cobrar.
+        const guardada = await actualizarEnvio.mutateAsync({
+          cotizacionId: id,
           cliente_id: clienteId,
-          estado: revierteABorrador ? 'borrador' : cotizacionExistente.estado,
           fecha_vencimiento: fechaVencimiento,
-          descuento_pct: opcion.descuentoPct,
-          iva_pct: opcion.ivaPct,
-          notas: notas || undefined,
-          opcion_nombre: grupoId ? opcion.nombre : undefined,
-          recomendada: grupoId ? opcion.recomendada : undefined,
-          items: opcion.items,
+          notas: notas.trim() || null,
+          categorias: categorias.map((c) => ({
+            id: c.id ?? null,
+            nombre: c.nombre.trim(),
+            tipo: c.tipo,
+            tipo_personalizado_id: c.tipoPersonalizadoId ?? null,
+          })),
+          opciones: opciones.map((o) => ({
+            id: o.id ?? null,
+            categoria: o.categoria,
+            nombre: o.nombre,
+            descuento_pct: o.descuentoPct,
+            iva_pct: o.ivaPct,
+            recomendada: o.recomendada,
+            items: o.items,
+          })),
         })
-        // El envío se manda completo: si una opción vuelve a borrador, las demás
-        // también, para que "Marcar enviada" lo reenvíe entero.
-        if (revierteABorrador && grupoId) {
-          await cambiarEstado.mutateAsync({ id, estado: 'borrador', grupoId })
-        }
+        const esEnvio = opciones.length > 1 || porCategoria || !!cotizacionExistente?.grupo_id
+        const quitadas = cargado.ids.filter((guardadaId) => !opciones.some((o) => o.id === guardadaId)).length
+        const titulo = esEnvio
+          ? cargado.enviado ? 'Envío actualizado — vuelve a borrador, márcalo como enviado de nuevo' : 'Envío actualizado'
+          : cargado.enviado ? 'Cotización actualizada — vuelve a borrador, márcala como enviada de nuevo' : 'Cotización actualizada'
         toast({
-          title: revierteABorrador
-            ? grupoId
-              ? 'Opción actualizada — el envío vuelve a borrador, márcalo como enviado de nuevo'
-              : 'Cotización actualizada — vuelve a borrador, márcala como enviada de nuevo'
-            : 'Cotización actualizada',
+          title: titulo,
+          description: quitadas > 0
+            ? `${quitadas === 1 ? 'Una opción quedó anulada' : `${quitadas} opciones quedaron anuladas`} (conservan su número).`
+            : undefined,
           variant: 'success',
         })
-        navigate(`/cotizaciones/${id}`)
+        navigate(`/cotizaciones/${guardada.id}`)
       } else if (modoAgregar && agregarA) {
         const nueva = await agregarOpcion.mutateAsync({
           origenId: agregarA,
@@ -447,7 +559,11 @@ export function CotizacionFormPage() {
     }
   }
 
-  if ((modoEdicion && cargandoCotizacion) || (modoAgregar && cargandoOrigen) || (!modoEdicion && cargandoConfig)) {
+  if (
+    (modoEdicion && (cargandoCotizacion || (!!cotizacionExistente && !cargado))) ||
+    (modoAgregar && cargandoOrigen) ||
+    (!modoEdicion && cargandoConfig)
+  ) {
     return <PageLoader />
   }
 
@@ -459,21 +575,14 @@ export function CotizacionFormPage() {
     )
   }
 
-  // Encabezado de la opción. Al editar una opción de un envío, o al agregar una
-  // nueva, se trabaja una sola.
-  const trabajaUna = modoEdicion || modoAgregar
-  const etiquetaExistente = cotizacionExistente?.opcion_etiqueta ?? null
-  const etiquetaOpcion = modoEdicion
-    ? etiquetaExistente && categoriaExistente
-      ? codigoOpcion(categoriaExistente.orden, etiquetaExistente)
-      : etiquetaExistente
-    : modoAgregar
-      ? 'nueva'
-      : opciones.length > 1 || porCategoria ? codigoDe(activa) : null
-  const esOpcionDeEnvio = modoEdicion ? !!cotizacionExistente?.grupo_id : modoAgregar || opciones.length > 1 || porCategoria
+  // Encabezado de la opción. Al agregar una opción a un envío se trabaja solo
+  // la nueva; al crear o editar, el envío completo.
+  const trabajaUna = modoAgregar
+  const esOpcionDeEnvio = modoAgregar || opciones.length > 1 || porCategoria || !!opcion.etiqueta
+  const etiquetaOpcion = modoAgregar ? 'nueva' : esOpcionDeEnvio ? codigoDe(activa) : null
   // Cliente, vencimiento y notas son de todo el envío: no se cambian desde una
-  // sola opción (al agregar una, ni al editar una que ya es parte de un envío).
-  const datosEnvioBloqueados = modoAgregar || (modoEdicion && !!cotizacionExistente?.grupo_id)
+  // opción que se agrega sola.
+  const datosEnvioBloqueados = modoAgregar
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
@@ -516,7 +625,7 @@ export function CotizacionFormPage() {
         // Sin IVA en la vidriería no se ofrece, salvo que la cotización ya lo tenga (para poder quitarlo).
         mostrarIva={(config?.usa_iva ?? true) || opcion.ivaPct > 0}
         onGuardar={handleGuardar}
-        isPending={crearCotizacion.isPending || actualizarCotizacion.isPending || agregarOpcion.isPending || cambiarEstado.isPending}
+        isPending={crearCotizacion.isPending || actualizarEnvio.isPending || agregarOpcion.isPending}
         modoEdicion={modoEdicion}
         editandoIdx={edicionItem?.idx ?? null}
         onEditarItem={handleEditarItem}
@@ -534,10 +643,11 @@ export function CotizacionFormPage() {
             onAgregarCategoria={agregarCategoria}
             onEliminarCategoria={eliminarCategoria}
             onCambiarCategoria={cambiarCategoria}
+            numeroCategoria={(c) => ordenDe(c) + 1}
+            edicion={modoEdicion}
           />
         )}
         etiquetaOpcion={etiquetaOpcion}
-        categoriaOpcion={modoEdicion ? categoriaExistente?.nombre : undefined}
         pideNombre={esOpcionDeEnvio}
         cantidadOpciones={trabajaUna ? 1 : opciones.length}
         recomendada={opcion.recomendada}

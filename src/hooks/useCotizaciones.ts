@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { TOLERANCIA } from '@/lib/pagos'
-import { formatCOP, hoyBogota } from '@/lib/utils'
+import { hoyBogota } from '@/lib/utils'
 import {
   calcularTotales, etiquetaDeIndice, MAX_OPCIONES, siguienteEtiqueta,
   type TipoCategoria,
@@ -424,80 +423,48 @@ export function useAgregarOpcion() {
   })
 }
 
-type CotizacionUpdateInput = {
-  id: string
+/** Lo que manda el formulario al editar un envío completo (ver `actualizar_envio`). */
+export type EnvioUpdateInput = {
+  /** La cotización desde la que se editó: cualquier opción del envío, o una suelta. */
+  cotizacionId: string
   cliente_id: string
-  estado: Cotizacion['estado']
-  fecha_vencimiento?: string
-  descuento_pct: number
-  iva_pct: number
-  notas?: string
-  /** Solo para una opción de un envío; en una cotización suelta se omite. */
-  opcion_nombre?: string
-  recomendada?: boolean
-  items: Omit<CotizacionItem, 'id' | 'cotizacion_id'>[]
+  fecha_vencimiento: string
+  notas: string | null
+  /** Vacío si el envío no está dividido. Sin `id`, la categoría es nueva. */
+  categorias: { id: string | null; nombre: string; tipo: EnvioCategoria['tipo']; tipo_personalizado_id: string | null }[]
+  /** Sin `id`, la opción es nueva. Las guardadas que no vengan quedan anuladas. */
+  opciones: (Omit<OpcionInput, 'categoria'> & { id: string | null; categoria: number | null })[]
 }
 
-export function useActualizarCotizacion() {
+/**
+ * Guarda el envío completo en una sola transacción (RPC `actualizar_envio`,
+ * migración 20261123120000): datos comunes, opciones, ítems y categorías. Todo
+ * el envío queda en borrador, porque lo que vio el cliente ya no vale; las
+ * opciones guardadas que no vengan pasan a 'anulada'. La base también impide
+ * dejar un total por debajo de lo ya cobrado.
+ *
+ * Devuelve la cotización desde la que se editó, o la primera opción viva si
+ * esa se quitó.
+ */
+export function useActualizarEnvio() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (input: CotizacionUpdateInput) => {
-      const { subtotal, total } = calcularTotales(input.items, input.descuento_pct, input.iva_pct)
-
-      // Editar recalcula el total desde los ítems, sin mirar lo ya cobrado: se
-      // podía dejar una cotización con un total por debajo de sus abonos, y a
-      // partir de ahí el saldo salía negativo y la vista de morosos mentía.
-      const { data: saldoActual, error: saldoError } = await supabase
-        .from('cotizaciones_saldo')
-        .select('total_abonado')
-        .eq('cotizacion_id', input.id)
-        .single()
-      if (saldoError) throw saldoError
-
-      const abonado = (saldoActual as { total_abonado: number }).total_abonado
-      if (abonado > 0 && total + TOLERANCIA < abonado) {
-        throw new Error(
-          `El nuevo total (${formatCOP(total)}) es menor que lo ya cobrado (${formatCOP(abonado)}). ` +
-            'Devuelve la diferencia antes de reducir la cotización.'
-        )
-      }
-
-      const { error } = await supabase
-        .from('cotizaciones')
-        .update({
-          cliente_id: input.cliente_id,
-          estado: input.estado,
-          fecha_vencimiento: input.fecha_vencimiento ?? null,
-          subtotal,
-          descuento_pct: input.descuento_pct,
-          iva_pct: input.iva_pct,
-          total,
-          notas: input.notas ?? null,
-          ...(input.opcion_nombre !== undefined && { opcion_nombre: nombreOpcion(input.opcion_nombre) }),
-          ...(input.recomendada !== undefined && { recomendada: input.recomendada }),
-        })
-        .eq('id', input.id)
+    mutationFn: async ({ cotizacionId, ...datos }: EnvioUpdateInput) => {
+      const { data, error } = await supabase.rpc('actualizar_envio', {
+        p_cotizacion_id: cotizacionId,
+        p_datos: {
+          ...datos,
+          opciones: datos.opciones.map((o) => ({ ...o, nombre: nombreOpcion(o.nombre) })),
+        },
+      })
       if (error) throw error
-
-      if (input.recomendada) await dejarUnicaRecomendada(input.id)
-
-      const { error: deleteError } = await supabase
-        .from('cotizacion_items')
-        .delete()
-        .eq('cotizacion_id', input.id)
-      if (deleteError) throw deleteError
-
-      if (input.items.length > 0) {
-        const { error: itemsError } = await supabase.from('cotizacion_items').insert(
-          input.items.map((item) => ({ ...item, cotizacion_id: input.id }))
-        )
-        if (itemsError) throw itemsError
-      }
+      return data as Cotizacion
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cotizaciones'] })
-      qc.invalidateQueries({ queryKey: ['cotizacion', variables.id] })
+      qc.invalidateQueries({ queryKey: ['cotizacion'] })
       qc.invalidateQueries({ queryKey: ['opciones_grupo'] })
+      qc.invalidateQueries({ queryKey: ['categorias_envio'] })
     },
   })
 }

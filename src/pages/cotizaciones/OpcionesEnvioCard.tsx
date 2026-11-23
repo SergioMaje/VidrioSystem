@@ -21,6 +21,10 @@ export interface CategoriaForm {
   tipo: TipoCategoria
   /** Tipo propio de la vidriería; si está, manda sobre `tipo`. */
   tipoPersonalizadoId?: string | null
+  /** Al editar un envío: la categoría ya guardada. */
+  id?: string
+  /** Al editar un envío: su posición guardada, que forma el número (COT-…-2A). */
+  orden?: number
 }
 
 /** Valor del desplegable: los tipos fijos y los propios comparten la lista. */
@@ -38,6 +42,8 @@ export interface ResumenOpcion {
   /** Índice de su categoría; null si el envío no está dividido. */
   categoria: number | null
   recomendada: boolean
+  /** Ya existe en la base: al quitarla del envío queda anulada. */
+  guardada?: boolean
 }
 
 interface OpcionesEnvioCardProps {
@@ -54,6 +60,13 @@ interface OpcionesEnvioCardProps {
   onAgregarCategoria: () => void
   onEliminarCategoria: (idx: number) => void
   onCambiarCategoria: (idx: number, cambio: Partial<CategoriaForm>) => void
+  /** Número visible de cada categoría (1, 2, 3…). Por defecto, su posición. */
+  numeroCategoria?: (idx: number) => number
+  /**
+   * Editando un envío ya creado: no se divide ni se une por categorías (cambiaría
+   * los números que vio el cliente) y lo que se quita queda anulado.
+   */
+  edicion?: boolean
 }
 
 /**
@@ -73,6 +86,8 @@ export function OpcionesEnvioCard({
   onAgregarCategoria,
   onEliminarCategoria,
   onCambiarCategoria,
+  numeroCategoria = (idx) => idx + 1,
+  edicion = false,
 }: OpcionesEnvioCardProps) {
   const { data: tiposPropios } = useTiposCategoria()
   // Índice de la categoría que pidió "Nuevo tipo…": al crearlo queda elegido en ella.
@@ -84,6 +99,7 @@ export function OpcionesEnvioCard({
   const llenaActual = hermanasActual.length >= MAX_OPCIONES
   // Con categorías, una categoría no se queda sin opciones: se elimina la categoría.
   const puedeEliminar = porCategoria ? hermanasActual.length > 1 : variasOpciones
+  const avisoAnulada = 'Ya está guardada: al guardar el envío queda anulada (conserva su número)'
 
   const chip = (o: ResumenOpcion, idx: number) => (
     <button
@@ -162,13 +178,13 @@ export function OpcionesEnvioCard({
                   style={{ borderLeftColor: cfg.color, backgroundColor: `${cfg.fondo}66` }}
                 >
                   <div className="flex items-center gap-1.5">
-                    <span className="w-4 text-center text-xs font-bold text-muted-foreground">{c + 1}</span>
+                    <span className="w-4 text-center text-xs font-bold text-muted-foreground">{numeroCategoria(c)}</span>
                     <Input
                       value={cat.nombre}
                       onChange={(e) => onCambiarCategoria(c, { nombre: e.target.value })}
                       placeholder="Ej.: Puerta principal"
                       maxLength={60}
-                      aria-label={`Nombre de la categoría ${c + 1}`}
+                      aria-label={`Nombre de la categoría ${numeroCategoria(c)}`}
                       className={cn('h-8 flex-1 bg-background text-sm', !cat.nombre.trim() && 'border-dashed')}
                     />
                     <Select value={valorTipo(cat)} onValueChange={(v) => elegirTipo(c, v)}>
@@ -222,15 +238,15 @@ export function OpcionesEnvioCard({
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                        title="Eliminar la categoría con sus opciones"
-                        aria-label={`Eliminar la categoría ${cat.nombre || c + 1}`}
+                        title={cat.id ? `Eliminar la categoría con sus opciones. ${avisoAnulada}` : 'Eliminar la categoría con sus opciones'}
+                        aria-label={`Eliminar la categoría ${cat.nombre || numeroCategoria(c)}`}
                         onClick={() => onEliminarCategoria(c)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-1.5" role="tablist" aria-label={`Opciones de ${cat.nombre || `la categoría ${c + 1}`}`}>
+                  <div className="flex flex-wrap gap-1.5" role="tablist" aria-label={`Opciones de ${cat.nombre || `la categoría ${numeroCategoria(c)}`}`}>
                     {deEsta.map(([o, idx]) => chip(o, idx))}
                     <button
                       type="button"
@@ -278,6 +294,7 @@ export function OpcionesEnvioCard({
               size="sm"
               className="text-muted-foreground hover:text-destructive"
               onClick={onEliminar}
+              title={actual.guardada ? avisoAnulada : undefined}
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
               Eliminar opción {actual.codigo}
@@ -285,40 +302,54 @@ export function OpcionesEnvioCard({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-          {porCategoria ? (
-            <>
+        {edicion ? (
+          <div className="space-y-2 border-t pt-3">
+            {porCategoria && (
               <Button type="button" variant="outline" size="sm" onClick={onAgregarCategoria}>
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
                 Agregar categoría
               </Button>
-              {categorias.length === 1 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  onClick={onQuitarDivision}
-                  title="Vuelve a un envío de opciones simples, donde el cliente elige una sola"
-                >
-                  <Ungroup className="mr-1.5 h-3.5 w-3.5" />
-                  Quitar categorías
+            )}
+            <p className="text-xs text-muted-foreground">
+              Las opciones ya guardadas que elimines quedan anuladas al guardar: conservan su número, que el cliente pudo haber visto.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+            {porCategoria ? (
+              <>
+                <Button type="button" variant="outline" size="sm" onClick={onAgregarCategoria}>
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Agregar categoría
                 </Button>
-              )}
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onDividir}
-              title="Para cotizar varias partes en el mismo envío, p. ej. una puerta y una ventana, cada una con sus opciones"
-            >
-              <Layers className="mr-1.5 h-3.5 w-3.5" />
-              Dividir por categorías
-            </Button>
-          )}
-        </div>
+                {categorias.length === 1 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={onQuitarDivision}
+                    title="Vuelve a un envío de opciones simples, donde el cliente elige una sola"
+                  >
+                    <Ungroup className="mr-1.5 h-3.5 w-3.5" />
+                    Quitar categorías
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onDividir}
+                title="Para cotizar varias partes en el mismo envío, p. ej. una puerta y una ventana, cada una con sus opciones"
+              >
+                <Layers className="mr-1.5 h-3.5 w-3.5" />
+                Dividir por categorías
+              </Button>
+            )}
+          </div>
+        )}
 
         {rango && rango.max > 0 && (
           <p className="text-xs text-muted-foreground">
