@@ -622,6 +622,9 @@ export type CategoriaGasto =
   | 'servicios'
   | 'refrigerio'
   | 'proveedor'
+  | 'nomina'
+  /** Adelanto a un empleado que se le descuenta de la nómina a fin de mes. */
+  | 'prestamo'
   | 'retiro'
   | 'otro'
   /** Solo lo genera `anular_venta`: compensa el ingreso de un cobro anulado. */

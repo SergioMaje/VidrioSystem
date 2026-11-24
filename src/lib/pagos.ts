@@ -85,6 +85,8 @@ export const CATEGORIA_GASTO_LABEL: Record<CategoriaGasto, string> = {
   servicios: 'Servicios',
   refrigerio: 'Refrigerio',
   proveedor: 'Proveedor',
+  nomina: 'Nómina',
+  prestamo: 'Préstamo a empleado',
   retiro: 'Retiro de efectivo',
   otro: 'Otro',
   reverso_anulacion: 'Reverso de anulación',
