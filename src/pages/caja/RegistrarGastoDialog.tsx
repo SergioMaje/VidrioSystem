@@ -93,7 +93,14 @@ export function RegistrarGastoDialog({ efectivoDisponible, open, onOpenChange }:
             <Label>Concepto</Label>
             <Input
               autoComplete="off"
-              placeholder="Ej: mensajero al centro"
+              placeholder={
+                // Nómina y préstamo se descuentan a una persona: que quede su nombre.
+                categoria === 'prestamo'
+                  ? 'Ej: Juan Pérez – adelanto, se descuenta a fin de mes'
+                  : categoria === 'nomina'
+                    ? 'Ej: Juan Pérez – quincena'
+                    : 'Ej: mensajero al centro'
+              }
               value={concepto}
               onChange={(e) => setConcepto(e.target.value)}
             />
