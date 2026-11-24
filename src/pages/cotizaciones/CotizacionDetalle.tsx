@@ -11,6 +11,7 @@ import { RegistrarPagoDialog } from './RegistrarPagoDialog'
 import { AnularVentaDialog, BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { AnularCotizacionDialog } from './AnularCotizacionDialog'
 import { CuentaCobroPanel } from './CuentaCobroPanel'
+import { SolicitudAnticipoPanel } from './SolicitudAnticipoPanel'
 import { useCuentaCobroVigente } from '@/hooks/useCartera'
 import { ElegirOpcionesDialog } from './ElegirOpcionesDialog'
 import { IconoTipoCategoria } from '@/components/shared/IconoTipoCategoria'
@@ -416,6 +417,8 @@ export function CotizacionDetalle() {
           </div>
         </div>
       )}
+
+      {esAdmin && <SolicitudAnticipoPanel cotizacion={cotizacion} />}
 
       {esAdmin && cotizacion.estado === 'vendida' && (
         <div className="flex justify-end">

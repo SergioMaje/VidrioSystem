@@ -240,6 +240,7 @@ export function useRegistrarAnticipo() {
       fechaEntregaEstimada,
       autorizadoPor,
       motivoAutorizacion,
+      conSolicitudAprobada,
       financieraId,
       referenciaFinanciera,
       idempotencyKey,
@@ -251,6 +252,11 @@ export function useRegistrarAnticipo() {
       fechaEntregaEstimada?: string
       autorizadoPor?: string
       motivoAutorizacion?: string
+      /**
+       * Hay una solicitud aprobada por un admin para esta cotización: no se manda
+       * autorizadoPor, el trigger la busca y la consume.
+       */
+      conSolicitudAprobada?: boolean
       /** Obligatoria con metodoPago 'financiera'; el crédito cubre el total. */
       financieraId?: string
       referenciaFinanciera?: string
@@ -270,7 +276,7 @@ export function useRegistrarAnticipo() {
         }
       }
       // El trigger en Postgres es la garantía; esto solo da un error legible antes.
-      if (!cumpleAnticipoMinimo(monto, cotizacion.total) && !autorizadoPor) {
+      if (!cumpleAnticipoMinimo(monto, cotizacion.total) && !autorizadoPor && !conSolicitudAprobada) {
         throw new Error(
           `El anticipo debe ser al menos el 50% del total (mínimo: ${formatCOP(anticipoMinimo(cotizacion.total))})`
         )
@@ -295,6 +301,8 @@ export function useRegistrarAnticipo() {
     // creyendo que no había pagos y ofreciera un anticipo ya cobrado.
     onSettled: (_data, _err, variables) => {
       invalidarPagos(qc, variables.cotizacion.id, variables.sessionId)
+      // El cobro pudo consumir una solicitud de autorización aprobada.
+      qc.invalidateQueries({ queryKey: ['solicitud-anticipo', variables.cotizacion.id] })
       // El RPC también crea la orden: la cotización debe mostrarla sin recargar.
       qc.invalidateQueries({ queryKey: ['orden_de_cotizacion', variables.cotizacion.id] })
       qc.invalidateQueries({ queryKey: ['ordenes'] })

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, CheckCircle2, FileText, ImageDown, Loader2, Printer, ShieldAlert } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clock, FileText, ImageDown, Loader2, Printer, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +14,7 @@ import { useConfiguracionEmpresa, useLogoEmpresaDataUri } from '@/hooks/useConfi
 import { cobroPorClave } from '@/hooks/useRecibos'
 import { cuentaCobroVigente, useAprobarCredito } from '@/hooks/useCartera'
 import { useCuentasPagoEmpresa } from '@/hooks/useCuentasPagoEmpresa'
+import { useSolicitarAutorizacion, useSolicitudAnticipo } from '@/hooks/useSolicitudesAnticipo'
 import { descargarReciboImagen, imprimirRecibo } from '@/lib/imprimirRecibo'
 import { descargarCuentaCobroImagen, imprimirCuentaCobro } from '@/lib/imprimirCuentaCobro'
 import { useToast } from '@/hooks/useToast'
@@ -24,7 +25,7 @@ import { InputDinero } from '@/components/shared/InputDinero'
 import { cajaVencida } from '@/lib/caja'
 import { METODO_PAGO_LABEL, anticipoMinimo, anticipoSolicitado, cumpleAnticipoMinimo, esVentaCredito, excedeSaldo } from '@/lib/pagos'
 import { formatCOP, formatFecha, mensajeError } from '@/lib/utils'
-import type { Cotizacion, MetodoPago, Venta } from '@/types/database'
+import type { Cotizacion, MetodoPago, SolicitudAnticipoDetalle, Venta } from '@/types/database'
 
 type Props = {
   cotizacion: Cotizacion
@@ -72,6 +73,10 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
   // Pago en $0 = cuenta de cobro. Solo el primer pago y solo un admin; las
   // opciones de un envío por categorías se aprueban desde su pedido.
   const puedeCuentaCobro = esAdmin && esAnticipo && !cotizacion.categoria_id
+  // El vendedor no autoriza: pide la autorización a un admin y, aprobada, cobra
+  // desde ese monto. El admin autoriza su propio cobro y no la necesita.
+  const { data: solicitud } = useSolicitudAnticipo(cotizacion.id, open && esAnticipo && !esAdmin)
+  const solicitarAutorizacion = useSolicitarAutorizacion()
 
   const [monto, setMonto] = useState('')
   const [ordenCompra, setOrdenCompra] = useState('')
@@ -171,7 +176,12 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
   // abonos, el total es más de lo que se puede cobrar y el trigger rechazaría el
   // pago con un saldo que la pantalla no estaba mostrando.
   const sobrepasa = excedeSaldo(montoNum, saldo)
-  const requiereAutorizacion = bajoMinimo && !(esAdmin && autorizar && motivo.trim().length > 0)
+  // Con un total distinto al de la solicitud, el trigger la rechaza: no se ofrece.
+  const solicitudAprobada =
+    solicitud?.estado === 'aprobada' && Math.abs(solicitud.total_cotizacion - total) <= 1 ? solicitud : null
+  const cubiertoPorSolicitud = !!solicitudAprobada && montoNum >= solicitudAprobada.monto_minimo
+  const requiereAutorizacion =
+    bajoMinimo && !(esAdmin && autorizar && motivo.trim().length > 0) && !cubiertoPorSolicitud
   const pendiente = registrarAnticipo.isPending || registrarAbono.isPending || aprobarCredito.isPending
   const cajaLista = !!sesionCaja && !cajaVencida(sesionCaja.opened_at)
   // Sin el saldo cargado, `saldo` cae a `total` y se ofrecería cobrar de más.
@@ -214,8 +224,9 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
           metodoPago,
           monto: montoNum,
           fechaEntregaEstimada: fechaEntrega || undefined,
-          autorizadoPor: bajoMinimo ? usuario.id : undefined,
-          motivoAutorizacion: bajoMinimo ? motivo : undefined,
+          autorizadoPor: bajoMinimo && esAdmin ? usuario.id : undefined,
+          motivoAutorizacion: bajoMinimo && esAdmin ? motivo : undefined,
+          conSolicitudAprobada: bajoMinimo && cubiertoPorSolicitud,
           financieraId: esFinanciera ? financieraId : undefined,
           referenciaFinanciera: esFinanciera ? referencia : undefined,
           idempotencyKey: claveIdempotencia,
@@ -249,6 +260,15 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
       })
     } finally {
       enviando.current = false
+    }
+  }
+
+  const pedirAutorizacion = async () => {
+    try {
+      await solicitarAutorizacion.mutateAsync({ cotizacionId: cotizacion.id, monto: montoNum, motivo })
+      toast({ title: 'Solicitud enviada — un administrador debe aprobarla', variant: 'success' })
+    } catch (err) {
+      toast({ title: mensajeError(err, 'No se pudo enviar la solicitud'), variant: 'destructive' })
     }
   }
 
@@ -410,9 +430,20 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
                   <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>
                     El anticipo mínimo es el 50% del total (<span className="font-mono">{formatCOP(minimo)}</span>).
-                    {!esAdmin && ' Pide a un administrador que autorice un monto menor.'}
                   </span>
                 </div>
+                {!esAdmin && (
+                  <SolicitudVendedor
+                    solicitud={solicitud ?? null}
+                    vigente={!!solicitudAprobada}
+                    cubierto={cubiertoPorSolicitud}
+                    monto={montoNum}
+                    motivo={motivo}
+                    onMotivo={setMotivo}
+                    enviando={solicitarAutorizacion.isPending}
+                    onSolicitar={pedirAutorizacion}
+                  />
+                )}
                 {esAdmin && (
                   <div className="space-y-2 pt-1">
                     <label className="flex items-center gap-2 text-sm font-medium">
@@ -496,5 +527,134 @@ export function RegistrarPagoDialog({ cotizacion, open, onOpenChange, opcionesAD
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function nombreDe(u: { nombre: string; apellido: string | null } | null) {
+  return u ? [u.nombre, u.apellido].filter(Boolean).join(' ') : 'Un administrador'
+}
+
+/**
+ * Lo que ve el vendedor bajo el mínimo: el formulario para pedir la
+ * autorización, la espera o la respuesta del admin.
+ */
+function SolicitudVendedor({
+  solicitud,
+  vigente,
+  cubierto,
+  monto,
+  motivo,
+  onMotivo,
+  enviando,
+  onSolicitar,
+}: {
+  solicitud: SolicitudAnticipoDetalle | null
+  /** Aprobada sobre el total actual de la cotización. */
+  vigente: boolean
+  /** Aprobada, vigente y el monto escrito llega al aprobado. */
+  cubierto: boolean
+  monto: number
+  motivo: string
+  onMotivo: (v: string) => void
+  enviando: boolean
+  onSolicitar: () => void
+}) {
+  const formulario = (texto: string) => (
+    <FormularioSolicitud
+      texto={texto}
+      monto={monto}
+      motivo={motivo}
+      onMotivo={onMotivo}
+      enviando={enviando}
+      onSolicitar={onSolicitar}
+    />
+  )
+
+  if (solicitud?.estado === 'aprobada' && cubierto) {
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-emerald-800">
+        <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
+        <span>
+          {nombreDe(solicitud.resolutor)} autorizó cobrar desde{' '}
+          <span className="font-mono">{formatCOP(solicitud.monto_minimo)}</span>.
+        </span>
+      </div>
+    )
+  }
+
+  if (solicitud?.estado === 'pendiente') {
+    const mismoMonto = Math.abs(solicitud.monto_minimo - monto) < 1
+    return (
+      <div className="space-y-2">
+        <div className="flex items-start gap-2">
+          <Clock className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            Esperando que un administrador apruebe cobrar desde{' '}
+            <span className="font-mono">{formatCOP(solicitud.monto_minimo)}</span>.
+          </span>
+        </div>
+        {!mismoMonto && monto > 0 && formulario('Pedir este monto en su lugar')}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {solicitud?.estado === 'rechazada' && (
+        <p>
+          {nombreDe(solicitud.resolutor)} rechazó cobrar desde{' '}
+          <span className="font-mono">{formatCOP(solicitud.monto_minimo)}</span>: {solicitud.motivo_rechazo}
+        </p>
+      )}
+      {solicitud?.estado === 'aprobada' && !vigente && (
+        <p>El total de la cotización cambió después de la autorización: pide una nueva.</p>
+      )}
+      {solicitud?.estado === 'aprobada' && vigente && (
+        <p>
+          La autorización es desde <span className="font-mono">{formatCOP(solicitud.monto_minimo)}</span>. Para
+          cobrar menos, pide otra.
+        </p>
+      )}
+      {formulario('Solicitar autorización')}
+    </div>
+  )
+}
+
+function FormularioSolicitud({
+  texto,
+  monto,
+  motivo,
+  onMotivo,
+  enviando,
+  onSolicitar,
+}: {
+  texto: string
+  monto: number
+  motivo: string
+  onMotivo: (v: string) => void
+  enviando: boolean
+  onSolicitar: () => void
+}) {
+  return (
+    <div className="space-y-2">
+      <textarea
+        className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        rows={2}
+        placeholder="Motivo para el administrador..."
+        value={motivo}
+        onChange={(e) => onMotivo(e.target.value)}
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="w-full"
+        disabled={enviando || monto <= 0 || motivo.trim().length === 0}
+        onClick={onSolicitar}
+      >
+        {enviando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {texto} por <span className="ml-1 font-mono">{formatCOP(monto)}</span>
+      </Button>
+    </div>
   )
 }
