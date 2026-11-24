@@ -5,6 +5,7 @@ import { CambiosSinGuardarProvider } from '@/providers/CambiosSinGuardarProvider
 import { Sidebar } from './Sidebar'
 import { Navbar } from './Navbar'
 import { CajaPendienteBanner } from './CajaPendienteBanner'
+import { SolicitudesAnticipoBanner } from './SolicitudesAnticipoBanner'
 import { AyudaAtajosDialog } from './AyudaAtajosDialog'
 
 export function DashboardLayout() {
@@ -15,6 +16,7 @@ export function DashboardLayout() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <Navbar />
           <CajaPendienteBanner />
+          <SolicitudesAnticipoBanner />
           <main className="flex-1 overflow-y-auto p-4 lg:p-6">
             <Outlet />
           </main>
