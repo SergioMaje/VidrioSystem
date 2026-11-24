@@ -669,6 +669,37 @@ export interface CotizacionSaldo {
   pct_abonado: number
 }
 
+export type EstadoSolicitudAnticipo = 'pendiente' | 'aprobada' | 'rechazada' | 'usada' | 'cancelada'
+
+/**
+ * Pedido de un vendedor para cobrar un anticipo menor al 50%. Se escribe solo
+ * por RPC (`solicitar_autorizacion_anticipo`, `resolver_solicitud_anticipo`);
+ * el trigger del cobro consume la aprobada.
+ */
+export interface SolicitudAnticipo {
+  id: string
+  empresa_id: string
+  cotizacion_id: string
+  /** El aprobado es un piso: se puede cobrar desde aquí hacia arriba. */
+  monto_minimo: number
+  /** Total al pedir; si la cotización cambia de total, la autorización no aplica. */
+  total_cotizacion: number
+  motivo: string
+  estado: EstadoSolicitudAnticipo
+  solicitado_por: string
+  resuelto_por: string | null
+  resuelto_at: string | null
+  motivo_rechazo: string | null
+  venta_id: string | null
+  created_at: string
+}
+
+export type SolicitudAnticipoDetalle = SolicitudAnticipo & {
+  solicitante: { nombre: string; apellido: string | null } | null
+  resolutor: { nombre: string; apellido: string | null } | null
+  cotizacion: { numero: string } | null
+}
+
 /** Cuenta de cobro de una venta a crédito (CC-0001…). Se escribe solo por RPC. */
 export interface CuentaCobro {
   id: string
