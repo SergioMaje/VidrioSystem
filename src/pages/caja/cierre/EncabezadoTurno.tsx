@@ -15,8 +15,12 @@ export function EncabezadoTurno({ sessionId }: { sessionId: string }) {
   const { data: historial } = useHistorialCaja()
   if (!sesion) return null
 
+  // Solo los cierres de antes de este turno: al revisar un turno viejo, los
+  // posteriores no eran referencia para quien lo cerró. El historial viene del
+  // más reciente al más viejo, así que slice toma los últimos anteriores.
+  const abierto = new Date(sesion.opened_at).getTime()
   const anteriores = (historial ?? [])
-    .filter((s) => s.id !== sessionId && s.difference != null)
+    .filter((s) => s.id !== sessionId && s.difference != null && !!s.closed_at && new Date(s.closed_at).getTime() <= abierto)
     .slice(0, CIERRES_PROMEDIO)
   const promedio = anteriores.length
     ? anteriores.reduce((s, c) => s + (c.difference ?? 0), 0) / anteriores.length
