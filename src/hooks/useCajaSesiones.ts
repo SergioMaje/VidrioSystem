@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { finDeDia } from '@/lib/utils'
 import type { CashRegisterSession, Usuario } from '@/types/database'
 
 export type SesionCajaHistorial = CashRegisterSession & {
@@ -76,11 +77,16 @@ export function useCerrarCaja() {
   })
 }
 
-export function useHistorialCaja() {
+/**
+ * Turnos cerrados, del más reciente al más viejo. Con `rango` (fechas
+ * YYYY-MM-DD locales) solo los que abrieron en ese período; sin él, todos:
+ * así lo usa el encabezado del arqueo para su promedio de referencia.
+ */
+export function useHistorialCaja(rango?: { desde: string; hasta: string }) {
   return useQuery({
-    queryKey: ['historial-caja'],
+    queryKey: ['historial-caja', rango?.desde, rango?.hasta],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let consulta = supabase
         .from('cash_register_sessions')
         .select(`
           *,
@@ -88,7 +94,13 @@ export function useHistorialCaja() {
           cerrada_por:usuarios!cash_register_sessions_closed_by_fkey(nombre, apellido)
         `)
         .eq('status', 'closed')
-        .order('closed_at', { ascending: false })
+      if (rango) {
+        // Inicio del día local como instante: sin offset, Postgres leería la fecha en UTC.
+        consulta = consulta
+          .gte('opened_at', new Date(rango.desde + 'T00:00:00').toISOString())
+          .lt('opened_at', finDeDia(rango.hasta))
+      }
+      const { data, error } = await consulta.order('closed_at', { ascending: false })
       if (error) throw error
       return data as SesionCajaHistorial[]
     },
