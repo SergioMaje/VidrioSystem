@@ -15,7 +15,13 @@ export type FilaCierreExcel = {
   abrio: string
   cerro: string
   base: number
-  cobrado: number | null
+  efectivo: number | null
+  transferencia: number | null
+  tarjeta: number | null
+  /** Efectivo + transferencia + tarjeta, sin anulados. */
+  dinero: number | null
+  /** Vendido a crédito de financiera: no es dinero recibido. */
+  credito: number | null
   anulado: number | null
   gastos: number | null
   esperado: number | null
@@ -43,7 +49,11 @@ const COLUMNAS: { header: string; key: keyof FilaCierreExcel | 'estado'; width: 
   { header: 'Abrió', key: 'abrio', width: 18 },
   { header: 'Cerró', key: 'cerro', width: 18 },
   { header: 'Base inicial', key: 'base', width: 14, formato: PESOS },
-  { header: 'Cobrado (sin anulados)', key: 'cobrado', width: 16, formato: PESOS },
+  { header: 'Efectivo', key: 'efectivo', width: 13, formato: PESOS },
+  { header: 'Transferencia', key: 'transferencia', width: 14, formato: PESOS },
+  { header: 'Tarjeta', key: 'tarjeta', width: 13, formato: PESOS },
+  { header: 'Dinero recibido', key: 'dinero', width: 15, formato: PESOS },
+  { header: 'A crédito (financiera)', key: 'credito', width: 15, formato: PESOS },
   { header: 'Anulado', key: 'anulado', width: 13, formato: PESOS },
   { header: 'Gastos', key: 'gastos', width: 13, formato: PESOS },
   { header: 'Efectivo esperado', key: 'esperado', width: 16, formato: PESOS },
@@ -54,7 +64,7 @@ const COLUMNAS: { header: string; key: keyof FilaCierreExcel | 'estado'; width: 
 ]
 
 /** Columnas que se suman en la fila de totales. */
-const SUMAN = new Set(['cobrado', 'anulado', 'gastos', 'diferencia'])
+const SUMAN = new Set(['efectivo', 'transferencia', 'tarjeta', 'dinero', 'credito', 'anulado', 'gastos', 'diferencia'])
 
 const letra = (indice: number) => String.fromCharCode(65 + indice)
 

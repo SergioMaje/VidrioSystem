@@ -13,13 +13,14 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
 import { fechaISOLocal, finDeDia, formatCantidad, formatCOP, formatDuracion, formatFecha, formatFechaHora } from '@/lib/utils'
 import { useHistorialCaja, useResumenSesiones } from '@/hooks/useCajaSesiones'
-import type { SesionCajaHistorial } from '@/hooks/useCajaSesiones'
+import type { ResumenSesion, SesionCajaHistorial } from '@/hooks/useCajaSesiones'
 import { useVentasPeriodo } from '@/hooks/useVentasCaja'
 import { useDesembolsos } from '@/hooks/useFinancieras'
 import { ResumenVentasSesion } from '@/pages/caja/ResumenVentasSesion'
 import { EnlaceDocumento } from '@/components/shared/EnlaceDocumento'
 import { EncabezadoTurno } from '@/pages/caja/cierre/EncabezadoTurno'
 import { BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
+import { Monto } from '@/pages/caja/cierre/Monto'
 import { FinancierasTab } from './FinancierasTab'
 import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, destinoDePago, esPagoFinanciera, esVentaAnulada, origenDeVenta } from '@/lib/pagos'
 import type { Venta } from '@/types/database'
@@ -91,6 +92,9 @@ function exportarCSV(filas: string[][], nombreArchivo: string) {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+/** Lo que de verdad entró en el turno: efectivo, transferencia y tarjeta sin anulados. El crédito de financiera no. */
+const dineroRecibido = (r: ResumenSesion) => r.vigente_efectivo + r.vigente_transferencia + r.vigente_tarjeta
 
 export function ReportesPage() {
   // Fecha local, no UTC: `toISOString()` ya adelanta el día a las 7 p.m. en Colombia.
@@ -307,7 +311,11 @@ export function ReportesPage() {
         abrio: persona(sesion.abierta_por),
         cerro: persona(sesion.cerrada_por),
         base: sesion.opening_amount,
-        cobrado: resumen ? resumen.total_cobrado - resumen.total_anulado : null,
+        efectivo: resumen ? resumen.vigente_efectivo : null,
+        transferencia: resumen ? resumen.vigente_transferencia : null,
+        tarjeta: resumen ? resumen.vigente_tarjeta : null,
+        dinero: resumen ? dineroRecibido(resumen) : null,
+        credito: resumen ? resumen.vigente_financiera : null,
         anulado: resumen ? resumen.total_anulado : null,
         gastos: resumen ? resumen.total_gastos : null,
         esperado: sesion.expected_amount,
@@ -880,7 +888,7 @@ export function ReportesPage() {
                         <th className="px-4 py-3">Apertura</th>
                         <th className="px-4 py-3 text-right">Duración</th>
                         <th className="px-4 py-3">Cerró</th>
-                        <th className="px-4 py-3 text-right">Total cobrado</th>
+                        <th className="px-4 py-3 text-right" title="Efectivo, transferencia y tarjeta, sin cobros anulados">Dinero recibido</th>
                         <th className="px-4 py-3 text-right">Gastos</th>
                         <th className="px-4 py-3 text-right">Diferencia</th>
                         <th className="px-4 py-3" />
@@ -897,7 +905,12 @@ export function ReportesPage() {
                           </td>
                           <td className="px-4 py-3">{sesion.cerrada_por ? `${sesion.cerrada_por.nombre} ${sesion.cerrada_por.apellido}` : '—'}</td>
                           <td className="px-4 py-3 text-right font-semibold">
-                            {resumen ? formatCOP(resumen.total_cobrado - resumen.total_anulado) : '—'}
+                            {resumen ? formatCOP(dineroRecibido(resumen)) : '—'}
+                            {resumen && resumen.vigente_financiera > 0 && (
+                              <p className="text-xs font-normal text-muted-foreground">
+                                + {formatCOP(resumen.vigente_financiera)} a crédito
+                              </p>
+                            )}
                             {resumen && resumen.num_anulados > 0 && (
                               <p className="text-xs font-normal text-muted-foreground">
                                 {resumen.num_anulados} anulada(s)
@@ -910,10 +923,9 @@ export function ReportesPage() {
                             ) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right font-mono">
+                            {/* Sin verde: un sobrante también es descuadre (ver Monto). */}
                             {sesion.difference != null ? (
-                              <span className={sesion.difference === 0 ? '' : sesion.difference > 0 ? 'text-emerald-600' : 'text-destructive'}>
-                                {formatCOP(sesion.difference)}
-                              </span>
+                              <Monto valor={sesion.difference} signo={Math.round(sesion.difference) !== 0} />
                             ) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right">
