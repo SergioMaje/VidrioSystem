@@ -1,9 +1,10 @@
 import { ChevronRight } from 'lucide-react'
 import type { CifrasTurno } from '@/lib/caja'
+import type { SeccionTurno } from '@/lib/transaccionesTurno'
 import type { MetodoPago } from '@/types/database'
 import { Monto } from './Monto'
 
-export type SeccionDetalle = 'ventas' | 'gastos' | 'retiros' | 'devoluciones'
+export type SeccionDetalle = SeccionTurno
 
 /** A qué parte del detalle lleva cada término de la fórmula. */
 export type Destino = { seccion: SeccionDetalle; metodo?: MetodoPago }
@@ -53,12 +54,12 @@ export function FormulaEfectivo({ cifras, onVer }: { cifras: CifrasTurno; onVer:
                   title="Ver las transacciones"
                 >
                   <FilaTermino termino={t} />
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground print:hidden" aria-hidden />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 </button>
               ) : (
                 <div className="flex items-center gap-2 px-3 py-2">
                   <FilaTermino termino={t} />
-                  <span className="w-4 shrink-0 print:hidden" />
+                  <span className="w-4 shrink-0" />
                 </div>
               )}
             </li>
@@ -67,7 +68,7 @@ export function FormulaEfectivo({ cifras, onVer }: { cifras: CifrasTurno; onVer:
           <span className="w-4 shrink-0 text-center">=</span>
           <span className="min-w-0 flex-1">Efectivo esperado</span>
           <Monto valor={cifras.efectivoEsperado} className="text-primary" />
-          <span className="w-4 shrink-0 print:hidden" />
+          <span className="w-4 shrink-0" />
         </li>
       </ul>
     </div>

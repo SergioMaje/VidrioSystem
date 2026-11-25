@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Calculator, Keyboard, Loader2, Printer } from 'lucide-react'
+import { Calculator, Keyboard, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -15,6 +15,7 @@ import { cn, formatCOP, mensajeError } from '@/lib/utils'
 import { ResumenVentasSesion, type Arqueo } from './ResumenVentasSesion'
 import { ContadorDenominaciones } from './cierre/ContadorDenominaciones'
 import { EncabezadoTurno } from './cierre/EncabezadoTurno'
+import { BotonImprimirCierre } from './cierre/BotonImprimirCierre'
 
 type ModoConteo = 'total' | 'billetes'
 
@@ -83,7 +84,6 @@ export function CerrarCajaDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         className="max-h-[90vh] max-w-3xl overflow-y-auto [&>*]:min-w-0"
-        data-imprimir={resultado ? '' : undefined}
         onKeyDown={atajo}
       >
         <DialogHeader>
@@ -143,13 +143,10 @@ export function CerrarCajaDialog({
           </>
         )}
 
-        <DialogFooter className="gap-2 print:hidden">
+        <DialogFooter className="gap-2">
           {resultado ? (
             <>
-              <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="mr-2 h-4 w-4" />
-                Imprimir / PDF
-              </Button>
+              <BotonImprimirCierre sessionId={sessionId} />
               <Button onClick={() => handleClose(false)}>Listo</Button>
             </>
           ) : (

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Ban, Banknote, Download, FileSpreadsheet, HandCoins, Landmark, Printer, TrendingUp } from 'lucide-react'
+import { Ban, Banknote, Download, FileSpreadsheet, HandCoins, Landmark, TrendingUp } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import { useDesembolsos } from '@/hooks/useFinancieras'
 import { ResumenVentasSesion } from '@/pages/caja/ResumenVentasSesion'
 import { EnlaceDocumento } from '@/components/shared/EnlaceDocumento'
 import { EncabezadoTurno } from '@/pages/caja/cierre/EncabezadoTurno'
+import { BotonImprimirCierre } from '@/pages/caja/cierre/BotonImprimirCierre'
 import { BadgeAnulada } from '@/pages/caja/AnularVentaDialog'
 import { FinancierasTab } from './FinancierasTab'
 import { METODO_PAGO_LABEL, TIPO_PAGO_LABEL, destinoDePago, esPagoFinanciera, esVentaAnulada, origenDeVenta } from '@/lib/pagos'
@@ -867,7 +868,7 @@ export function ReportesPage() {
       </Tabs>
 
       <Dialog open={!!sesionDetalle} onOpenChange={(o) => !o && setSesionDetalle(null)}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto [&>*]:min-w-0" data-imprimir="">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto [&>*]:min-w-0">
           {sesionDetalle && (
             <>
               <DialogHeader>
@@ -882,11 +883,8 @@ export function ReportesPage() {
                 arqueo={sesionDetalle}
               />
 
-              <div className="flex justify-end print:hidden">
-                <Button variant="outline" onClick={() => window.print()}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Imprimir / PDF
-                </Button>
+              <div className="flex justify-end">
+                <BotonImprimirCierre sessionId={sesionDetalle.id} />
               </div>
             </>
           )}

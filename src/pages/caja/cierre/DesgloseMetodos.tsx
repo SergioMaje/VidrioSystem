@@ -48,7 +48,7 @@ export function DesgloseMetodos({ cifras, contado }: { cifras: CifrasTurno; cont
   return (
     <div className="min-w-0">
       {/* Pantallas medianas en adelante: tabla. */}
-      <div className="hidden overflow-x-auto rounded-md border sm:block print:block">
+      <div className="hidden overflow-x-auto rounded-md border sm:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50 text-xs font-medium uppercase text-muted-foreground">
@@ -82,7 +82,7 @@ export function DesgloseMetodos({ cifras, contado }: { cifras: CifrasTurno; cont
       </div>
 
       {/* Celular: una tarjeta por método, sin columnas que se aprieten. */}
-      <div className="space-y-2 sm:hidden print:hidden">
+      <div className="space-y-2 sm:hidden">
         {dinero.map((f) => (
           <TarjetaMetodo key={f.metodo} fila={f} />
         ))}
