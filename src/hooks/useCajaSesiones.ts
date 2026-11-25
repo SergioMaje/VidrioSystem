@@ -154,6 +154,15 @@ export type ResumenSesion = {
   /** Cobros de este turno que se anularon. */
   total_anulado: number
   num_anulados: number
+  /**
+   * Cobros vigentes (sin anulados) por método: lo que de verdad se cobró. Los
+   * `total_*` de arriba incluyen anulados porque así los necesita el arqueo.
+   */
+  vigente_efectivo: number
+  vigente_transferencia: number
+  vigente_tarjeta: number
+  /** Vendido a crédito de financiera: no es dinero recibido. */
+  vigente_financiera: number
 }
 
 /**
