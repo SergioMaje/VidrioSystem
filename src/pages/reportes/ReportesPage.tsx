@@ -108,7 +108,7 @@ export function ReportesPage() {
   const tab = (TABS as readonly string[]).includes(tabParam ?? '') ? (tabParam as string) : 'inventario'
   const cambiarTab = (valor: string) => setSearchParams({ tab: valor }, { replace: true })
 
-  const { data: historialCaja, isLoading: loadingCaja } = useHistorialCaja()
+  const { data: historialCaja, isLoading: loadingCaja } = useHistorialCaja({ desde, hasta })
   const { data: resumenSesiones } = useResumenSesiones()
 
   const { data: inventario, isLoading: loadingInv } = useQuery({
@@ -293,6 +293,38 @@ export function ReportesPage() {
       ]
     })
     exportarCSV([encabezado, ...filas], `ingresos-detalle-${desde}_${hasta}.csv`)
+  }
+
+  const [exportandoCierres, setExportandoCierres] = useState(false)
+  const exportarCierres = async () => {
+    if (!historialCaja?.length) return
+    const persona = (u: { nombre: string; apellido: string } | null) => (u ? `${u.nombre} ${u.apellido}` : '')
+    const filas = historialCaja.map((sesion) => {
+      const resumen = resumenSesiones?.get(sesion.id)
+      return {
+        apertura: sesion.opened_at,
+        cierre: sesion.closed_at,
+        duracion: sesion.closed_at ? formatDuracion(sesion.opened_at, sesion.closed_at) : '',
+        abrio: persona(sesion.abierta_por),
+        cerro: persona(sesion.cerrada_por),
+        base: sesion.opening_amount,
+        cobrado: resumen ? resumen.total_cobrado - resumen.total_anulado : null,
+        anulado: resumen ? resumen.total_anulado : null,
+        gastos: resumen ? resumen.total_gastos : null,
+        esperado: sesion.expected_amount,
+        contado: sesion.counted_amount,
+        diferencia: sesion.difference,
+        observacion: sesion.observacion_cierre ?? '',
+      }
+    })
+    setExportandoCierres(true)
+    try {
+      // exceljs pesa: se carga solo cuando alguien exporta.
+      const { descargarCierresExcel } = await import('@/lib/excelCierresCaja')
+      await descargarCierresExcel(filas, { desde, hasta })
+    } finally {
+      setExportandoCierres(false)
+    }
   }
 
   return (
@@ -797,6 +829,39 @@ export function ReportesPage() {
         <TabsContent value="caja" className="mt-4 space-y-4">
           <Card>
             <CardHeader className="pb-3">
+              <CardTitle className="text-base">Filtrar por período</CardTitle>
+              <p className="text-xs text-muted-foreground">Turnos que abrieron entre estas fechas.</p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Desde</Label>
+                  <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="w-40" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Hasta</Label>
+                  <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="w-40" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {historialCaja ? `${historialCaja.length} cierres en el período` : ''}
+            </p>
+            <Button
+              variant="outline"
+              onClick={exportarCierres}
+              disabled={!historialCaja || historialCaja.length === 0 || exportandoCierres}
+            >
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              {exportandoCierres ? 'Generando…' : 'Exportar Excel'}
+            </Button>
+          </div>
+
+          <Card>
+            <CardHeader className="pb-3">
               <CardTitle className="text-base">Historial de cierres de caja</CardTitle>
               <p className="text-xs text-muted-foreground">
                 Abre <span className="font-medium">Ver detalle</span> para el desglose por método de pago,
@@ -807,7 +872,7 @@ export function ReportesPage() {
               {loadingCaja ? (
                 <LoadingSpinner className="py-12" />
               ) : !historialCaja || historialCaja.length === 0 ? (
-                <p className="py-12 text-center text-sm text-muted-foreground">Aún no hay cierres de caja registrados</p>
+                <p className="py-12 text-center text-sm text-muted-foreground">No hay cierres de caja en el período seleccionado</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
